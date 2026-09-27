@@ -6,6 +6,17 @@ All notable changes to this project are documented here. This project follows
 ## [Unreleased]
 
 ### Added
+- `add_hole_wizard`: ISO holes from SolidWorks' Hole Wizard, sized by its standard
+  tables: clearance (ISO 273 close/normal/loose), counterbore for socket head
+  cap screws, countersink for socket countersunk screws, and tapped holes. The
+  Hole Wizard only makes cosmetic threads, so `thread="modeled"` drills the ISO
+  basic minor diameter and cuts a real, printable thread with the Thread
+  feature. The hole lands exactly on the given point (the Hole Wizard itself
+  lands ~0.04 mm off) and its position sketch is fully defined.
+- `slice_mesh` and `compare_with_mesh`: slice an STL or 3MF (object or build
+  frame, component transforms applied) into polygon loops ready to use as
+  profiles, and compare the part's cross-sections with it. The part is
+  measured in its own frame, not SolidWorks' STL shift to positive space.
 - `add_boss_on_face` and `add_extruded_profile_on_face`: grow a round boss
   (standoff, peg) or a polygon pad out of any planar face. Until now all
   material had to start on the Front plane.

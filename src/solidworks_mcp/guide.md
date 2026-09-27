@@ -71,6 +71,15 @@ stray drag in SolidWorks can change the part.
 - **Holes**: `add_hole` (through, along Z), `add_counterbore_hole` (on +Z),
   `add_hole_on_face` (any planar face, through or blind with `depth_mm`: a
   heat-set insert hole, a screw pilot).
+- **Standard holes**: `add_hole_wizard` sizes a hole from SolidWorks' own ISO
+  tables: `clearance` (ISO 273; M3 is 3.2 / 3.4 / 3.6 for a close / normal /
+  loose fit), `counterbore` (socket head cap screw), `countersink` (socket
+  countersunk screw) and `tapped` (ISO tap drill plus a cosmetic thread). The
+  sizes it used come back in `hole`, ready for your hand calculation. A blind
+  hole ends in a 118 degree drill point; its depth counts from the surface.
+  The Hole Wizard only makes *cosmetic* threads; `thread="modeled"` drills the
+  ISO basic minor diameter and cuts a real, printable thread with the Thread
+  feature, over the standard depth (2 x D) or all the way through.
 - **Adding material to a part**: `add_boss_on_face` (a round boss: standoff,
   peg) and `add_extruded_profile_on_face` (a polygon pad or ledge) grow out of
   any planar face. A PCB standoff is a boss plus a blind hole in its top.
@@ -117,12 +126,14 @@ stray drag in SolidWorks can change the part.
 When a part must mate with something that only exists as a mesh, for example
 a proven battery socket:
 
-1. Slice the mesh across the axis the parts slide along, at small steps, and
-   note where the cross-section changes: those heights are your feature
-   boundaries.
-2. Use the sections as polygon profiles. **Do not simplify them loosely**:
-   remove only exactly collinear points. Mesh walls are rarely perfectly
-   straight, so two sections of the same wall differ by a few micrometres.
+1. Slice the mesh with `slice_mesh` across the axis the parts slide along, at
+   small steps, and note where the cross-section changes: those heights are
+   your feature boundaries. For a slicer's 3MF, `frame='object'` gives the
+   designer's modelling frame, `frame='build'` the print orientation.
+2. Use the sections as polygon profiles; `slice_mesh` already drops only
+   exactly collinear points. **Do not simplify them further**: mesh walls are
+   rarely perfectly straight, so two sections of the same wall differ by a few
+   micrometres. Profiles over 24 points are fixed rather than dimensioned.
 3. **Build every section from one master**: take the master's points wherever a
    section shares its walls and keep the section's own points only where it
    really differs. Successive cuts along nearly (not exactly) coincident walls
@@ -130,14 +141,15 @@ a proven battery socket:
 4. Start each cut from the face it belongs to (give a point on it). Cut
    undercuts, such as latch recesses, from the floor of the narrower region
    above them.
-5. Compare: export your part, slice it at the same heights and compare the
-   section areas and extents with the reference. Equal area with different
-   extents means a shifted frame; a very different area means a misread
-   feature, for example a solid wall where the reference is hollow.
+5. Compare with `compare_with_mesh` at the same heights (`offset_mm` moves the
+   mesh into your part's frame). Equal area with different extents means a
+   shifted frame; a very different area means a misread feature, for example
+   a solid wall where the reference is hollow; an unmatched loop is a pocket
+   or hole only one of them has.
 
 ## 7. Limits and housekeeping
 
-- Not available: importing meshes as bodies, mirror, drawings, sketches on
+- Not available: importing meshes as bodies (slice them instead), mirror, drawings, sketches on
   arbitrary planes, arcs inside polygon profiles (approximate them with enough
   points, or use revolves, splines and holes).
 - SolidWorks' memory grows over long sessions. If it warns about low memory,

@@ -32,15 +32,15 @@ it "looks about right".
   by role (`width@Sketch1`), so the part stays editable, in SolidWorks or
   through the agent.
 - **Real CAD, not just primitives.** Extrude, revolve, sweep, loft and splines;
-  holes, counterbores, slots and pockets on any face; real ISO metric threads;
+  holes, counterbores, slots and pockets on any face; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  51 tools in total.
+  54 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 254 tests; each feature's integration test
+- **Tested against real SolidWorks.** 299 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -195,6 +195,7 @@ The server speaks MCP over **stdio**.
 | `add_counterbore_hole(clearance_diameter_mm, cbore_diameter_mm, cbore_depth_mm, x_mm, y_mm, name)` | Counterbored screw hole (flush cap-head / heat-set insert) on +Z |
 | `add_thread(size, x_mm, y_mm, z_mm, length_mm, internal, name)` | Real, printable ISO metric thread (e.g. `M10x1.5`) from a rod's end edge or a hole's mouth, via SolidWorks' Thread feature; the size is checked against the thread profiles. Internal: drill the basic minor diameter first (M10x1.5 → Ø8.376) |
 | `add_hole_on_face(diameter_mm, face, x_mm, y_mm, z_mm, depth_mm, name)` | Round hole on ANY planar face at a 3D point, through or blind (side holes, heat-set insert holes); the face through the point is used |
+| `add_hole_wizard(kind, size, face, x_mm, y_mm, z_mm, depth_mm, fit, thread, name)` | ISO hole from SolidWorks' Hole Wizard tables: clearance (ISO 273 fits), counterbore, countersink or tapped; `thread="modeled"` cuts a real, printable thread |
 | `add_boss_on_face(diameter_mm, face, x_mm, y_mm, z_mm, height_mm, name)` | Round boss (standoff, peg) grown out of ANY planar face |
 | `add_extruded_profile_on_face(points_mm, face, depth_mm, name)` | Polygon pad/ledge grown out of ANY planar face (3D points on the face) |
 | `cut_profile(points_mm, depth_mm, name)` | Cut a polygon pocket/slot from the +Z face (blind or through) |
@@ -208,6 +209,8 @@ The server speaks MCP over **stdio**.
 | `add_circular_pattern(count, center_x_mm, center_y_mm, feature_name)` | Repeat a feature N times around an axis (bolt circle) |
 | `set_dimension(dimension_name, value_mm)` | Change a named driving dim (e.g. `D1@BlockExtrude`, or any name a tool returned in `dimensions`), rebuild, remeasure |
 | `set_equation(equation)` | Add a global equation or variable linking dims (e.g. `"W" = 40`, then `"width@Sketch1" = "W"`) |
+| `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
+| `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
 | `set_material(name, database)` | Assign a material (e.g. `6061 Alloy`) so mass/density are real |
 | `rebuild(top_only)` | Force rebuild, report errors |
