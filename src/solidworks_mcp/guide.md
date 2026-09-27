@@ -16,12 +16,13 @@ short connect-time instructions first; this is the long version.
   - Sweeps: the path lies on the Front plane. For `add_swept_profile` it **must
     start at the origin heading +X**, and the profile is drawn on the Right
     plane (u along +Y, v along +Z).
-- Faces are selected by the direction they face: `+x`, `-z`, ... picks the
-  **outermost** planar face facing that way; `+z:inner` picks the **innermost**
-  (a pocket floor, the inside of a shelled wall). Nothing in between can be
-  selected, so plan the order of cuts around it (see 6).
-- `*_on_face` tools take **3D points that lie on that face**; a point off the
-  face is refused instead of being projected.
+- Faces are selected by the direction they face: `+x`, `-z`, ... The `*_on_face`
+  tools take **3D points on the face** and use the planar face facing that way
+  **through the point**: the top, a pocket floor, a step in between. A point on
+  no such face is refused instead of being projected, and the error lists the
+  levels that do exist. `+z:outer` / `+z:inner` force the outermost / innermost
+  face. Tools without a 3D point (`cut_profile`, `add_hole`, `cut_slot`) use
+  the outermost +Z face.
 
 ## 2. Work in small, verified steps
 
@@ -59,6 +60,8 @@ stray drag in SolidWorks can change the part.
 - Profiles with more than 24 points (typically traced from a mesh), sweep paths
   and splines are **fixed** instead: dimensioning them takes minutes and gives
   nobody a usable handle. Rebuild them to change them.
+- `list_dimensions` names every dimension in the part with its value, e.g. for
+  a part opened from disk.
 - Drive several dimensions from one number with a global variable:
   `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`. An
   equation-driven dimension ignores `set_dimension` (`applied: false`).
@@ -66,8 +69,11 @@ stray drag in SolidWorks can change the part.
 ## 4. Recipes
 
 - **Holes**: `add_hole` (through, along Z), `add_counterbore_hole` (on +Z),
-  `add_hole_on_face` (any planar face). Blind round holes on a face:
-  `cut_profile_on_face` with a many-sided polygon.
+  `add_hole_on_face` (any planar face, through or blind with `depth_mm`: a
+  heat-set insert hole, a screw pilot).
+- **Adding material to a part**: `add_boss_on_face` (a round boss: standoff,
+  peg) and `add_extruded_profile_on_face` (a polygon pad or ledge) grow out of
+  any planar face. A PCB standoff is a boss plus a blind hole in its top.
 - **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
   face), `cut_slot` (obround on +Z).
 - **Side-view shapes** (wedges, windows, symmetric recesses):
@@ -121,9 +127,9 @@ a proven battery socket:
    section shares its walls and keep the section's own points only where it
    really differs. Successive cuts along nearly (not exactly) coincident walls
    leave sliver faces, and the next cut then fails with `FeatureCut4 failed`.
-4. Order the cuts so each one starts from a face you can select (outermost or
-   innermost). Cut undercuts, such as latch recesses, from the floor of the
-   narrower region above them.
+4. Start each cut from the face it belongs to (give a point on it). Cut
+   undercuts, such as latch recesses, from the floor of the narrower region
+   above them.
 5. Compare: export your part, slice it at the same heights and compare the
    section areas and extents with the reference. Equal area with different
    extents means a shifted frame; a very different area means a misread

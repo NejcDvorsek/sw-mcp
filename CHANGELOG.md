@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `add_boss_on_face` and `add_extruded_profile_on_face`: grow a round boss
+  (standoff, peg) or a polygon pad out of any planar face. Until now all
+  material had to start on the Front plane.
+- `add_hole_on_face(..., depth_mm)`: blind round holes on any face (heat-set
+  inserts, screw pilots) as real circles, so diameter and depth stay editable
+  dimensions. The old workaround, a many-sided polygon, is fixed, not dimensioned.
+- `list_dimensions`: every dimension in the part with its name, value and unit.
+
+### Changed
+- The `*_on_face` tools use the face through the given point, so a pocket floor
+  or a step between the outermost and innermost face can be sketched on;
+  `:outer` / `:inner` still force the extremes. A point on no face facing that
+  way still fails, and the error now lists the levels there are.
+
 ## [0.4.0] — 2026-09-26
 
 ### Fixed
