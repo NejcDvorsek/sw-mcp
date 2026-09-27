@@ -130,6 +130,7 @@ SW_BOUNDING_BOX_SOLID_ONLY = 0
 
 # swUserPreferenceToggle_e
 SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE = 10
+SW_TOGGLE_STL_DONT_TRANSLATE = 71  # keep STL output in model coordinates (default: moved to positive space)
 
 # swOpenDocOptions_e -- silent load, no dialogs. AddComponent5 returns None for a
 # part that is not loaded yet (verified), so components are opened this way first.

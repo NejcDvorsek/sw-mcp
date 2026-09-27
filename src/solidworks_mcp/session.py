@@ -12,6 +12,8 @@ green by scripts/m1_block.py and scripts/m2_parametric.py.
 import math
 import os
 import re
+import tempfile
+import uuid
 
 import pythoncom
 import win32com.client
@@ -63,6 +65,7 @@ from .constants import (
     SW_THREAD_END_BLIND,
     SW_THREAD_METHOD_CUT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
+    SW_TOGGLE_STL_DONT_TRANSLATE,
     SW_VIEW_ISOMETRIC,
     SW_WZD_COUNTERBORE,
     SW_WZD_COUNTERSINK,
@@ -73,6 +76,7 @@ from .constants import (
     THREAD_PROFILE_INTERNAL,
 )
 from .errors import SolidWorksError
+from .mesh_tools import area, compare_sections, extents, load_mesh, section, simplify
 from .sketch_constraints import SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
@@ -2548,6 +2552,72 @@ class SolidWorksSession:
                     })
                 display = feat.GetNextDisplayDimension(display)
         return {"ok": True, "count": len(dims), "dimensions": dims}
+
+    # --- meshes: slice a reference, compare the part with it ---------------------
+
+    @staticmethod
+    def _loop_entry(loop, with_points: bool) -> dict:
+        points = simplify(loop)
+        u0, u1, v0, v1 = extents(points)
+        entry = {"area_mm2": round(area(points), 4), "min_mm": [round(u0, 4), round(v0, 4)],
+                 "max_mm": [round(u1, 4), round(v1, 4)], "point_count": len(points)}
+        if with_points:
+            entry["points_mm"] = [[round(u, 4), round(v, 4)] for u, v in points]
+        return entry
+
+    def slice_mesh(self, path: str, axis: str, heights_mm: list, frame: str = "object") -> dict:
+        """Cross-sections of an STL or 3MF mesh at the given heights along axis.
+
+        Each section lists its closed loops, largest first (the outline, then
+        holes and pockets), as polygon points (mm): (y, z) across x, (x, z)
+        across y, (x, y) across z. Only exactly collinear points are dropped, so
+        the loops are ready to use as profiles. frame (3MF): 'object' = the
+        mesh's own modelling frame, 'build' = as placed on the slicer's plate.
+        No SolidWorks needed.
+        """
+        triangles = load_mesh(path, frame)
+        sections = [{"height_mm": h, "loops": [self._loop_entry(l, True) for l in section(triangles, axis, h)]}
+                    for h in heights_mm]
+        return {"ok": True, "axis": axis, "frame": frame, "sections": sections}
+
+    def _part_triangles(self) -> list:
+        """The current part as triangles in its own model frame (mm), via a fine STL export."""
+        path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_{uuid.uuid4().hex}.stl")
+        keep = self._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE)
+        self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, True)  # no shift to positive space
+        try:
+            self.export(path, quality="fine")
+            return load_mesh(path)
+        finally:
+            self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, keep)
+            if os.path.exists(path):
+                os.remove(path)
+
+    def compare_with_mesh(self, path: str, axis: str, heights_mm: list, frame: str = "object",
+                          offset_mm: list | None = None) -> dict:
+        """Slice the current part and a reference mesh at the same heights; compare.
+
+        The mesh is moved by offset_mm ([dx, dy, dz]) into the part's frame
+        first. Each reference loop is paired with the nearest loop of the part:
+        a different area means a misread feature, equal areas with different
+        extents a shifted frame. The part is measured through a fine STL, so
+        curved walls differ by up to the tessellation's chord error.
+        """
+        self._require_part()
+        offset = [0.0, 0.0, 0.0] if offset_mm is None else [float(v) for v in offset_mm]
+        if len(offset) != 3:
+            raise SolidWorksError(f"offset_mm needs [dx, dy, dz] (got {offset_mm}).")
+        reference = [tuple(tuple(c + o for c, o in zip(v, offset)) for v in tri) for tri in load_mesh(path, frame)]
+        part = self._part_triangles()
+        sections, worst_extent, worst_area = [], 0.0, 0.0
+        for h in heights_mm:
+            compared = compare_sections(section(reference, axis, h), section(part, axis, h))
+            for pair in compared["pairs"]:
+                worst_extent = max(worst_extent, pair["max_extent_diff_mm"])
+                worst_area = max(worst_area, abs(pair["area_diff_mm2"]))
+            sections.append({"height_mm": h, **compared})
+        return {"ok": True, "axis": axis, "sections": sections,
+                "worst_extent_diff_mm": round(worst_extent, 4), "worst_area_diff_mm2": round(worst_area, 4)}
 
     def set_material(self, name: str, database: str = "") -> dict:
         """Assign a material by name so mass/density reflect a real material.

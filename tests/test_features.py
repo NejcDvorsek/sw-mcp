@@ -788,3 +788,43 @@ def test_wizard_rejects_a_size_it_does_not_know(part):
     part.add_box(40, 20, 10)
     with pytest.raises(SolidWorksError, match="M3.3"):
         part.add_hole_wizard("clearance", "M3.3", "+z", 20, 10, 10)
+
+
+# --- compare the part with a reference mesh --------------------------------------
+
+def _box_stl(path, x0, y0, z0, w, h, d):
+    """A binary STL of a w x h x d box with its corner at (x0, y0, z0)."""
+    import struct
+    v = [(x0 + dx * w, y0 + dy * h, z0 + dz * d) for dx, dy, dz in
+         ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1))]
+    faces = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
+             (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    with open(path, "wb") as f:
+        f.write(b"\0" * 80 + struct.pack("<I", len(faces)))
+        for face in faces:
+            f.write(struct.pack("<12fH", 0, 0, 0, *[c for i in face for c in v[i]], 0))
+    return str(path)
+
+
+def test_part_matching_its_reference_mesh_shows_no_difference(part, tmp_path):
+    # the part is measured in its own frame: SolidWorks' STL shift to positive
+    # space would show up here as a 5 mm extent difference
+    part.add_extruded_profile([[-5, -5], [35, -5], [35, 15], [-5, 15]], 10)
+    result = part.compare_with_mesh(_box_stl(tmp_path / "ref.stl", -5, -5, 0, 40, 20, 10), "z", [2, 8])
+    assert result["worst_extent_diff_mm"] < 1e-3 and result["worst_area_diff_mm2"] < 1e-3
+
+
+def test_compare_shows_a_missing_pocket_as_an_area_difference(part, tmp_path):
+    part.add_box(40, 20, 10)
+    part.cut_profile([[10, 5], [30, 5], [30, 15], [10, 15]], 4)  # a 20 x 10 pocket, floor at z=6
+    result = part.compare_with_mesh(_box_stl(tmp_path / "ref.stl", 0, 0, 0, 40, 20, 10), "z", [3, 8])
+    low, high = result["sections"]
+    assert low["pairs"][0]["area_diff_mm2"] == pytest.approx(0, abs=1e-3), "below the pocket the part is solid"
+    assert high["unmatched_part"] == 1, "the pocket is a loop the reference does not have"
+
+
+def test_compare_moves_the_mesh_by_the_offset(part, tmp_path):
+    part.add_box(40, 20, 10)
+    shifted = _box_stl(tmp_path / "ref.stl", 100, 0, 0, 40, 20, 10)
+    assert part.compare_with_mesh(shifted, "z", [5])["worst_extent_diff_mm"] == pytest.approx(100, abs=1e-3)
+    assert part.compare_with_mesh(shifted, "z", [5], offset_mm=[-100, 0, 0])["worst_extent_diff_mm"] < 1e-3

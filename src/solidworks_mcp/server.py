@@ -451,6 +451,30 @@ async def set_dimension(dimension_name: str, value_mm: float) -> dict:
 
 
 @mcp.tool()
+async def slice_mesh(path: str, axis: str, heights_mm: list, frame: str = "object") -> dict:
+    """Cross-sections of an STL/3MF mesh at the given heights along axis 'x'/'y'/'z'.
+
+    For modelling a part that must fit something that only exists as a mesh.
+    Returns each section's closed loops, largest first, as polygon points (mm)
+    ready to use as profiles. frame (3MF): 'object' (the mesh's own frame) or
+    'build' (as placed on the slicer's plate).
+    """
+    return await _call(_session.slice_mesh, path, axis, heights_mm, frame)
+
+
+@mcp.tool()
+async def compare_with_mesh(path: str, axis: str, heights_mm: list, frame: str = "object",
+                            offset_mm: list | None = None) -> dict:
+    """Compare the current part's cross-sections with a reference mesh's at the same heights.
+
+    offset_mm [dx, dy, dz] moves the mesh into the part's frame. A different
+    area means a misread feature; equal areas with different extents a
+    shifted frame. Returns per-section pairs and the worst differences.
+    """
+    return await _call(_session.compare_with_mesh, path, axis, heights_mm, frame, offset_mm)
+
+
+@mcp.tool()
 async def list_dimensions() -> dict:
     """List every dimension in the current part: name (for set_dimension), feature, value, unit.
 
