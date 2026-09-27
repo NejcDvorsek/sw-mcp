@@ -26,7 +26,9 @@ from .constants import (
     SW_ADD_MATE_NO_ERROR,
     SW_BODY_SOLID,
     SW_BOUNDING_BOX_SOLID_ONLY,
+    SCREW_FITS,
     SW_CHAMFER_ANGLE_DISTANCE,
+    SW_COSMETIC_THREAD_WITH_CALLOUT,
     SW_DOC_ASSEMBLY,
     SW_DOC_PART,
     SW_END_COND_BLIND,
@@ -40,6 +42,10 @@ from .constants import (
     SW_PREF_DEFAULT_TEMPLATE_PART,
     SW_FM_SWEEP_THREAD,
     SW_FULLY_CONSTRAINED,
+    SW_ISO_SCREW_CLEARANCES,
+    SW_ISO_SOCKET_COUNTERSUNK,
+    SW_ISO_SOCKET_HEAD_CAP,
+    SW_ISO_TAPPED_HOLE,
     SW_REF_PLANE_DISTANCE,
     SW_SKETCH_ARC,
     SW_SKETCH_LINE,
@@ -58,6 +64,11 @@ from .constants import (
     SW_THREAD_METHOD_CUT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_VIEW_ISOMETRIC,
+    SW_WZD_COUNTERBORE,
+    SW_WZD_COUNTERSINK,
+    SW_WZD_HOLE,
+    SW_WZD_STANDARD_ISO,
+    SW_WZD_TAP,
     THREAD_PROFILE_EXTERNAL,
     THREAD_PROFILE_INTERNAL,
 )
@@ -1579,6 +1590,189 @@ class SolidWorksSession:
             "right_handed": True,
         })
 
+    # --- Hole Wizard: SolidWorks' own ISO tables -----------------------------------
+
+    # kind -> (swWzdGeneralHoleTypes_e, fastener type): ISO 273 clearances,
+    # counterbores for ISO 4762 socket head cap screws, countersinks for ISO 10642
+    # socket countersunk screws, ISO tapped holes.
+    _WIZARD_KINDS = {
+        "clearance": (SW_WZD_HOLE, SW_ISO_SCREW_CLEARANCES),
+        "counterbore": (SW_WZD_COUNTERBORE, SW_ISO_SOCKET_HEAD_CAP),
+        "countersink": (SW_WZD_COUNTERSINK, SW_ISO_SOCKET_COUNTERSUNK),
+        "tapped": (SW_WZD_TAP, SW_ISO_TAPPED_HOLE),
+    }
+    _WIZARD_THREADS = ("cosmetic", "modeled")
+
+    @staticmethod
+    def _wizard_values(kind: str, fit: int, through: bool) -> list:
+        """HoleWizard5's Value1..Value12 for `kind`; -1 means 'from the standard'.
+
+        Found by trial on SOLIDWORKS 2026, each vector verified by a volume test:
+        a plain hole cut through all fails unless its unused values are 0, while a
+        tapped hole given zeros cuts garbage. A tapped hole keeps its cosmetic
+        thread: without one SolidWorks mills the threaded length at the major
+        diameter.
+        """
+        if kind == "tapped":
+            thread_end = 1.0 if through else 0.0  # swWzdHoleThreadEndCondition_e
+            return [-1.0] * 6 + [float(SW_COSMETIC_THREAD_WITH_CALLOUT), thread_end] + [-1.0] * 4
+        if kind == "clearance":
+            return [float(fit)] + [0.0 if through else -1.0] * 11
+        return [-1.0, -1.0, -1.0, float(fit)] + [-1.0] * 8  # counterbore/countersink: fit is Value4
+
+    def _coarse_thread_size(self, size: str) -> str:
+        """'M3' -> 'M3x0.5': the coarse (largest) pitch the Metric Tap library has."""
+        if not re.fullmatch(r"M\d+(?:\.\d+)?", str(size)):
+            raise SolidWorksError(f"A modeled thread needs an ISO metric size like 'M3' (got '{size}').")
+        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        data = binding.wrap(feat_mgr.CreateDefinition(SW_FM_SWEEP_THREAD), self._mod.IThreadFeatureData)
+        if data is None:
+            raise SolidWorksError("CreateDefinition gave no thread definition (needs SOLIDWORKS 2016 or later).")
+        data.InitializeThreadData()
+        data.Type = THREAD_PROFILE_INTERNAL
+        sizes = [s for s in (self._sw.GetConfigurationNames(data.Type) or ()) if s.startswith(f"{size}x")]
+        if not sizes:
+            raise SolidWorksError(f"The '{THREAD_PROFILE_INTERNAL}' thread library has no {size} size.")
+        return max(sizes, key=lambda s: self._parse_thread_size(s)[1])
+
+    def _through_length(self, point_mm, normal, radius_mm: float) -> float:
+        """How far a hole of radius_mm entering at point_mm runs along -normal, to its far edge."""
+        edges = self._solid_body().GetEdges() or ()
+        if not isinstance(edges, (list, tuple)):
+            edges = [edges]
+        length = 0.0
+        for edge_dispatch in edges:
+            curve = binding.wrap(binding.wrap(edge_dispatch, self._mod.IEdge).GetCurve(), self._mod.ICurve)
+            if curve is None or not curve.IsCircle():
+                continue
+            params = curve.CircleParams  # centre xyz, axis xyz, radius (m)
+            if abs(m_to_mm(params[6]) - radius_mm) > self._THREAD_DIAMETER_TOLERANCE_MM:
+                continue
+            offset = [m_to_mm(c) - p for c, p in zip(params[0:3], point_mm)]
+            depth = -sum(o * n for o, n in zip(offset, normal))
+            off_axis = math.dist(offset, [-depth * n for n in normal])
+            if off_axis < self._EDGE_POINT_TOLERANCE_MM:
+                length = max(length, depth)
+        if length <= 0:
+            raise SolidWorksError("Could not find where the through hole leaves the part.")
+        return length
+
+    def _pin_wizard_position(self, feat, point_mm) -> tuple:
+        """Fully define a wizard hole's position sketch, AT point_mm.
+
+        The Hole Wizard puts its hole where the face was picked, which lands some
+        0.04 mm off, in an under-defined sketch. Its point gets dimensions from the
+        origin that carry the exact coordinates. Returns (dimensions, fully_defined).
+        """
+        model = self._model
+        position = next((s for s in self._sub_features(feat) if s.GetTypeName2() == "ProfileFeature"
+                         and len(binding.wrap(s.GetSpecificFeature2(), self._mod.ISketch).GetSketchPoints2() or ()) == 1
+                         and not binding.wrap(s.GetSpecificFeature2(), self._mod.ISketch).GetSketchSegments()), None)
+        if position is None:
+            raise SolidWorksError(f"The Hole Wizard hole '{feat.Name}' has no position sketch to define.")
+        model.ClearSelection2(True)
+        if not position.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the position sketch of '{feat.Name}'.")
+        model.EditSketch()
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        try:
+            sketch, definer = self._open_sketch_definer(sk)
+            point = binding.wrap(sketch.GetSketchPoints2()[0], self._mod.ISketchPoint)
+            u, v, _ = self._sketch_coords(sketch, *(mm_to_m(c) for c in point_mm))
+            u0, v0, _ = self._sketch_coords(sketch, 0.0, 0.0, 0.0)
+            # x/y are the face sketch's own horizontal/vertical directions
+            dims = definer.place_point(point, (m_to_mm(u - u0), m_to_mm(v - v0)))
+            return dims, definer.fully_defined()
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)  # leave the position sketch
+
+    def _wizard_hole_info(self, feat, kind: str, size: str, fit: str) -> dict:
+        """The sizes SolidWorks took from its standard table for this hole (mm, degrees)."""
+        data = binding.wrap(feat.GetDefinition(), self._mod.IWizardHoleFeatureData2)
+        mm = lambda v: round(m_to_mm(v), 4)
+        info = {"standard": "ISO", "kind": kind, "size": size}
+        if kind == "tapped":
+            info.update(tap_drill_diameter_mm=mm(data.TapDrillDiameter or data.ThruTapDrillDiameter),
+                        thread_diameter_mm=mm(data.ThreadDiameter),
+                        thread_depth_mm=mm(data.ThreadDepth), cosmetic_thread=data.CosmeticThreadType > 0)
+        else:
+            info.update(fit=fit, diameter_mm=mm(data.ThruHoleDiameter or data.HoleDiameter))
+        if kind == "counterbore":
+            info.update(cbore_diameter_mm=mm(data.CounterBoreDiameter), cbore_depth_mm=mm(data.CounterBoreDepth))
+        if kind == "countersink":
+            info.update(csink_diameter_mm=mm(data.CounterSinkDiameter),
+                        csink_angle_deg=round(math.degrees(data.CounterSinkAngle), 3))
+        return info
+
+    def add_hole_wizard(self, kind: str, size: str, face: str, x_mm: float, y_mm: float, z_mm: float,
+                        depth_mm: float | None = None, fit: str = "normal", thread: str = "cosmetic",
+                        name: str | None = None) -> dict:
+        """An ISO hole from SolidWorks' Hole Wizard, sized by its standard tables.
+
+        kind: 'clearance' (ISO 273), 'counterbore' (socket head cap screw,
+        ISO 4762), 'countersink' (socket countersunk screw, ISO 10642) or
+        'tapped'. size: ISO metric, e.g. 'M3'. Centred at 3D point (x, y, z) on
+        the face through it (as add_hole_on_face); through all, or depth_mm deep
+        (a blind hole ends in a 118 degree drill point). fit: 'close', 'normal'
+        or 'loose' (not for tapped). thread (tapped only): 'cosmetic' drills the
+        ISO tap drill and adds SolidWorks' cosmetic thread; 'modeled' drills the
+        ISO basic minor diameter and cuts a real, printable thread over the
+        standard thread depth (all the way through a through hole). Returns the
+        standard's sizes in `hole`, and the position as dimensions x/y.
+        """
+        model = self._require_model()
+        if kind not in self._WIZARD_KINDS:
+            raise SolidWorksError(f"Unknown hole kind '{kind}'. Use one of {sorted(self._WIZARD_KINDS)}.")
+        if fit not in SCREW_FITS:
+            raise SolidWorksError(f"Unknown fit '{fit}'. Use one of {sorted(SCREW_FITS)}.")
+        if thread not in self._WIZARD_THREADS:
+            raise SolidWorksError(f"Unknown thread '{thread}'. Use 'cosmetic' or 'modeled'.")
+        if thread == "modeled" and kind != "tapped":
+            raise SolidWorksError("A modeled thread needs kind='tapped'.")
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        point = (x_mm, y_mm, z_mm)
+        coarse = self._coarse_thread_size(size) if thread == "modeled" else None
+        diameter_m = -1.0  # from the standard
+        if coarse:
+            major, pitch = self._parse_thread_size(coarse)
+            diameter_m = mm_to_m(self._thread_minor_diameter(major, pitch))
+
+        normal, side = self._parse_face_selector(face, default_side=None)
+        self._select_face_through(self._solid_body(), normal, side, point, face)  # a face through the point?
+        model.ClearSelection2(True)
+        ext = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        if not ext.SelectByID2("", "FACE", *(mm_to_m(c) for c in point), False, 0, None, 0):
+            raise SolidWorksError(f"Could not pick the {face} face at ({x_mm:g}, {y_mm:g}, {z_mm:g}) mm.")
+        hole_type, fastener = self._WIZARD_KINDS[kind]
+        through = depth_mm is None
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        feat = feat_mgr.HoleWizard5(
+            hole_type, SW_WZD_STANDARD_ISO, fastener, size,
+            SW_END_COND_THROUGH_ALL if through else SW_END_COND_BLIND,
+            diameter_m, -1.0 if through else mm_to_m(depth_mm), -1.0,  # Diameter, Depth, Length (slots)
+            *self._wizard_values(kind, SCREW_FITS[fit], through),
+            "", False, False, True, False, False, False,  # ThreadClass (inch only), RevDir, scope flags
+        )
+        if feat is None:
+            raise SolidWorksError(
+                f"The Hole Wizard made no {kind} hole of size '{size}'. Is it an ISO metric size "
+                f"in SolidWorks' table (e.g. 'M3', 'M4', 'M10'), with material at the point?"
+            )
+        feat = binding.wrap(feat, self._mod.IFeature)
+        dims, fully_defined = self._pin_wizard_position(feat, point)
+        info = self._wizard_hole_info(feat, kind, size, fit)
+        result = self._finish_feature(feat, name or feat.Name, dimensions=dims,
+                                      fully_defined=fully_defined, hole=info)
+        if coarse:
+            radius = m_to_mm(diameter_m) / 2
+            length = self._through_length(point, normal, radius) if through else info["thread_depth_mm"]
+            threaded = self.add_thread(coarse, x_mm, y_mm, z_mm, length, internal=True,
+                                       name=f"{result['feature']} Thread")
+            result.update(thread=threaded["thread"], mass_properties=threaded["mass_properties"])
+        return result
+
     def _sketch_coords(self, sketch, x_m, y_m, z_m):
         """A 3D model point (m) in the sketch's own coordinates (u, v, w), in m.
 
@@ -2080,14 +2274,28 @@ class SolidWorksSession:
                 pass
         return names
 
+    def _sub_features(self, feat) -> list:
+        subs, sub = [], binding.wrap(feat.GetFirstSubFeature(), self._mod.IFeature)
+        while sub is not None:
+            subs.append(sub)
+            sub = binding.wrap(sub.GetNextSubFeature(), self._mod.IFeature)
+        return subs
+
     def _under_defined_sketches(self) -> list:
-        """'Sketch3 (status 2)' for every sketch in the part that is not fully defined."""
-        found = []
+        """'Sketch3 (status 2)' for every sketch in the part that is not fully defined.
+
+        Includes sketches that exist only as sub-features, such as the position
+        sketch of a Hole Wizard hole, which the feature walk does not visit.
+        """
+        found, seen = [], set()
         for feat in self._iter_features():
-            if feat.GetTypeName2() == "ProfileFeature":
-                status = binding.wrap(feat.GetSpecificFeature2(), self._mod.ISketch).GetConstrainedStatus()
+            for candidate in [feat, *self._sub_features(feat)]:
+                if candidate.GetTypeName2() != "ProfileFeature" or candidate.Name in seen:
+                    continue
+                seen.add(candidate.Name)
+                status = binding.wrap(candidate.GetSpecificFeature2(), self._mod.ISketch).GetConstrainedStatus()
                 if status != SW_FULLY_CONSTRAINED:
-                    found.append(f"{feat.Name} (status {status})")
+                    found.append(f"{candidate.Name} (status {status})")
         return found
 
     def _ref_planes(self) -> list:

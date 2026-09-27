@@ -29,7 +29,7 @@ from .constants import (
     SW_SKETCH_LINE,
 )
 from .errors import SolidWorksError
-from .units import m_to_mm
+from .units import m_to_mm, mm_to_m
 
 # Input coordinates (mm) this close count as equal: exactly axis-aligned
 # segments, points exactly on an origin axis. Anything further apart is real
@@ -262,6 +262,31 @@ class SketchDefiner:
         finally:
             self._resume(paused)
 
+    def place_point(self, point, target_mm, names=None) -> dict:
+        """Constrain a lone sketch point AT target_mm (sketch coordinates relative
+        to the origin), not where it happens to sit: its dimensions get the target
+        values, so a point SolidWorks placed a few micrometres off lands exactly.
+        Returns {role: dimension name}; names as for define()."""
+        names = names or {}
+        plan = plan_sketch([target_mm], [])
+        paused = self._pause()
+        try:
+            if plan.at_origin is not None:
+                self._relate(SW_CONSTRAINT_COINCIDENT, "on-origin", point, self._origin)
+            for _ in plan.origin_x:
+                self._relate(SW_CONSTRAINT_VERTICAL_POINTS, "above-origin", point, self._origin)
+            for _ in plan.origin_y:
+                self._relate(SW_CONSTRAINT_HORIZONTAL_POINTS, "level-with-origin", point, self._origin)
+            dims = {}
+            for axis, add, entries in (("x", self._model.AddHorizontalDimension2, plan.x_dims),
+                                       ("y", self._model.AddVerticalDimension2, plan.y_dims)):
+                for i, value in entries:
+                    role = names.get((axis, i), axis)
+                    dims[role] = self._dimension(add, point, role, abs(value))
+            return dims
+        finally:
+            self._resume(paused)
+
     def fix(self, segments) -> None:
         """Freeze lines, arcs and splines: fully defined, nothing to edit.
 
@@ -311,12 +336,16 @@ class SketchDefiner:
         if self._relations.AddRelation(_entities(*entities), kind) is None:
             raise SolidWorksError(f"SolidWorks refused a {label} relation while defining the sketch.")
 
-    def _dimension(self, add, point, role: str) -> str:
+    def _dimension(self, add, point, role: str, value_mm=None) -> str:
+        """Dimension a point from the origin; with value_mm, drive it to that value."""
         if not (point.Select4(False, None) and self._origin.Select4(True, None)):
             raise SolidWorksError(f"Could not select a sketch point and the origin for dimension '{role}'.")
         display = add(point.X + _TEXT_OFFSET_M, point.Y + _TEXT_OFFSET_M, 0.0)
         if display is None:
             raise SolidWorksError(f"SolidWorks refused the dimension '{role}'.")
+        if value_mm is not None:
+            dim = binding.wrap(binding.wrap(display, self._mod.IDisplayDimension).GetDimension2(0), self._mod.IDimension)
+            dim.SystemValue = mm_to_m(value_mm)
         return self._named(display, role)
 
     def _diameter(self, circle, role: str) -> str:

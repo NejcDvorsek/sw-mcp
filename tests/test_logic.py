@@ -249,6 +249,22 @@ def test_parse_face_selector_without_side_can_leave_the_choice_to_a_point(s):
     assert s._parse_face_selector("+z:inner", default_side=None) == ((0.0, 0.0, 1.0), "inner")
 
 
+def test_wizard_values_follow_what_solidworks_accepts():
+    """HoleWizard5's twelve values were found by trial; these pin the findings.
+    A through plain hole fails with -1 in the unused slots (it needs 0), a
+    tapped hole given zeros cuts garbage, and a tapped hole without its
+    cosmetic thread mills the threaded length at the major diameter."""
+    values = SolidWorksSession._wizard_values
+    assert values("clearance", 1, True) == [1.0] + [0.0] * 11
+    assert values("clearance", 2, False) == [2.0] + [-1.0] * 11
+    assert values("counterbore", 0, True)[3] == 0.0, "the screw fit is Value4 for a counterbore"
+    tapped = values("tapped", 1, True)
+    assert tapped[6] == 1.0, "a tapped hole must keep its cosmetic thread (Value7)"
+    assert (tapped[7], values("tapped", 1, False)[7]) == (1.0, 0.0), "thread end follows the hole's end"
+    assert all(len(values(k, 1, t)) == 12 for k in ("clearance", "counterbore", "countersink", "tapped")
+               for t in (True, False))
+
+
 def test_parse_face_selector_rejects_unknown_side(s):
     with pytest.raises(SolidWorksError):
         s._parse_face_selector("+z:middle")

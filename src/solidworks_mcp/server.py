@@ -311,6 +311,23 @@ async def add_hole_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: flo
 
 
 @mcp.tool()
+async def add_hole_wizard(kind: str, size: str, face: str, x_mm: float, y_mm: float, z_mm: float,
+                          depth_mm: float | None = None, fit: str = "normal", thread: str = "cosmetic",
+                          name: str | None = None) -> dict:
+    """An ISO hole from SolidWorks' Hole Wizard, sized by its standard tables.
+
+    kind: 'clearance' (ISO 273), 'counterbore' (socket head cap screw),
+    'countersink' (socket countersunk screw) or 'tapped'; size e.g. 'M3'.
+    Centred at (x, y, z) mm on the face through that point; through all, or
+    depth_mm deep. fit: 'close' / 'normal' / 'loose'. For tapped holes
+    thread='modeled' cuts a real, printable ISO thread instead of SolidWorks'
+    cosmetic one. Returns the standard's sizes in `hole` and mass properties.
+    """
+    return await _call(_session.add_hole_wizard, kind, size, face, x_mm, y_mm, z_mm,
+                       depth_mm, fit, thread, name)
+
+
+@mcp.tool()
 async def add_boss_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
                            height_mm: float, name: str = "Boss") -> dict:
     """Grow a round boss (standoff, peg) height_mm out of ANY planar face, centred at (x, y, z) mm.

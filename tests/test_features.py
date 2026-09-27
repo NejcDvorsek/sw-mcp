@@ -687,3 +687,104 @@ def test_list_dimensions_names_every_dimension_with_its_value(part):
         assert name in listed, f"{name} is missing from list_dimensions"
         assert abs(listed[name]["value"] - value) < 1e-6 and listed[name]["unit"] == "mm"
     assert all(d["driving"] for d in listed.values())
+
+
+# --- Hole Wizard: SolidWorks' own ISO tables ------------------------------------
+# A 40 x 20 x 10 block, holes from its top face at (20, 10). Clearances follow
+# ISO 273, tap drills ISO 2306; counterbore/countersink sizes are SolidWorks'
+# ISO tables for socket head (ISO 4762) and countersunk (ISO 10642) screws.
+
+def _drill_point(d):
+    """Volume of a 118 degree drill point of diameter d."""
+    r = d / 2
+    return math.pi * r * r * (r / math.tan(math.radians(59))) / 3
+
+
+@pytest.mark.parametrize("fit,d", [("close", 3.2), ("normal", 3.4), ("loose", 3.6)])
+def test_wizard_clearance_hole_follows_iso_273(part, fit, d):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("clearance", "M3", "+z", 20, 10, 10, fit=fit)
+    assert hole["hole"]["diameter_mm"] == pytest.approx(d), f"an ISO 273 {fit} M3 clearance hole is Ø{d}"
+    assert abs(8000 - vol(hole) - math.pi * (d / 2) ** 2 * 10) < 0.01
+
+
+def test_wizard_blind_clearance_hole_ends_in_a_drill_point(part):
+    part.add_box(40, 20, 10)
+    got = vol(part.add_hole_wizard("clearance", "M3", "+z", 20, 10, 10, depth_mm=6))
+    assert abs(8000 - got - (math.pi * 1.7 ** 2 * 6 + _drill_point(3.4))) < 0.01
+
+
+def test_wizard_counterbore_for_a_socket_head_screw(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("counterbore", "M3", "+z", 20, 10, 10)
+    info = hole["hole"]
+    assert (info["diameter_mm"], info["cbore_diameter_mm"], info["cbore_depth_mm"]) == pytest.approx((3.4, 6.5, 3.4))
+    removed = math.pi * 1.7 ** 2 * 10 + math.pi * (3.25 ** 2 - 1.7 ** 2) * 3.4
+    assert abs(8000 - vol(hole) - removed) < 0.01
+
+
+def test_wizard_blind_counterbore(part):
+    # blind depth counts from the surface, the counterbore included
+    part.add_box(40, 20, 10)
+    got = vol(part.add_hole_wizard("counterbore", "M3", "+z", 20, 10, 10, depth_mm=6))
+    removed = math.pi * 3.25 ** 2 * 3.4 + math.pi * 1.7 ** 2 * (6 - 3.4) + _drill_point(3.4)
+    assert abs(8000 - got - removed) < 0.01
+
+
+def test_wizard_countersink_for_a_countersunk_screw(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("countersink", "M3", "+z", 20, 10, 10)
+    info = hole["hole"]
+    assert (info["csink_diameter_mm"], info["csink_angle_deg"]) == pytest.approx((6.72, 90.0))
+    h = (6.72 - 3.4) / 2  # a 90 degree countersink is as deep as it is wide per side
+    cone = math.pi * h / 3 * (3.36 ** 2 + 3.36 * 1.7 + 1.7 ** 2) - math.pi * 1.7 ** 2 * h
+    assert abs(8000 - vol(hole) - (math.pi * 1.7 ** 2 * 10 + cone)) < 0.01
+
+
+def test_wizard_tapped_hole_uses_the_iso_tap_drill(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("tapped", "M3", "+z", 20, 10, 10, depth_mm=8)
+    info = hole["hole"]
+    assert (info["tap_drill_diameter_mm"], info["thread_depth_mm"]) == pytest.approx((2.5, 6.0))
+    assert info["cosmetic_thread"] is True
+    assert abs(8000 - vol(hole) - (math.pi * 1.25 ** 2 * 8 + _drill_point(2.5))) < 0.01
+
+
+def test_wizard_tapped_hole_with_a_modeled_thread(part):
+    # printable: the hole is drilled at the ISO basic minor diameter and the
+    # Thread feature cuts the bolt's tooth over the standard thread depth (2D)
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("tapped", "M3", "+z", 20, 10, 10, depth_mm=8, thread="modeled")
+    d1 = 3 - 1.0825318 * 0.5
+    assert hole["thread"]["size"] == "M3x0.5" and hole["thread"]["length_mm"] == pytest.approx(6.0)
+    expected = math.pi * (d1 / 2) ** 2 * 8 + _drill_point(d1) + 6 * _iso_groove_mm3_per_mm(3, 0.5, 0.375, 0.0625)
+    assert abs(8000 - vol(hole) - expected) < 0.002 * expected
+
+
+def test_wizard_through_tapped_hole_with_a_modeled_thread_runs_all_the_way(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("tapped", "M4", "+z", 20, 10, 10, thread="modeled")
+    d1 = 4 - 1.0825318 * 0.7
+    assert hole["thread"]["length_mm"] == pytest.approx(10.0), "a through tapped hole is threaded all the way"
+    expected = math.pi * (d1 / 2) ** 2 * 10 + 10 * _iso_groove_mm3_per_mm(4, 0.7, 0.525, 0.0875)
+    # The groove matches ISO exactly per mm, but the Thread feature's ends vary
+    # by up to ~0.5 mm^3 (measured: -0.34 where it runs out of a 10 mm plate).
+    # A thread one turn short would miss 1.3 mm^3, so this still catches that.
+    assert abs(8000 - vol(hole) - expected) < 0.6, "the thread does not run the full 10 mm through the plate"
+
+
+def test_wizard_hole_lands_exactly_and_its_position_is_a_dimension(part):
+    # SolidWorks places a wizard hole where the face is picked, some 0.04 mm
+    # off; the tool pins the position sketch to the exact point
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_wizard("clearance", "M3", "+z", 20, 14, 10)
+    assert hole["fully_defined"] is True
+    assert part._circular_edges_at(20, 14, 10), "the hole edge is not centred on (20, 14): it landed off the point"
+    com = part.set_dimension(hole["dimensions"]["x"], 30)["mass_properties"]["center_of_mass_mm"]
+    assert com[0] < 20, "moving the hole to x=30 must shift the centre of mass to -x"
+
+
+def test_wizard_rejects_a_size_it_does_not_know(part):
+    part.add_box(40, 20, 10)
+    with pytest.raises(SolidWorksError, match="M3.3"):
+        part.add_hole_wizard("clearance", "M3.3", "+z", 20, 10, 10)

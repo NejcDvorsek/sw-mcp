@@ -49,6 +49,19 @@ SW_THREAD_END_BLIND = 0          # swThreadEndCondition_e
 THREAD_PROFILE_EXTERNAL = "Metric Die"
 THREAD_PROFILE_INTERNAL = "Metric Tap"
 
+# Hole Wizard (IFeatureManager.HoleWizard5): SolidWorks' own standard tables.
+SW_WZD_COUNTERBORE = 0             # swWzdGeneralHoleTypes_e
+SW_WZD_COUNTERSINK = 1
+SW_WZD_HOLE = 2
+SW_WZD_TAP = 4
+SW_WZD_STANDARD_ISO = 8            # swWzdHoleStandards_e
+SW_ISO_SOCKET_HEAD_CAP = 139       # swWzdHoleStandardFastenerTypes_e (ISO 4762)
+SW_ISO_SOCKET_COUNTERSUNK = 140    # ISO 10642
+SW_ISO_SCREW_CLEARANCES = 144      # ISO 273
+SW_ISO_TAPPED_HOLE = 147
+SW_COSMETIC_THREAD_WITH_CALLOUT = 1  # swWzdHoleCosmeticThreadTypes_e
+SCREW_FITS = {"close": 0, "normal": 1, "loose": 2}  # swWzdHoleScrewClearanceTypes_e
+
 # STL/3MF tessellation, set as ISldWorks user preferences BEFORE SaveAs3 (the mesh
 # translator reads them at save time). These are GLOBAL/application prefs, so the
 # caller must save and restore them around the export.
