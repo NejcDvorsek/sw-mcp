@@ -466,6 +466,37 @@ class SolidWorksSession:
             result["dimensions"]["depth"] = f"D1@{result['feature']}"
         return result
 
+    def _extrude_sketch(self, depth_mm: float, name: str, sketch: dict, hint: str = "",
+                        role: str = "depth") -> dict:
+        """Extrude the sketch just closed (it stays selected) depth_mm along its
+        normal, merged with the body; finish the feature and name its depth.
+
+        Shared by every boss. `sketch` is the _define_sketch result, `role` the
+        depth's name among the dimensions, `hint` what to check when it fails.
+        """
+        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        extrude = feat_mgr.FeatureExtrusion3(
+            True, False, False,        # Sd (single dir), Flip, Dir
+            SW_END_COND_BLIND, 0,      # T1, T2 (end conditions)
+            mm_to_m(depth_mm), 0.0,    # D1 (depth), D2
+            False, False,              # Dchk1, Dchk2
+            False, False,              # Ddir1, Ddir2
+            0.0, 0.0,                  # Dang1, Dang2 (draft, radians)
+            False, False,              # OffsetReverse1, OffsetReverse2
+            False, False,              # TranslateSurface1, TranslateSurface2
+            True,                      # Merge
+            True,                      # UseFeatScope
+            True,                      # UseAutoSelect
+            SW_START_SKETCH_PLANE,     # T0 (start condition)
+            0.0,                       # StartOffset
+            False,                     # FlipStartOffset
+        )
+        if extrude is None:
+            raise SolidWorksError(f"FeatureExtrusion3 failed (None). {hint}".strip())
+        result = self._finish_feature(extrude, name, **sketch)
+        result["dimensions"][role] = f"D1@{result['feature']}"
+        return result
+
     def add_box(self, width_mm: float, height_mm: float, depth_mm: float,
                 name: str = "BlockExtrude") -> dict:
         """Sketch a rectangle on the first plane and extrude it; returns mass props.
@@ -496,27 +527,8 @@ class SolidWorksSession:
             model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch (it stays selected for the extrude)
 
-        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        extrude = feat_mgr.FeatureExtrusion3(
-            True, False, False,        # Sd (single dir), Flip, Dir
-            SW_END_COND_BLIND, 0,      # T1, T2 (end conditions)
-            mm_to_m(depth_mm), 0.0,    # D1 (depth), D2
-            False, False,              # Dchk1, Dchk2
-            False, False,              # Ddir1, Ddir2
-            0.0, 0.0,                  # Dang1, Dang2 (draft, radians)
-            False, False,              # OffsetReverse1, OffsetReverse2
-            False, False,              # TranslateSurface1, TranslateSurface2
-            True,                      # Merge
-            True,                      # UseFeatScope
-            True,                      # UseAutoSelect
-            SW_START_SKETCH_PLANE,     # T0 (start condition)
-            0.0,                       # StartOffset
-            False,                     # FlipStartOffset
-        )
-        if extrude is None:
-            raise SolidWorksError("FeatureExtrusion3 failed (None). Is the sketch valid?")
-        result = self._finish_feature(extrude, name, **sketch)
-        result["depth_dimension"] = result["dimensions"]["depth"] = f"D1@{result['feature']}"
+        result = self._extrude_sketch(depth_mm, name, sketch, "Is the sketch valid?")
+        result["depth_dimension"] = result["dimensions"]["depth"]
         return result
 
     @staticmethod
@@ -749,22 +761,7 @@ class SolidWorksSession:
 
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sketch = self._sketch_closed_polygon(sk, points_mm)
-
-        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        extrude = feat_mgr.FeatureExtrusion3(
-            True, False, False,
-            SW_END_COND_BLIND, 0,
-            mm_to_m(depth_mm), 0.0,
-            False, False, False, False, 0.0, 0.0,
-            False, False, False, False,
-            True, True, True,
-            SW_START_SKETCH_PLANE, 0.0, False,
-        )
-        if extrude is None:
-            raise SolidWorksError("FeatureExtrusion3 failed (None). Is the profile closed and not self-intersecting?")
-        result = self._finish_feature(extrude, name, **sketch)
-        result["dimensions"]["depth"] = f"D1@{result['feature']}"
-        return result
+        return self._extrude_sketch(depth_mm, name, sketch, "Is the profile closed and not self-intersecting?")
 
     def add_extruded_spline(self, points_mm: list, depth_mm: float,
                             name: str = "Spline") -> dict:
@@ -802,22 +799,7 @@ class SolidWorksSession:
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch
-
-        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        extrude = feat_mgr.FeatureExtrusion3(
-            True, False, False,
-            SW_END_COND_BLIND, 0,
-            mm_to_m(depth_mm), 0.0,
-            False, False, False, False, 0.0, 0.0,
-            False, False, False, False,
-            True, True, True,
-            SW_START_SKETCH_PLANE, 0.0, False,
-        )
-        if extrude is None:
-            raise SolidWorksError("FeatureExtrusion3 failed (None). Is the spline closed and not self-intersecting?")
-        result = self._finish_feature(extrude, name, **sketch)
-        result["dimensions"]["depth"] = f"D1@{result['feature']}"
-        return result
+        return self._extrude_sketch(depth_mm, name, sketch, "Is the spline closed and not self-intersecting?")
 
     def add_disc(self, diameter_mm: float, thickness_mm: float, name: str = "Disc") -> dict:
         """Create a disc / puck / flange: a circle extruded along +Z, centred at origin.
@@ -847,22 +829,7 @@ class SolidWorksSession:
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)
-
-        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        extrude = feat_mgr.FeatureExtrusion3(
-            True, False, False,
-            SW_END_COND_BLIND, 0,
-            mm_to_m(thickness_mm), 0.0,
-            False, False, False, False, 0.0, 0.0,
-            False, False, False, False,
-            True, True, True,
-            SW_START_SKETCH_PLANE, 0.0, False,
-        )
-        if extrude is None:
-            raise SolidWorksError("FeatureExtrusion3 failed (None).")
-        result = self._finish_feature(extrude, name, **sketch)
-        result["dimensions"]["thickness"] = f"D1@{result['feature']}"
-        return result
+        return self._extrude_sketch(thickness_mm, name, sketch, role="thickness")
 
     def add_cylinder(self, diameter_mm: float, height_mm: float, name: str = "Revolve") -> dict:
         """Create a cylinder by revolving a rectangular profile 360 deg about an axis.
@@ -1848,22 +1815,6 @@ class SolidWorksSession:
             self._model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when a point is rejected
 
-    def _extrude_boss(self, depth_mm: float):
-        """Extrude the sketch just closed (and selected) depth_mm out of its face, merged."""
-        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
-        boss = feat_mgr.FeatureExtrusion3(
-            True, False, False,
-            SW_END_COND_BLIND, 0,
-            mm_to_m(depth_mm), 0.0,
-            False, False, False, False, 0.0, 0.0,
-            False, False, False, False,
-            True, True, True,
-            SW_START_SKETCH_PLANE, 0.0, False,
-        )
-        if boss is None:
-            raise SolidWorksError("FeatureExtrusion3 failed (None). Is the profile closed and on the face?")
-        return boss
-
     def add_hole_on_face(self, diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
                          depth_mm: float | None = None, name: str = "Hole") -> dict:
         """Drill a round hole on any planar face, centred at 3D point (x, y, z).
@@ -1908,9 +1859,7 @@ class SolidWorksSession:
         if diameter_mm <= 0 or height_mm <= 0:
             raise SolidWorksError(f"diameter and height must be > 0 (got {diameter_mm}, {height_mm}).")
         defined = self._sketch_circle_on_face(face, diameter_mm, x_mm, y_mm, z_mm)
-        result = self._finish_feature(self._extrude_boss(height_mm), name, **defined)
-        result["dimensions"]["height"] = f"D1@{result['feature']}"
-        return result
+        return self._extrude_sketch(height_mm, name, defined, "Is the circle on the face?", role="height")
 
     def add_extruded_profile_on_face(self, points_mm: list, face: str, depth_mm: float,
                                      name: str = "Boss") -> dict:
@@ -1924,9 +1873,7 @@ class SolidWorksSession:
         if depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         defined = self._sketch_polygon_on_face(face, points_mm)
-        result = self._finish_feature(self._extrude_boss(depth_mm), name, **defined)
-        result["dimensions"]["depth"] = f"D1@{result['feature']}"
-        return result
+        return self._extrude_sketch(depth_mm, name, defined, "Is the profile closed and on the face?")
 
     def cut_profile(self, points_mm: list, depth_mm: float | None = None,
                     name: str = "Cut") -> dict:
