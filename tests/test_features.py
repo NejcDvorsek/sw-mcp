@@ -616,3 +616,74 @@ def test_profile_with_many_points_is_fixed_not_dimensioned(part):
     assert result["fully_defined"] is True
     assert set(result["dimensions"]) == {"depth"}
     assert abs(vol(result) - n / 2 * r * r * math.sin(2 * math.pi / n) * 5) < 0.01
+
+
+# --- faces found by their point; blind holes and bosses on any face ------------
+# '+z' used to mean the OUTERMOST +z face only (':inner' the innermost), so a
+# pocket floor or a step in between could not be sketched on.
+
+def test_hole_on_a_pocket_floor_is_found_by_its_point(part):
+    # 20x10 pocket 4 deep: its floor is the +z face at z=6, not the top at z=10
+    part.add_box(40, 20, 10)
+    part.cut_profile([[10, 5], [30, 5], [30, 15], [10, 15]], 4)
+    got = vol(part.add_hole_on_face(4, "+z", 20, 10, 6))
+    assert abs(got - (8000 - 800 - math.pi * 4 * 6)) < 0.1, "the hole was not drilled from the pocket floor"
+
+
+def test_face_between_the_outermost_and_innermost_is_found_by_its_point(part):
+    # three +z levels: z=10 (x 20..40), z=7 (x 10..20), z=4 (x 0..10)
+    part.add_box(40, 20, 10)
+    part.cut_profile([[0, 0], [20, 0], [20, 20], [0, 20]], 3)
+    part.cut_profile([[0, 0], [10, 0], [10, 20], [0, 20]], 6)
+    before = vol(part.get_mass_properties())
+    got = vol(part.add_hole_on_face(4, "+z", 15, 10, 7))
+    assert abs(before - got - math.pi * 4 * 7) < 0.1, "the hole was not drilled from the middle step"
+
+
+def test_point_on_no_face_facing_that_way_still_raises(part):
+    part.add_box(40, 20, 10)
+    with pytest.raises(SolidWorksError):
+        part.add_hole_on_face(4, "+z", 20, 10, 8)
+
+
+def test_blind_hole_on_a_side_face(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole_on_face(6, "+x", 40, 10, 5, depth_mm=4)
+    assert abs(vol(hole) - (8000 - math.pi * 9 * 4)) < 0.1
+    assert set(hole["dimensions"]) == {"diameter", "x", "y", "depth"}
+    got = vol(part.set_dimension(hole["dimensions"]["depth"], 8))
+    assert abs(got - (8000 - math.pi * 9 * 8)) < 0.1, "'depth' does not drive the blind hole"
+
+
+def test_profile_boss_on_the_top_face(part):
+    part.add_box(40, 20, 10)
+    boss = part.add_extruded_profile_on_face([[10, 5, 10], [30, 5, 10], [30, 15, 10], [10, 15, 10]], "+z", 5)
+    assert abs(vol(boss) - (8000 + 200 * 5)) < 0.1
+    assert abs(boss["mass_properties"]["bounding_box_mm"]["max_mm"][2] - 15) < 1e-6, "the boss must grow out of the face"
+
+
+def test_round_boss_on_a_side_face(part):
+    part.add_box(40, 20, 10)
+    boss = part.add_boss_on_face(8, "+x", 40, 10, 5, 6)
+    assert abs(vol(boss) - (8000 + math.pi * 16 * 6)) < 0.1
+    assert abs(boss["mass_properties"]["bounding_box_mm"]["max_mm"][0] - 46) < 1e-6, "the boss must grow out of the face"
+    assert set(boss["dimensions"]) == {"diameter", "x", "y", "height"}
+
+
+def test_standoff_is_a_boss_with_a_blind_hole_in_its_top(part):
+    # a PCB standoff: 8 mm boss 6 high, then a 4 mm insert hole 5 deep in its top
+    part.add_box(40, 20, 10)
+    part.add_boss_on_face(8, "+z", 20, 10, 10, 6)
+    got = vol(part.add_hole_on_face(4, "+z", 20, 10, 16, depth_mm=5))
+    assert abs(got - (8000 + math.pi * 16 * 6 - math.pi * 4 * 5)) < 0.1
+
+
+def test_list_dimensions_names_every_dimension_with_its_value(part):
+    part.add_box(40, 20, 10)
+    hole = part.add_hole(8, 20, 10)
+    listed = {d["name"]: d for d in part.list_dimensions()["dimensions"]}
+    for name, value in ((hole["dimensions"]["diameter"], 8), (hole["dimensions"]["x"], 20),
+                        (hole["dimensions"]["y"], 10), ("D1@BlockExtrude", 10)):
+        assert name in listed, f"{name} is missing from list_dimensions"
+        assert abs(listed[name]["value"] - value) < 1e-6 and listed[name]["unit"] == "mm"
+    assert all(d["driving"] for d in listed.values())

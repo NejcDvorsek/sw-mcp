@@ -229,15 +229,17 @@ def test_shelled_box_has_two_faces_per_normal(part):
     assert part._pick_planar_face(faces, (0.0, 0.0, 1.0), "inner")[1] == pytest.approx(2.0)
 
 
-def test_inner_face_selector_reaches_the_cavity(part):
+def test_face_selector_reaches_the_cavity(part):
     # the on-face guard proves WHICH face was selected: (20,10,2) lies on the
-    # cavity floor, so '+z' (the outer face, 8 mm away) must reject it and
-    # '+z:inner' must accept it and drill through the 2 mm wall.
+    # cavity floor, so '+z:outer' (the outer face, 8 mm away) must reject it,
+    # while '+z' (the face through the point) and '+z:inner' reach it and drill
+    # through the 2 mm wall.
+    import math
     part.add_box(*BLOCK_A)
     closed = part.add_shell(2, open_face="none")["mass_properties"]["volume_mm3"]
     with pytest.raises(SolidWorksError):
-        part.add_hole_on_face(4, "+z", 20, 10, 2)
-    drilled = part.add_hole_on_face(4, "+z:inner", 20, 10, 2)
-    import math
-    removed = closed - drilled["mass_properties"]["volume_mm3"]
-    assert removed == pytest.approx(math.pi * 2 ** 2 * 2, abs=0.01)
+        part.add_hole_on_face(4, "+z:outer", 20, 10, 2)
+    drilled = part.add_hole_on_face(4, "+z", 20, 10, 2)
+    assert closed - drilled["mass_properties"]["volume_mm3"] == pytest.approx(math.pi * 2 ** 2 * 2, abs=0.01)
+    inner = part.add_hole_on_face(4, "+z:inner", 10, 10, 2)
+    assert closed - inner["mass_properties"]["volume_mm3"] == pytest.approx(2 * math.pi * 2 ** 2 * 2, abs=0.01)

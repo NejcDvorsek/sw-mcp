@@ -20,6 +20,8 @@ from . import binding
 from .constants import (
     EXPORT_FORMATS,
     MATE_TYPES,
+    SW_ANGULAR_DIMENSION,
+    SW_DIMENSION_DRIVING,
     SW_ADD_COMPONENT_CURRENT_CONFIG,
     SW_ADD_MATE_NO_ERROR,
     SW_BODY_SOLID,
@@ -248,17 +250,14 @@ class SolidWorksSession:
     # this used to do -- silently returned the wrong one on any hollow part.
     _FACE_SIDES = ("outer", "inner")
 
-    def _pick_planar_face(self, faces, target, side: str):
-        """Extreme PLANAR face along `target`: 'outer' = max, 'inner' = min position.
+    def _planar_faces_facing(self, faces, target) -> list:
+        """(IFace2, position_mm along `target`) of every PLANAR face facing `target`.
 
         Non-planar faces (a cylinder left by a hole, a fillet surface) are skipped
-        so the result is always a valid sketch base. Returns (IFace2, position_mm
-        along `target`) or (None, None) if no planar face faces that way.
+        so every result is a valid sketch base.
         """
-        if side not in self._FACE_SIDES:
-            raise SolidWorksError(f"Unknown face side '{side}'. Use 'outer' or 'inner'.")
         tx, ty, tz = target
-        best, best_pos = None, None
+        found = []
         for face_dispatch in faces:
             face = binding.wrap(face_dispatch, self._mod.IFace2)
             surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
@@ -268,19 +267,55 @@ class SolidWorksSession:
             if nx * tx + ny * ty + nz * tz < 0.999:  # ~2.6 degrees
                 continue
             box = face.GetBox()  # planar face -> its box centre lies in the plane
-            pos = sum((box[i] + box[i + 3]) / 2.0 * target[i] for i in range(3))
-            if best is None or (pos > best_pos if side == "outer" else pos < best_pos):
-                best, best_pos = face, pos
-        return best, (None if best_pos is None else m_to_mm(best_pos))
+            found.append((face, m_to_mm(sum((box[i] + box[i + 3]) / 2.0 * target[i] for i in range(3)))))
+        return found
+
+    def _pick_planar_face(self, faces, target, side: str):
+        """Extreme PLANAR face along `target`: 'outer' = max, 'inner' = min position.
+
+        Returns (IFace2, position_mm along `target`) or (None, None) if no planar
+        face faces that way.
+        """
+        if side not in self._FACE_SIDES:
+            raise SolidWorksError(f"Unknown face side '{side}'. Use 'outer' or 'inner'.")
+        facing = self._planar_faces_facing(faces, target)
+        if not facing:
+            return None, None
+        return (max if side == "outer" else min)(facing, key=lambda fp: fp[1])
+
+    def _body_faces(self, body) -> list:
+        faces = body.GetFaces()
+        if not faces:
+            return []
+        return list(faces) if isinstance(faces, (list, tuple)) else [faces]
 
     def _planar_face_by_normal(self, body, target, side: str = "outer"):
         """The body's outermost (default) or innermost planar face facing `target`."""
-        faces = body.GetFaces()
-        if not faces:
-            return None
-        if not isinstance(faces, (list, tuple)):
-            faces = [faces]
-        return self._pick_planar_face(faces, target, side)[0]
+        faces = self._body_faces(body)
+        return self._pick_planar_face(faces, target, side)[0] if faces else None
+
+    def _select_face_through(self, body, normal, side, point_mm, label: str):
+        """Select the planar face facing `normal` that the 3D point lies on.
+
+        A face selector with an explicit ':outer'/':inner' side keeps picking that
+        extreme face; without one the point decides, so a pocket floor or a step
+        between the outermost and innermost face can be sketched on too.
+        """
+        if side is not None:
+            return self._select_planar_face(body, normal, label, side)
+        position = sum(p * n for p, n in zip(point_mm, normal))
+        facing = self._planar_faces_facing(self._body_faces(body), normal)
+        face = next((f for f, pos in facing if abs(pos - position) <= self._ON_FACE_TOLERANCE_MM), None)
+        if face is None:
+            levels = ", ".join(f"{pos:g}" for pos in sorted({round(pos, 6) for _, pos in facing})) or "none"
+            raise SolidWorksError(
+                f"No planar {label} face through ({', '.join(f'{c:g}' for c in point_mm)}) mm: the faces "
+                f"facing that way lie at {levels} mm along it. Give a point on one of them."
+            )
+        self._model.ClearSelection2(True)
+        if not binding.wrap(face, self._mod.IEntity).Select4(False, None):
+            raise SolidWorksError(f"Could not select the {label} face.")
+        return face
 
     _DIRECTIONS = {
         "+x": (1.0, 0.0, 0.0), "-x": (-1.0, 0.0, 0.0),
@@ -295,16 +330,19 @@ class SolidWorksSession:
             raise SolidWorksError(f"Unknown direction '{token}'. Use +x/-x/+y/-y/+z/-z.")
         return self._DIRECTIONS[key]
 
-    def _parse_face_selector(self, token: str):
+    def _parse_face_selector(self, token: str, default_side: str | None = "outer"):
         """'+z' or '+z:inner' -> ((0,0,1), 'outer'|'inner'); pure, unit-tested.
 
         The optional ':inner' suffix asks for the cavity-side face instead of the
-        outside skin -- the only way to address the inner wall of a hollow part
-        (a shelled box, a room), where several faces share the same normal.
+        outside skin, where several faces share the same normal (a shelled box, a
+        room). Without a suffix the side is `default_side`; tools that get a point
+        on the face pass None and let the point pick the face.
         """
         text = (token or "").lower().strip()
         direction, _, side = text.partition(":")
-        side = side.strip() or "outer"
+        side = side.strip() or default_side
+        if side is None:
+            return self._parse_direction(direction), None
         if side not in self._FACE_SIDES:
             raise SolidWorksError(
                 f"Unknown face side ':{side}' in '{token}'. Use ':outer' (default) or ':inner'."
@@ -1573,25 +1611,18 @@ class SolidWorksSession:
             )
         return local[0], local[1]
 
-    def add_hole_on_face(self, diameter_mm: float, face: str,
-                         x_mm: float, y_mm: float, z_mm: float, name: str = "Hole") -> dict:
-        """Drill a through-hole on any planar face, centred at 3D point (x, y, z).
-
-        face is a direction '+x'/'-x'/'+y'/'-y'/'+z'/'-z' selecting the planar
-        face -- add ':inner' (e.g. '+z:inner') for the cavity-side face of a
-        hollow part; (x_mm, y_mm, z_mm) is the hole centre in global coordinates
-        and must lie on that face. The hole runs through all material along the
-        face normal. (add_hole is the +Z 2D convenience version of this.)
-        """
-        model = self._require_model()
-        if diameter_mm <= 0:
-            raise SolidWorksError(f"diameter must be > 0 (got {diameter_mm}).")
-
+    def _open_sketch_on_face(self, face: str, point_mm):
+        """Select the face -- the one through point_mm unless the selector names a
+        side -- and open a sketch on it. Returns (sketch manager, open sketch)."""
         body = self._solid_body()
-        normal, side = self._parse_face_selector(face)
-        self._select_planar_face(body, normal, face, side)
-        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
-        sketch = self._open_face_sketch(sk, face)
+        normal, side = self._parse_face_selector(face, default_side=None)
+        self._select_face_through(body, normal, side, point_mm, face)
+        sk = binding.wrap(self._model.SketchManager, self._mod.ISketchManager)
+        return sk, self._open_face_sketch(sk, face)
+
+    def _sketch_circle_on_face(self, face: str, diameter_mm: float, x_mm: float, y_mm: float, z_mm: float) -> dict:
+        """A fully defined circle on the face through (x, y, z); the sketch is closed again."""
+        sk, sketch = self._open_sketch_on_face(face, (x_mm, y_mm, z_mm))
         try:
             u, v = self._model_to_sketch_uv(sketch, mm_to_m(x_mm), mm_to_m(y_mm),
                                             mm_to_m(z_mm), face)
@@ -1599,14 +1630,64 @@ class SolidWorksSession:
             if not circle:
                 raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
             # x/y are the face sketch's own horizontal/vertical directions
-            defined = self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
+            return self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
         finally:
-            model.ClearSelection2(True)
+            self._model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when the point is rejected
 
+    def _sketch_polygon_on_face(self, face: str, points_mm) -> dict:
+        """A fully defined polygon through 3D points on the face; the sketch is closed again."""
+        if not points_mm:
+            raise SolidWorksError("No profile points given.")
+        sk, sketch = self._open_sketch_on_face(face, points_mm[0])
+        try:
+            uv_m = [self._model_to_sketch_uv(sketch, mm_to_m(p[0]), mm_to_m(p[1]),
+                                             mm_to_m(p[2]), face)
+                    for p in points_mm]
+            # x/y dimensions run along the face sketch's own axes
+            return self._define_sketch(sk, self._draw_polyline(sk, self._clean_polygon(uv_m)))
+        finally:
+            self._model.ClearSelection2(True)
+            sk.InsertSketch(True)  # close the sketch, also when a point is rejected
+
+    def _extrude_boss(self, depth_mm: float):
+        """Extrude the sketch just closed (and selected) depth_mm out of its face, merged."""
+        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        boss = feat_mgr.FeatureExtrusion3(
+            True, False, False,
+            SW_END_COND_BLIND, 0,
+            mm_to_m(depth_mm), 0.0,
+            False, False, False, False, 0.0, 0.0,
+            False, False, False, False,
+            True, True, True,
+            SW_START_SKETCH_PLANE, 0.0, False,
+        )
+        if boss is None:
+            raise SolidWorksError("FeatureExtrusion3 failed (None). Is the profile closed and on the face?")
+        return boss
+
+    def add_hole_on_face(self, diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
+                         depth_mm: float | None = None, name: str = "Hole") -> dict:
+        """Drill a round hole on any planar face, centred at 3D point (x, y, z).
+
+        face is a direction '+x'/'-x'/'+y'/'-y'/'+z'/'-z'; the planar face facing
+        that way THROUGH the point is used, so a pocket floor or a step works too
+        (':outer'/':inner' force the outermost/innermost face). The hole runs
+        through all material along the face normal, or depth_mm deep: a blind
+        hole for a heat-set insert or a screw pilot. (add_hole is the +Z 2D
+        convenience version of this.)
+        """
+        model = self._require_model()
+        if diameter_mm <= 0:
+            raise SolidWorksError(f"diameter must be > 0 (got {diameter_mm}).")
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        defined = self._sketch_circle_on_face(face, diameter_mm, x_mm, y_mm, z_mm)
+
+        t1, d1 = (SW_END_COND_THROUGH_ALL, 0.0) if depth_mm is None else (SW_END_COND_BLIND, mm_to_m(depth_mm))
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         cut = feat_mgr.FeatureCut4(
-            True, False, False, SW_END_COND_THROUGH_ALL, 0, 0.0, 0.0,
+            True, False, False, t1, 0, d1, 0.0,
             False, False, False, False, 0.0, 0.0,
             False, False, False, False, False, True, True, False, False, False,
             SW_START_SKETCH_PLANE, 0.0, False, False,
@@ -1615,7 +1696,39 @@ class SolidWorksSession:
             raise SolidWorksError(
                 f"FeatureCut4 failed (None). Is ({x_mm}, {y_mm}, {z_mm}) on the {face} face?"
             )
-        return self._finish_feature(cut, name, **defined)
+        return self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
+
+    def add_boss_on_face(self, diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
+                         height_mm: float, name: str = "Boss") -> dict:
+        """Grow a round boss (standoff, peg) height_mm out of any planar face.
+
+        Centred at 3D point (x, y, z) on the face; the face is found as for
+        add_hole_on_face. Add a blind hole in its top for a heat-set insert.
+        Volume added = pi * (d/2)^2 * height.
+        """
+        self._require_model()
+        if diameter_mm <= 0 or height_mm <= 0:
+            raise SolidWorksError(f"diameter and height must be > 0 (got {diameter_mm}, {height_mm}).")
+        defined = self._sketch_circle_on_face(face, diameter_mm, x_mm, y_mm, z_mm)
+        result = self._finish_feature(self._extrude_boss(height_mm), name, **defined)
+        result["dimensions"]["height"] = f"D1@{result['feature']}"
+        return result
+
+    def add_extruded_profile_on_face(self, points_mm: list, face: str, depth_mm: float,
+                                     name: str = "Boss") -> dict:
+        """Grow a polygon boss depth_mm out of any planar face.
+
+        points_mm are 3D [x, y, z] vertices on the face (auto-closed); the face is
+        found as for add_hole_on_face. For pads, ledges and mounting blocks on an
+        existing part. Volume added = polygon area * depth.
+        """
+        self._require_model()
+        if depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        defined = self._sketch_polygon_on_face(face, points_mm)
+        result = self._finish_feature(self._extrude_boss(depth_mm), name, **defined)
+        result["dimensions"]["depth"] = f"D1@{result['feature']}"
+        return result
 
     def cut_profile(self, points_mm: list, depth_mm: float | None = None,
                     name: str = "Cut") -> dict:
@@ -1657,35 +1770,20 @@ class SolidWorksSession:
                             depth_mm: float | None = None, name: str = "Cut") -> dict:
         """Cut a polygon pocket/slot on ANY planar face, blind or through.
 
-        points_mm is a list of 3D [x, y, z] vertices (mm) that lie on the chosen
-        `face` ('+x'/'-x'/...); each is mapped into the face-sketch via the
+        points_mm is a list of 3D [x, y, z] vertices (mm) that lie on one face
+        facing `face` ('+x'/'-x'/...): the face through them is used, as for
+        add_hole_on_face. Each is mapped into the face-sketch via the
         model->sketch transform. The polygon is auto-closed; cut blind by depth_mm
         or through when depth_mm is None. Returns mass properties.
         """
         model = self._require_model()
-        if not points_mm:
-            raise SolidWorksError("No profile points given.")
-
-        body = self._solid_body()
-        normal, side = self._parse_face_selector(face)
-        self._select_planar_face(body, normal, face, side)
-        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
-        sketch = self._open_face_sketch(sk, face)
-        try:
-            uv_m = [self._model_to_sketch_uv(sketch, mm_to_m(p[0]), mm_to_m(p[1]),
-                                             mm_to_m(p[2]), face)
-                    for p in points_mm]
-            # x/y dimensions run along the face sketch's own axes
-            defined = self._define_sketch(sk, self._draw_polyline(sk, self._clean_polygon(uv_m)))
-        finally:
-            model.ClearSelection2(True)
-            sk.InsertSketch(True)  # close the sketch, also when a point is rejected
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        defined = self._sketch_polygon_on_face(face, points_mm)
 
         if depth_mm is None:
             t1, d1 = SW_END_COND_THROUGH_ALL, 0.0
         else:
-            if depth_mm <= 0:
-                raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
             t1, d1 = SW_END_COND_BLIND, mm_to_m(depth_mm)
 
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
@@ -2213,6 +2311,35 @@ class SolidWorksSession:
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def list_dimensions(self) -> dict:
+        """Every dimension in the part, feature by feature, as set_dimension takes it.
+
+        For a part opened from disk, or after the tool results that named them
+        are gone. Values are mm, angles degrees; `driving` is False for a
+        reference (driven) dimension, which set_dimension cannot change.
+        """
+        self._require_part()
+        dims, seen = [], set()
+        for feat in self._iter_features():
+            display = feat.GetFirstDisplayDimension()
+            while display is not None:
+                shown = binding.wrap(display, self._mod.IDisplayDimension)
+                dim = binding.wrap(shown.GetDimension2(0), self._mod.IDimension)
+                name = dim.GetNameForSelection()
+                if name not in seen:
+                    seen.add(name)
+                    angular = shown.GetType() == SW_ANGULAR_DIMENSION
+                    value = dim.SystemValue
+                    dims.append({
+                        "name": name,
+                        "feature": feat.Name,
+                        "value": round(math.degrees(value) if angular else m_to_mm(value), 6),
+                        "unit": "deg" if angular else "mm",
+                        "driving": dim.DrivenState == SW_DIMENSION_DRIVING,
+                    })
+                display = feat.GetNextDisplayDimension(display)
+        return {"ok": True, "count": len(dims), "dimensions": dims}
 
     def set_material(self, name: str, database: str = "") -> dict:
         """Assign a material by name so mass/density reflect a real material.

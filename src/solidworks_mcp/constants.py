@@ -83,6 +83,10 @@ SW_FULLY_CONSTRAINED = 3
 SW_SKETCH_LINE = 0
 SW_SKETCH_ARC = 1
 
+# swDimensionType_e (IDisplayDimension.GetType) / swDimensionDrivenState_e
+SW_ANGULAR_DIMENSION = 3
+SW_DIMENSION_DRIVING = 2
+
 # --- assemblies ---------------------------------------------------------------
 
 # swAddComponentConfigOptions_e -- insert the component using the configuration

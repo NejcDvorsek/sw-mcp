@@ -243,6 +243,12 @@ def test_parse_face_selector_inner_suffix(s):
     assert s._parse_face_selector(" -z : OUTER ") == ((0.0, 0.0, -1.0), "outer")
 
 
+def test_parse_face_selector_without_side_can_leave_the_choice_to_a_point(s):
+    # tools that get a point on the face pick the face through that point
+    assert s._parse_face_selector("+z", default_side=None) == ((0.0, 0.0, 1.0), None)
+    assert s._parse_face_selector("+z:inner", default_side=None) == ((0.0, 0.0, 1.0), "inner")
+
+
 def test_parse_face_selector_rejects_unknown_side(s):
     with pytest.raises(SolidWorksError):
         s._parse_face_selector("+z:middle")

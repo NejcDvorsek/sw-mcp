@@ -20,7 +20,7 @@ Builds, measures and verifies parametric parts and assemblies in the user's runn
 
 Conventions
 - Millimetres and degrees. New geometry starts on the Front plane (XY) and extrudes along +Z from z = 0. add_box spans x 0..w, y 0..h; add_disc is centred on the origin; revolves turn about Y.
-- Faces are picked by direction: '+z', '-x', ... is the outermost face facing that way, '+z:inner' the innermost (e.g. a pocket floor). *_on_face tools take 3D points that lie on that face.
+- Faces are picked by direction: '+z', '-x', ... *_on_face tools take 3D points on the face and use the face facing that way through them (the top, a pocket floor, a step); '+z:outer' / '+z:inner' force the outermost / innermost one. Other tools use the outermost face.
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
 
 Work in small verified steps
@@ -298,15 +298,38 @@ async def add_counterbore_hole(clearance_diameter_mm: float, cbore_diameter_mm: 
 
 
 @mcp.tool()
-async def add_hole_on_face(diameter_mm: float, face: str,
-                           x_mm: float, y_mm: float, z_mm: float, name: str = "Hole") -> dict:
-    """Drill a through-hole on ANY planar face, centred at 3D point (x, y, z) mm.
+async def add_hole_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
+                           depth_mm: float | None = None, name: str = "Hole") -> dict:
+    """Drill a round hole on ANY planar face, centred at 3D point (x, y, z) mm.
 
-    face is "+x"/"-x"/"+y"/"-y"/"+z"/"-z" (the face to drill); (x,y,z) is the
-    centre in global coordinates and must lie on that face. Enables side holes and
-    bolt circles on cylinder end-faces. Returns mass properties.
+    face is "+x"/"-x"/"+y"/"-y"/"+z"/"-z": the face facing that way through the
+    point is drilled, so a pocket floor or a step works too. Through all, or
+    depth_mm deep (blind: heat-set inserts, screw pilots). Returns mass
+    properties and `dimensions` (diameter, x, y, depth).
     """
-    return await _call(_session.add_hole_on_face, diameter_mm, face, x_mm, y_mm, z_mm, name)
+    return await _call(_session.add_hole_on_face, diameter_mm, face, x_mm, y_mm, z_mm, depth_mm, name)
+
+
+@mcp.tool()
+async def add_boss_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
+                           height_mm: float, name: str = "Boss") -> dict:
+    """Grow a round boss (standoff, peg) height_mm out of ANY planar face, centred at (x, y, z) mm.
+
+    The face is found as for add_hole_on_face. For a PCB standoff, add a blind
+    hole in its top. Returns mass properties and `dimensions`.
+    """
+    return await _call(_session.add_boss_on_face, diameter_mm, face, x_mm, y_mm, z_mm, height_mm, name)
+
+
+@mcp.tool()
+async def add_extruded_profile_on_face(points_mm: list, face: str, depth_mm: float,
+                                       name: str = "Boss") -> dict:
+    """Grow a polygon boss depth_mm out of ANY planar face: points_mm = [[x,y,z], ...] in mm.
+
+    The 3D points lie on the face (found as for add_hole_on_face). For pads,
+    ledges and mounting blocks on an existing part. Returns mass properties.
+    """
+    return await _call(_session.add_extruded_profile_on_face, points_mm, face, depth_mm, name)
 
 
 @mcp.tool()
@@ -324,8 +347,9 @@ async def cut_profile_on_face(points_mm: list, face: str,
                              depth_mm: float | None = None, name: str = "Cut") -> dict:
     """Cut a polygon pocket/slot on ANY planar face: points_mm = [[x,y,z], ...] in mm.
 
-    The 3D points must lie on `face` ("+x"/"-x"/...); cut blind by depth_mm or
-    through when omitted. For side pockets/cutouts. Returns mass properties.
+    The 3D points must lie on one face facing `face` ("+x"/"-x"/...), which is
+    found through them; cut blind by depth_mm or through when omitted. For side
+    pockets/cutouts. Returns mass properties.
     """
     return await _call(_session.cut_profile_on_face, points_mm, face, depth_mm, name)
 
@@ -407,6 +431,15 @@ async def set_dimension(dimension_name: str, value_mm: float) -> dict:
     modelling tool returns its dimensions by role in `dimensions`.
     """
     return await _call(_session.set_dimension, dimension_name, value_mm)
+
+
+@mcp.tool()
+async def list_dimensions() -> dict:
+    """List every dimension in the current part: name (for set_dimension), feature, value, unit.
+
+    For a part opened from disk, or when the names the tools returned are gone.
+    """
+    return await _call(_session.list_dimensions)
 
 
 @mcp.tool()
