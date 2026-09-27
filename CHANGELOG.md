@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] — 2026-09-27
 
 ### Added
 - `add_hole_wizard`: ISO holes from SolidWorks' Hole Wizard, sized by its standard
