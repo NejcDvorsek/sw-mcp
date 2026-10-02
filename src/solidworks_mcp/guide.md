@@ -111,8 +111,16 @@ stray drag in SolidWorks can change the part.
   nominal diameter. Internal: drill the ISO basic minor diameter first,
   D - 1.0825 P (M10x1.5 -> 8.376 mm); the error tells you the value.
 - **Patterns**: `add_linear_pattern`, `add_circular_pattern` (the axis is the
-  cylindrical face nearest the centre you give). There is **no mirror**: place
-  features symmetrically yourself.
+  cylindrical face nearest the centre you give).
+- **Mirror**: `add_mirror(plane, offset_mm, features)` mirrors features about
+  the Front/Top/Right plane moved `offset_mm` (z / y / x = offset). Put the
+  plane where the copies land in material: a box spans x 0..w, so mirror about
+  `offset_mm = w / 2`; a copy outside the part fails. The copies follow their
+  seeds. To keep the plane in the middle when the part grows, tie it to the
+  width: `set_equation('"<plane_offset>" = "<width>" / 2')` with the names the
+  tools returned. Without `features` the whole body is mirrored and merged:
+  model half of a symmetric part and mirror it about the face where the
+  halves meet.
 - **Assemblies**: `insert_component` puts a part's origin at a point;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.
@@ -161,7 +169,7 @@ a proven battery socket:
 
 ## 7. Limits and housekeeping
 
-- Not available: importing meshes as bodies (slice them instead), mirror, drawings, sketches on
+- Not available: importing meshes as bodies (slice them instead), drawings, sketches on
   arbitrary planes, arcs inside polygon profiles (approximate them with enough
   points, or use revolves, splines and holes).
 - SolidWorks' memory grows over long sessions. If it warns about low memory,

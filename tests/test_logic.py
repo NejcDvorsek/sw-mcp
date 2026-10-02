@@ -212,6 +212,18 @@ def test_cut_through_plane_unknown_plane_raises(s):
         s.cut_profile_through_plane([[0, 0, 0], [0, 1, 0], [0, 0, 1]], "side")
 
 
+def test_mirror_unknown_plane_raises(s):
+    with pytest.raises(SolidWorksError, match="right"):
+        s.add_mirror("side", features=["Hole"])
+
+
+def test_mirror_with_an_empty_feature_list_raises(s):
+    # an empty list is not "the body": mirroring the whole part by accident
+    # would double it without the agent having asked for that
+    with pytest.raises(SolidWorksError, match="leave it out"):
+        s.add_mirror("right", features=[])
+
+
 def test_thread_size_parses_diameter_and_pitch():
     assert SolidWorksSession._parse_thread_size("M10x1.5") == (10.0, 1.5)
     assert SolidWorksSession._parse_thread_size("M3x0.5") == (3.0, 0.5)

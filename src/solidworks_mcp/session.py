@@ -41,8 +41,12 @@ from .constants import (
     SW_END_COND_BLIND,
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
+    SW_FEATURE_SCOPE_ALL_BODIES,
     SW_FILLET_OPT_UNIFORM_RADIUS,
     SW_FILLET_TYPE_SIMPLE,
+    SW_MARK_MIRROR_BODY,
+    SW_MARK_MIRROR_FEATURE,
+    SW_MARK_MIRROR_PLANE,
     SW_MATE_ALIGN_CLOSEST,
     SW_OPEN_DOC_SILENT,
     SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY,
@@ -54,6 +58,7 @@ from .constants import (
     SW_ISO_SOCKET_HEAD_CAP,
     SW_ISO_TAPPED_HOLE,
     SW_REF_PLANE_DISTANCE,
+    SW_REF_PLANE_FLIP,
     SW_SKETCH_ARC,
     SW_SKETCH_LINE,
     SW_SAVE_AS_CURRENT_VERSION,
@@ -2442,6 +2447,100 @@ class SolidWorksSession:
             raise SolidWorksError("FeatureCircularPattern failed (None).")
         return self._finish_feature(pattern, "CircularPattern", instances=count,
                                     seed=seed, center_mm=[center_x_mm, center_y_mm])
+
+    def _plane_at(self, key: str, offset_mm: float):
+        """The default plane `key`, or a new plane parallel to it offset_mm along
+        its normal (negative: the other way). Returns (plane, created)."""
+        model = self._require_model()
+        base = self._ref_planes()[self._REF_PLANE_INDEX[key]]
+        if offset_mm == 0:
+            return base, False
+        model.ClearSelection2(True)
+        if not base.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the {key} plane.")
+        constraint = SW_REF_PLANE_DISTANCE | (SW_REF_PLANE_FLIP if offset_mm < 0 else 0)
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        if feat_mgr.InsertRefPlane(constraint, mm_to_m(abs(offset_mm)), 0, 0.0, 0, 0.0) is None:
+            raise SolidWorksError(f"Could not create a plane {offset_mm:g} mm from the {key} plane.")
+        return self._last_ref_plane(), True
+
+    def _remove_features_since(self, before: set) -> list:
+        """Delete what the history gained since `before`, newest first; returns
+        the names that could not be removed."""
+        model = self._require_model()
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        for feat in reversed([f for f in self._history() if f.Name not in before]):
+            model.ClearSelection2(True)
+            if feat.Select2(False, 0):
+                extension.DeleteSelection2(SW_DELETE_ABSORBED)
+        model.ForceRebuild3(False)
+        return [f.Name for f in self._history() if f.Name not in before]
+
+    _MIRROR_AXES = {"front": "z", "top": "y", "right": "x"}
+
+    def add_mirror(self, plane: str, offset_mm: float = 0.0, features: list | None = None,
+                   name: str = "Mirror") -> dict:
+        """Mirror features, or the whole body, about a default plane moved offset_mm.
+
+        plane 'front' / 'top' / 'right' mirrors about z / y / x = offset_mm.
+        features are list_features names; their copies follow them, so changing
+        a seed's dimension changes its copy too. Without features the body is
+        mirrored and merged: model half of a symmetric part and mirror it about
+        the face where the halves meet. The plane's position comes back as the
+        dimension `plane_offset`. SolidWorks quietly builds a mirror whose copy
+        lands outside the part or on its seed; that fails here instead, and the
+        part stays as it was.
+        """
+        key = str(plane).lower()
+        if key not in self._REF_PLANE_INDEX:
+            raise SolidWorksError(f"Unknown plane '{plane}'. Use 'front', 'top' or 'right'.")
+        if features is not None and not features:
+            raise SolidWorksError("features is empty: name the features to mirror, or leave it out to mirror the body.")
+        model = self._require_model()
+        seeds = [self._history_feature(n) for n in features or ()]
+        before = {f.Name for f in self._history()}
+        mirror_plane, created = self._plane_at(key, offset_mm)
+        model.ClearSelection2(True)
+        if seeds:
+            for seed in seeds:
+                if not seed.Select2(True, SW_MARK_MIRROR_FEATURE):
+                    raise SolidWorksError(f"Could not select '{seed.Name}'.")
+        else:
+            select_data = binding.wrap(binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+                                       .CreateSelectData(), self._mod.ISelectData)
+            select_data.Mark = SW_MARK_MIRROR_BODY
+            if not self._solid_body().Select2(False, select_data):
+                raise SolidWorksError("Could not select the body.")
+        if not mirror_plane.Select2(True, SW_MARK_MIRROR_PLANE):
+            raise SolidWorksError(f"Could not select the mirror plane at {self._MIRROR_AXES[key]} = {offset_mm:g}.")
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        mirror = binding.wrap(feat_mgr.InsertMirrorFeature2(not seeds, False, not seeds, False,
+                                                            SW_FEATURE_SCOPE_ALL_BODIES), self._mod.IFeature)
+        model.ForceRebuild3(False)
+        problem = self._mirror_problem(mirror, bool(seeds), f"{self._MIRROR_AXES[key]} = {offset_mm:g}")
+        if problem:
+            left = self._remove_features_since(before)
+            raise SolidWorksError(problem + (f" Could not remove: {', '.join(left)}." if left else ""))
+        if created and mirror_plane.Select2(False, 0):
+            model.BlankRefGeom()  # construction geometry; keep screenshots clean
+        model.ClearSelection2(True)
+        dimensions = {"plane_offset": self._first_dimension_name(mirror_plane)} if created else {}
+        return self._finish_feature(mirror, name, dimensions=dimensions, fully_defined=True)
+
+    @staticmethod
+    def _mirror_problem(mirror, of_features: bool, where: str) -> str | None:
+        """Why the mirror just built is no good, or None."""
+        if mirror is None:
+            if of_features:
+                return f"SolidWorks built no mirror about {where}: mirror features, not sketches."
+            return (f"SolidWorks built no mirror about {where}: the mirrored body must touch the original. "
+                    "Put the plane on the face where the halves meet.")
+        code, warning = mirror.GetErrorCode2()
+        if code:
+            return (f"SolidWorks flags the mirror about {where} ({'warning' if warning else 'error'} {code}): "
+                    "a copy lands outside the part, or on top of its seed (a seed on the plane). "
+                    "Put the plane where every copy lands in material.")
+        return None
 
     # --- parametric edit ------------------------------------------------------
 

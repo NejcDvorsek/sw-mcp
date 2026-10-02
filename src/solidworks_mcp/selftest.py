@@ -102,6 +102,14 @@ def _check_material(sw):
     return f"{density:.0f} kg/m3"
 
 
+def _check_mirror(sw):
+    # a Ø40 disc centred on the origin; the hole at x = 10 mirrors to x = -10
+    sw.new_part()
+    sw.add_disc(40, 10)
+    sw.add_hole(6, 10, 0, name="Hole")
+    return _volume(sw.add_mirror("right", features=["Hole"]), math.pi * (20 ** 2 - 2 * 3 ** 2) * 10)
+
+
 def _check_delete(sw):
     _block(sw)
     sw.add_hole(6, 10, 10, name="Hole")
@@ -132,6 +140,7 @@ CHECKS = [
     ("Hole Wizard: ISO M3 clearance hole", _check_hole_wizard),
     ("thread M10x1.5 (Thread feature)", _check_thread),
     ("material 6061 Alloy", _check_material),
+    ("mirror a hole about the Right plane", _check_mirror),
     ("delete a feature", _check_delete),
     ("STL export", _check_export),
     ("new assembly", _check_assembly),

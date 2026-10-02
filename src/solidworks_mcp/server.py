@@ -33,7 +33,8 @@ Work in small verified steps
 
 Pitfalls
 - Walls shared by successive polygon cuts must use identical points: sections a few micrometres apart leave sliver faces and the next cut fails.
-- Polygon profiles have no arcs: use enough points, or revolves, splines and holes. There is no mirror: place features symmetrically.
+- Polygon profiles have no arcs: use enough points, or revolves, splines and holes.
+- add_mirror needs its plane where the copies land in material: add_box spans x 0..w, so mirror about offset_mm = w / 2, not x = 0.
 - SolidWorks' memory grows in long sessions: on a low-memory warning, save and restart SolidWorks (never during a run).
 
 Read the resource solidworks://guide for the full guide: recipes (holes, ribs, threads, patterns, assemblies), 3D printing, and reverse-engineering a part from a mesh.
@@ -431,6 +432,20 @@ async def add_circular_pattern(count: int, center_x_mm: float, center_y_mm: floa
     circle: drill a centre hole + one bolt hole, then pattern the bolt hole.
     """
     return await _call(_session.add_circular_pattern, count, center_x_mm, center_y_mm, feature_name)
+
+
+@mcp.tool()
+async def add_mirror(plane: str, offset_mm: float = 0.0, features: list | None = None,
+                     name: str = "Mirror") -> dict:
+    """Mirror features, or the whole body, about the 'front'/'top'/'right' plane moved offset_mm.
+
+    Mirrors about z / y / x = offset_mm. features: list_features names; the
+    copies follow their seeds. Without features the body is mirrored and
+    merged: model half of a symmetric part, mirror it about the face where the
+    halves meet. The plane position comes back as dimension 'plane_offset'.
+    Fails, leaving the part as it was, when a copy would land outside the part.
+    """
+    return await _call(_session.add_mirror, plane, offset_mm, features, name)
 
 
 @mcp.tool()

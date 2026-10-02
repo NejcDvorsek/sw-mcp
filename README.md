@@ -33,14 +33,14 @@ it "looks about right".
   through the agent.
 - **Real CAD, not just primitives.** Extrude, revolve, sweep, loft and splines;
   holes, counterbores, slots and pockets on any face; ISO holes from the Hole Wizard; real ISO metric threads;
-  fillets, chamfers, shells, patterns, ribs, equations and materials. Assemblies
+  fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Work on existing parts: list, delete and suppress features. 57 tools in total.
+  Work on existing parts: list, delete and suppress features. 58 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 320 tests; each feature's integration test
+- **Tested against real SolidWorks.** 330 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -217,6 +217,7 @@ The server speaks MCP over **stdio**.
 | `add_shell(thickness_mm, open_face)` | Hollow to a wall thickness; open a face (`+z`/…) or `none` |
 | `add_linear_pattern(count, spacing_mm, direction, feature_name)` | Repeat a feature N times along `+x`/`-x`/… |
 | `add_circular_pattern(count, center_x_mm, center_y_mm, feature_name)` | Repeat a feature N times around an axis (bolt circle) |
+| `add_mirror(plane, offset_mm, features, name)` | Mirror features (copies follow their seeds) or the whole body about the Front/Top/Right plane moved `offset_mm`; fails when a copy would land outside the part |
 | `set_dimension(dimension_name, value_mm)` | Change a named driving dim (e.g. `D1@BlockExtrude`, or any name a tool returned in `dimensions`), rebuild, remeasure |
 | `set_equation(equation)` | Add a global equation or variable linking dims (e.g. `"W" = 40`, then `"width@Sketch1" = "W"`) |
 | `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
@@ -317,8 +318,8 @@ Feedback and contributions are welcome.
   profiles → transitions/adapters), **free-form extrusions**
   (`add_extruded_spline`: a smooth closed spline → organic/aesthetic outlines), and
   **non-circular sweeps** (`add_swept_profile`: any cross-section along a path →
-  rails, gaskets, trim). Mirror is shelved — both routes fail
-  on this build; an AI mirrors by placing features symmetrically.
+  rails, gaskets, trim), and **mirrors** (`add_mirror`: features or the whole
+  body about a plane through the part).
 - Selection: plane walk, face-by-normal/direction (`_planar_face_by_normal`,
   `+z`/…, with `:inner` for the cavity side of a hollow part), and edge selection
   by axis **or explicit index** (`_select_edges`). `list_faces`/`list_edges` let

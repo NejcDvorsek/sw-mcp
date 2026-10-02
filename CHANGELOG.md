@@ -14,10 +14,17 @@ All notable changes to this project are documented here. This project follows
   other features are built on it, naming them, unless `with_children=True`.
   `suppress_feature` keeps the feature and its dimensions; unsuppressing brings
   back what depends on it too, so the two calls round-trip.
+- `add_mirror`: mirror features, or the whole body, about the Front, Top or
+  Right plane moved `offset_mm`. The copies follow their seeds, and the plane's
+  position is a dimension, so an equation can keep it at half the width. Mirror
+  was listed as unsupported since 0.1.0 on a wrong diagnosis: the API works, but
+  SolidWorks silently builds an empty mirror when the copy lands outside the
+  part (a box spans x 0..w, so mirroring about x = 0 misses it). That now fails
+  loud and leaves the part as it was.
 - `solidworks-mcp --selftest`: checks your installation before you report an
   issue. It prints the SolidWorks release, language, templates and units, then
-  runs twelve checks on small parts and an assembly (holes, fillet, revolve,
-  Hole Wizard, thread, material, delete, STL export), compares each with a hand
+  runs thirteen checks on small parts and an assembly (holes, fillet, revolve,
+  Hole Wizard, thread, material, mirror, delete, STL export), compares each with a hand
   calculation and closes them unsaved. GitHub issue forms for bug and
   compatibility reports ask for its output.
 

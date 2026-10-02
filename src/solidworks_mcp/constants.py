@@ -37,8 +37,17 @@ SW_SLOT_CREATION_LINE = 0       # straight slot
 SW_SLOT_LENGTH_CENTER = 0       # length is centre-to-centre of the end arcs
 
 # swRefPlaneReferenceConstraints_e -- offset a new plane a fixed distance from a
-# selected reference plane (for lofts: one parallel plane per profile).
+# selected reference plane (for lofts: one parallel plane per profile); with
+# OptionFlip the offset goes against the plane's normal.
 SW_REF_PLANE_DISTANCE = 8
+SW_REF_PLANE_FLIP = 256
+
+# IFeatureManager.InsertMirrorFeature2 (verified): selection marks for what to
+# mirror (features 1, a body 256) and the mirror plane (2); swFeatureScope_e.
+SW_MARK_MIRROR_FEATURE = 1
+SW_MARK_MIRROR_PLANE = 2
+SW_MARK_MIRROR_BODY = 256
+SW_FEATURE_SCOPE_ALL_BODIES = 0
 
 # SolidWorks' own modelled thread: IFeatureManager.CreateDefinition(swFmSweepThread)
 # gives an IThreadFeatureData. The profile libraries (File Locations > Thread
