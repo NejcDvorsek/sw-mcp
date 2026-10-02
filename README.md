@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 357 tests; each feature's integration test
+- **Tested against real SolidWorks.** 360 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -242,7 +242,7 @@ The server speaks MCP over **stdio**.
 | Tool | Purpose |
 |---|---|
 | `new_assembly` | Create a new empty assembly (becomes the current document) |
-| `open_assembly(path)` / `save_assembly(path)` | Open / save a native `.sldasm` |
+| `open_assembly(path)` / `save_assembly(path)` | Open / save a native `.sldasm`; `open_assembly` also imports STEP, IGES and Parasolid assemblies, parts as components in place |
 | `insert_component(path, x_mm, y_mm, z_mm, fixed)` | Insert a part with its **origin** at (x, y, z); the first component is fixed by default |
 | `list_components` | Name, path, fixed, position, rotation and bounding box of every component |
 | `set_component_transform(name, x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg)` | Move/rotate a component; the transform is read back and verified |

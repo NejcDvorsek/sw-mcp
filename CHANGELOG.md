@@ -23,8 +23,9 @@ All notable changes to this project are documented here. This project follows
   quietly draw another one. The selftest checks text too (14 checks).
 - `open_part` imports STEP, IGES and Parasolid files as a new part, so a
   supplier's model can get holes, pockets and bosses. The result reports the
-  solid bodies and mass properties; a file holding an assembly is refused and
-  closed again, components and all.
+  solid bodies and mass properties. `open_assembly` imports such assemblies,
+  their parts as components in place, ready to list and mate. Each refuses the
+  other kind of file and closes it again, components and all.
 
 ## [0.6.0] — 2026-10-02
 

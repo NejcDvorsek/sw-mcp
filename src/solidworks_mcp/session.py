@@ -82,6 +82,7 @@ from .constants import (
     SW_THIS_CONFIGURATION,
     SW_THREAD_END_BLIND,
     SW_THREAD_METHOD_CUT,
+    SW_TOGGLE_3D_INTERCONNECT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
     SW_UNITS_LINEAR,
@@ -262,18 +263,18 @@ class SolidWorksSession:
         pockets on its faces, bosses, fillets. An import also returns its solid
         body count and mass properties, to see what came in and where it lies.
         """
-        abs_path = os.path.abspath(path)
-        extension = os.path.splitext(abs_path)[1].lower().lstrip(".")
-        if extension != "sldprt" and extension not in IMPORT_FORMATS:
-            raise SolidWorksError(
-                f"Cannot open a .{extension} file as a part: use .sldprt, or import "
-                f"{', '.join('.' + f for f in sorted(IMPORT_FORMATS))}."
-            )
-        if not os.path.isfile(abs_path):
-            raise SolidWorksError(f"File not found: {abs_path}")
+        abs_path, imported = self._native_or_neutral(path, "sldprt", "a part")
         sw = self._ensure()
-        if extension != "sldprt":
-            return self._import_part(sw, abs_path)
+        if imported:
+            model = self._import_document(sw, abs_path, SW_DOC_PART)
+            bodies = binding.wrap(model, self._mod.IPartDoc).GetBodies2(SW_BODY_SOLID, True) or ()
+            if not bodies:
+                sw.CloseDoc(model.GetTitle())
+                raise SolidWorksError(f"{os.path.basename(abs_path)} brought in no solid body (only surfaces?), "
+                                      "so there is nothing to build on.")
+            self._model = model
+            return {"ok": True, "title": model.GetTitle(), "path": abs_path, "imported": True,
+                    "solid_bodies": len(bodies), "mass_properties": self.get_mass_properties()["mass_properties"]}
         result = sw.OpenDoc6(abs_path, SW_DOC_PART, 0, "", 0, 0)
         doc = result[0] if isinstance(result, tuple) else result
         model = binding.wrap(doc, self._mod.IModelDoc2)
@@ -282,22 +283,46 @@ class SolidWorksSession:
         self._model = model
         return {"ok": True, "title": model.GetTitle(), "path": abs_path}
 
-    def _import_part(self, sw, abs_path: str) -> dict:
-        doc, errors = sw.LoadFile4(abs_path, "r", sw.GetImportFileData(abs_path), 0)
+    @staticmethod
+    def _native_or_neutral(path: str, native: str, kind: str) -> tuple:
+        """(absolute path, whether it needs an import); other formats are refused
+        before SolidWorks is touched."""
+        abs_path = os.path.abspath(path)
+        extension = os.path.splitext(abs_path)[1].lower().lstrip(".")
+        if extension != native and extension not in IMPORT_FORMATS:
+            raise SolidWorksError(
+                f"Cannot open a .{extension} file as {kind}: use .{native}, or import "
+                f"{', '.join('.' + f for f in sorted(IMPORT_FORMATS))}."
+            )
+        if not os.path.isfile(abs_path):
+            raise SolidWorksError(f"File not found: {abs_path}")
+        return abs_path, extension != native
+
+    def _import_document(self, sw, abs_path: str, doc_type: int):
+        """Import a STEP/IGES/Parasolid file; a document of the other type is
+        closed again (components and all) with the tool that does take it.
+
+        An assembly is imported with 3D Interconnect switched off for the call:
+        with it on, the parts arrive wrapped in one sub-assembly, out of reach
+        of list_components and add_mate. The user's setting is restored after.
+        """
+        interconnect = sw.GetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT)
+        if doc_type == SW_DOC_ASSEMBLY:
+            sw.SetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT, False)
+        try:
+            doc, errors = sw.LoadFile4(abs_path, "r", sw.GetImportFileData(abs_path), 0)
+        finally:
+            sw.SetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT, interconnect)
         model = binding.wrap(doc, self._mod.IModelDoc2)
         if model is None:
             raise SolidWorksError(f"SolidWorks could not import {abs_path} (error {errors}).")
-        name = os.path.basename(abs_path)
-        if int(model.GetType()) != SW_DOC_PART:
+        if int(model.GetType()) != doc_type:
             sw.CloseDoc(model.GetTitle())  # closes the component documents it opened too
-            raise SolidWorksError(f"{name} holds an assembly, not a part: open_part imports single parts only.")
-        bodies = binding.wrap(model, self._mod.IPartDoc).GetBodies2(SW_BODY_SOLID, True) or ()
-        if not bodies:
-            sw.CloseDoc(model.GetTitle())
-            raise SolidWorksError(f"{name} brought in no solid body (only surfaces?), so there is nothing to build on.")
-        self._model = model
-        return {"ok": True, "title": model.GetTitle(), "path": abs_path, "imported": True,
-                "solid_bodies": len(bodies), "mass_properties": self.get_mass_properties()["mass_properties"]}
+            name = os.path.basename(abs_path)
+            raise SolidWorksError(f"{name} holds an assembly, not a part: open it with open_assembly."
+                                  if doc_type == SW_DOC_PART else
+                                  f"{name} holds a single part, not an assembly: open it with open_part.")
+        return model
 
     # --- geometry -------------------------------------------------------------
 
@@ -3350,11 +3375,14 @@ class SolidWorksSession:
         return {"ok": True, "title": model.GetTitle()}
 
     def open_assembly(self, path: str) -> dict:
-        """Open an existing .sldasm; it becomes the current document."""
+        """Open an existing .sldasm, or import a STEP, IGES or Parasolid assembly;
+        it becomes the current document. An import reports its component count."""
+        abs_path, imported = self._native_or_neutral(path, "sldasm", "an assembly")
         sw = self._ensure()
-        abs_path = os.path.abspath(path)
-        if not os.path.isfile(abs_path):
-            raise SolidWorksError(f"File not found: {abs_path}")
+        if imported:
+            self._model = self._import_document(sw, abs_path, SW_DOC_ASSEMBLY)
+            return {"ok": True, "title": self._model.GetTitle(), "path": abs_path, "imported": True,
+                    "components": len(self._components(self._require_assembly()))}
         result = sw.OpenDoc6(abs_path, SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT, "", 0, 0)
         doc = result[0] if isinstance(result, tuple) else result
         model = binding.wrap(doc, self._mod.IModelDoc2)

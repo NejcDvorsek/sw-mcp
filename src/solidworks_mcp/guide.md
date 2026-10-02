@@ -147,7 +147,9 @@ stray drag in SolidWorks can change the part.
   history, but the tools work on it: holes, pockets and bosses on its faces,
   fillets. The result has `solid_bodies` and mass properties: read the bounding
   box to see where the model lies before you place anything. With several
-  bodies the tools act on the first. A file holding an assembly is refused.
+  bodies the tools act on the first. A file holding an assembly opens with
+  `open_assembly` instead: its parts come in as components at their places,
+  ready for `list_components` and `add_mate`.
 - **Assemblies**: `insert_component` puts a part's origin at a point;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.

@@ -678,7 +678,12 @@ async def new_assembly() -> dict:
 
 @mcp.tool()
 async def open_assembly(path: str) -> dict:
-    """Open an existing .sldasm file; it becomes the current document."""
+    """Open a .sldasm, or import a STEP/IGES/Parasolid assembly; it becomes the current document.
+
+    An imported assembly's parts arrive as components at their places, ready
+    for list_components and add_mate; the result gives the component count.
+    A file holding a single part is refused (use open_part).
+    """
     return await _call(_session.open_assembly, path)
 
 
