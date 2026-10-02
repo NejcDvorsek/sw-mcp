@@ -102,10 +102,12 @@ stray drag in SolidWorks can change the part.
 - **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
   face), `cut_slot` (obround on +Z).
 - **Rounded outlines**: give `corner_radii_mm` to `add_extruded_profile`,
-  `cut_profile`, the `*_on_face` profile tools or `cut_profile_through_plane`:
-  one radius for every corner, or one per vertex (0 = sharp). Hand calculation:
-  a right-angled corner of radius r loses r^2 (1 - pi/4) of area, a concave one
-  gains it. A radius too big for its edges is refused before anything is
+  `cut_profile`, the `*_on_face` profile tools, `cut_profile_through_plane`,
+  `add_revolved_profile` (rounded edges of a turned part; not corners on the
+  axis) or `add_swept_profile`: one radius for every corner, or one per vertex
+  (0 = sharp). Hand calculation: a right-angled corner of radius r loses
+  r^2 (1 - pi/4) of area, a concave one gains it; in a revolve that area sits
+  0.2234 r from the corner along both edges (Pappus). A radius too big for its edges is refused before anything is
   sketched, with the edge that is too short. Profiles over 24 points cannot be
   rounded (they are fixed, not dimensioned). For a plain rounded block,
   `add_box` plus `add_fillet(edges="z")` works as well.

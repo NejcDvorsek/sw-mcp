@@ -1137,14 +1137,16 @@ class SolidWorksSession:
         return self._finish_feature(revolve, name, **sketch)
 
     def add_revolved_profile(self, profile_mm: list, angle_deg: float = 360.0,
-                             name: str = "Revolve") -> dict:
+                             name: str = "Revolve", corner_radii_mm=None) -> dict:
         """Revolve a closed (radius, height) profile about the axis at radius 0.
 
         profile_mm = [[r, z], ...] in mm: r is the distance from the revolve axis,
         z the position along it. The polygon is auto-closed and spun `angle_deg`
         (default 360) about r=0. Points touching the axis (r=0) give a solid like
         add_cone; a profile offset from the axis gives a ring/torus cross-section.
-        The profile may not cross the axis (no negative r). Returns mass properties.
+        The profile may not cross the axis (no negative r). corner_radii_mm
+        rounds corners as for add_extruded_profile (rounded edges of a turned
+        part); corners on the axis cannot be rounded. Returns mass properties.
         """
         model = self._require_model()
         pts = self._clean_polygon(profile_mm)
@@ -1154,6 +1156,12 @@ class SolidWorksSession:
             raise SolidWorksError("The profile lies entirely on the axis (all radii are 0).")
         if not 0.0 < angle_deg <= 360.0:
             raise SolidWorksError(f"angle must be in (0, 360] (got {angle_deg}).")
+        corners = self._profile_corners(pts, corner_radii_mm)
+        on_axis = sorted(i for _, group in corners[1] for i in group if abs(pts[i][0]) < 1e-9)
+        if on_axis:
+            raise SolidWorksError(
+                f"Corner(s) {on_axis} lie on the axis (r = 0) and cannot be rounded; round the outer edges instead."
+            )
 
         plane = self._first_ref_plane()
         if plane is None:
@@ -1167,7 +1175,7 @@ class SolidWorksSession:
         try:
             lines = self._draw_polyline(sk, [(mm_to_m(r), mm_to_m(z)) for r, z in pts])
             axis = self._draw_centerline(sk, 0.0, mm_to_m(min(z_vals)), 0.0, mm_to_m(max(z_vals)))
-            sketch = self._define_sketch(sk, lines + [axis])
+            sketch = self._round_corners(sk, lines, corners[1], self._define_sketch(sk, lines + [axis]))
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)
@@ -1303,19 +1311,22 @@ class SolidWorksSession:
             raise SolidWorksError("path must start along +X (first segment pointing +X).")
 
     def add_swept_profile(self, profile_mm: list, path_mm: list,
-                          bend_radius_mm: float = 0.0, name: str = "Sweep") -> dict:
+                          bend_radius_mm: float = 0.0, name: str = "Sweep",
+                          corner_radii_mm=None) -> dict:
         """Sweep an arbitrary closed PROFILE (cross-section) along a 2D PATH.
 
         profile_mm = [[u, v], ...] in mm: the closed cross-section, drawn on the
         Right plane (u along world +Y, v along world +Z), centred near the origin.
         path_mm = [[x, y], ...] in mm on the Front plane; it MUST start at the
         origin heading +X (so the profile is perpendicular to the path there).
-        Interior path corners are rounded with bend_radius_mm. Volume =
+        Interior path corners are rounded with bend_radius_mm; corner_radii_mm
+        rounds the profile's corners as for add_extruded_profile. Volume =
         profile_area * path_length (Pappus). For non-round extrusions along a path
         (rails, gaskets, trim, channels). Returns mass properties. Use new_part first.
         """
         model = self._require_model()
         prof = self._clean_polygon(profile_mm)  # >= 3 distinct points
+        corners = self._profile_corners(prof, corner_radii_mm)
         self._require_path_starts_along_x(path_mm)
 
         planes = self._ref_planes()
@@ -1330,7 +1341,7 @@ class SolidWorksSession:
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)
         try:
-            profile = self._define_sketch(sk, self._draw_polyline(sk, [(mm_to_m(u), mm_to_m(v)) for u, v in prof]))
+            profile = self._draw_defined_polygon(sk, [(mm_to_m(u), mm_to_m(v)) for u, v in prof], corners)
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)

@@ -183,15 +183,17 @@ async def add_cone(bottom_diameter_mm: float, top_diameter_mm: float,
 
 @mcp.tool()
 async def add_revolved_profile(profile_mm: list, angle_deg: float = 360.0,
-                               name: str = "Revolve") -> dict:
+                               name: str = "Revolve", corner_radii_mm: float | list | None = None) -> dict:
     """Revolve a closed (radius, height) profile about the axis at radius 0.
 
     profile_mm = [[r, z], …] in mm: r = distance from the axis, z = position along
     it. Auto-closed and spun angle_deg (default 360°). Points at r=0 give a solid
     (turned shafts, vases); a profile offset from the axis gives a ring/torus. The
-    profile may not cross the axis. Returns mass properties. Use new_part first.
+    profile may not cross the axis. corner_radii_mm rounds corners as for
+    add_extruded_profile (not those on the axis). Returns mass properties. Use
+    new_part first.
     """
-    return await _call(_session.add_revolved_profile, profile_mm, angle_deg, name)
+    return await _call(_session.add_revolved_profile, profile_mm, angle_deg, name, corner_radii_mm)
 
 
 @mcp.tool()
@@ -209,17 +211,19 @@ async def add_swept_pipe(path_mm: list, diameter_mm: float,
 
 @mcp.tool()
 async def add_swept_profile(profile_mm: list, path_mm: list,
-                            bend_radius_mm: float = 0.0, name: str = "Sweep") -> dict:
+                            bend_radius_mm: float = 0.0, name: str = "Sweep",
+                            corner_radii_mm: float | list | None = None) -> dict:
     """Sweep an arbitrary closed PROFILE (cross-section) along a 2D PATH.
 
     profile_mm = [[u,v],…] in mm: the closed cross-section on the Right plane (u →
     world +Y, v → world +Z), centred near the origin. path_mm = [[x,y],…] in mm on
     the Front plane — MUST start at the origin heading +X (the profile is
-    perpendicular to the path there). Path corners are rounded with bend_radius_mm.
+    perpendicular to the path there). Path corners are rounded with bend_radius_mm;
+    corner_radii_mm rounds the profile's corners as for add_extruded_profile.
     Volume = profile_area · path_length. For non-round extrusions along a path
     (rails, gaskets, trim, channels). Returns mass properties. Use new_part first.
     """
-    return await _call(_session.add_swept_profile, profile_mm, path_mm, bend_radius_mm, name)
+    return await _call(_session.add_swept_profile, profile_mm, path_mm, bend_radius_mm, name, corner_radii_mm)
 
 
 @mcp.tool()

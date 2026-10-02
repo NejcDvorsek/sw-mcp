@@ -92,6 +92,33 @@ def test_a_rounded_window_through_a_plane(part):
     assert abs(vol(window) - (8000 - (10 * 6 - 4 * corner(2)) * 40)) < 0.05
 
 
+SPANDREL_CENTROID = (10 - 3 * math.pi) / (3 * (4 - math.pi))  # x r from the corner, along both edges
+
+
+def test_a_turned_ring_with_rounded_outer_edges(part):
+    # Pappus: a ring r 5..15, z 0..10 spun 360 deg, minus the two rounded outer
+    # corners, each r^2 (1 - pi/4) with its centroid 0.2234 r inside r = 15
+    ring = 2 * math.pi * (10 * 10) * 10
+    outer = 2 * math.pi * corner(2) * (15 - SPANDREL_CENTROID * 2)
+    turned = part.add_revolved_profile([[5, 0], [15, 0], [15, 10], [5, 10]], corner_radii_mm=[0, 2, 2, 0])
+
+    assert abs(vol(turned) - (ring - 2 * outer)) < 0.01, "the rounded edges are not where Pappus puts them"
+    assert turned["fully_defined"] and "radius" in turned["dimensions"]
+
+
+def test_a_corner_on_the_revolve_axis_cannot_be_rounded(part):
+    with pytest.raises(SolidWorksError, match="on the axis"):
+        part.add_revolved_profile([[0, 0], [10, 0], [10, 20], [0, 20]], corner_radii_mm=2)
+
+
+def test_a_rounded_profile_swept_along_a_path(part):
+    square = [[-5, -5], [5, -5], [5, 5], [-5, 5]]
+    swept = part.add_swept_profile(square, [[0, 0], [50, 0]], corner_radii_mm=2)
+
+    assert abs(vol(swept) - (100 - 4 * corner(2)) * 50) < 0.01
+    assert swept["fully_defined"] and "radius" in swept["dimensions"]
+
+
 def test_a_radius_too_big_fails_before_anything_is_sketched(part):
     part.add_box(40, 20, 10)
     history = part.list_features()["features"]

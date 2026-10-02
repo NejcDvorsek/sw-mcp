@@ -7,8 +7,9 @@ All notable changes to this project are documented here. This project follows
 
 ### Added
 - `corner_radii_mm` on `add_extruded_profile`, `cut_profile`,
-  `add_extruded_profile_on_face`, `cut_profile_on_face` and
-  `cut_profile_through_plane`: round a polygon's corners with real sketch
+  `add_extruded_profile_on_face`, `cut_profile_on_face`,
+  `cut_profile_through_plane`, `add_revolved_profile` (not on the axis) and
+  `add_swept_profile`: round a polygon's corners with real sketch
   fillets, one radius for all corners or one per vertex (0 = sharp). The
   corners keep their dimensions as virtual sharps and equal radii share one
   dimension (`radius`, else `r<i>`), so the profile stays fully defined and
