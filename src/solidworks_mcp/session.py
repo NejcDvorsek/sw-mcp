@@ -428,7 +428,7 @@ class SolidWorksSession:
         if indices is not None:
             for idx in indices:
                 if idx < 0 or idx >= len(edges):
-                    raise SolidWorksError(f"Edge-index {idx} buiten bereik (0..{len(edges) - 1}).")
+                    raise SolidWorksError(f"Edge index {idx} is out of range (0..{len(edges) - 1}).")
                 if binding.wrap(edges[idx], self._mod.IEntity).Select4(True, None):
                     count += 1
             return count

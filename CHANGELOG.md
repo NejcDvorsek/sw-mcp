@@ -19,6 +19,10 @@ All notable changes to this project are documented here. This project follows
 - Sketches that are not fully defined are reported as 'Sketch3 (under
   defined)' instead of 'Sketch3 (status 2)'.
 
+### Fixed
+- An edge index out of range (`add_fillet` / `add_chamfer` with `edges="12"`)
+  was the last error message still in Dutch.
+
 ## [0.5.0] — 2026-09-27
 
 ### Added

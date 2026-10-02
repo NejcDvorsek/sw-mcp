@@ -448,6 +448,13 @@ def test_fillet_one_axis(part):
     assert part.add_fillet(2, edges="z")["edges_filleted"] == 4
 
 
+def test_an_edge_index_out_of_range_names_the_valid_ones(part):
+    # an agent picks indices from list_edges; a stale one must say which exist
+    part.add_box(40, 20, 10)
+    with pytest.raises(SolidWorksError, match=r"Edge index 12 is out of range \(0\.\.11\)"):
+        part.add_fillet(2, edges="12")
+
+
 def test_chamfer(part):
     part.add_box(40, 20, 10)
     assert vol(part.add_chamfer(2)) < 8000
