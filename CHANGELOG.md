@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] — 2026-10-02
 
 ### Added
 - `corner_radii_mm` on `add_extruded_profile`, `cut_profile`,
