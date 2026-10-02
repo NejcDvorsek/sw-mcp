@@ -133,6 +133,13 @@ stray drag in SolidWorks can change the part.
   tools returned. Without `features` the whole body is mirrored and merged:
   model half of a symmetric part and mirror it about the face where the
   halves meet.
+- **Text**: `add_text_on_face(text, face, x, y, z, height_mm, depth_mm)`
+  engraves a label into any planar face; `emboss=True` raises it instead. The
+  point is the text's lower-left corner, and the text runs along the face
+  sketch's horizontal axis (+x on a +z face). Letters have no hand calculation:
+  the result's `text_area_mm2` is what the next steps change by (area x depth).
+  `font` must be an installed font; an unknown one is refused, because Windows
+  would quietly draw another.
 - **A supplier's model**: `open_part` imports a STEP (`.step`/`.stp`), IGES or
   Parasolid (`.x_t`/`.x_b`) file as a new part. The imported body has no
   history, but the tools work on it: holes, pockets and bosses on its faces,
@@ -155,6 +162,9 @@ stray drag in SolidWorks can change the part.
   inserts that is about 4.0 mm, at least 0.5 mm deeper than the insert: the
   displaced plastic needs room, or it bulges at the mouth and the mating part no
   longer seats flat.
+- Text prints best large and bold: as a rule of thumb at least 5 mm high, with
+  strokes wider than the nozzle (0.4 mm), engraved 0.4-0.6 mm or embossed about
+  1 mm. On a face that prints facing down, engrave rather than emboss.
 - Export for slicing with `export(..., quality="fine")` as 3MF or STL. **STL
   output is moved into positive space** by SolidWorks: compare geometry in the
   model frame, not in raw STL coordinates.

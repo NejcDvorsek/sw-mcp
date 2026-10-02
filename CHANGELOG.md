@@ -15,6 +15,11 @@ All notable changes to this project are documented here. This project follows
   editable. Until now a rounded outline meant many points, and over 24 points
   a profile is fixed rather than dimensioned. A radius too big for its edges
   is refused before anything is sketched, naming the edge.
+- `add_text_on_face`: engrave text into any planar face, or emboss it, for
+  labels and version numbers. The text's position is two dimensions and the
+  sketch is fully defined; the result gives `text_area_mm2`, since letters have
+  no hand calculation. A font that is not installed is refused: Windows would
+  quietly draw another one. The selftest checks text too (14 checks).
 - `open_part` imports STEP, IGES and Parasolid files as a new part, so a
   supplier's model can get holes, pockets and bosses. The result reports the
   solid bodies and mass properties; a file holding an assembly is refused and

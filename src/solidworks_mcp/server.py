@@ -361,6 +361,22 @@ async def add_extruded_profile_on_face(points_mm: list, face: str, depth_mm: flo
 
 
 @mcp.tool()
+async def add_text_on_face(text: str, face: str, x_mm: float, y_mm: float, z_mm: float,
+                           height_mm: float, depth_mm: float, emboss: bool = False,
+                           font: str | None = None, name: str = "Text") -> dict:
+    """Engrave text into ANY planar face, or emboss it with emboss=True (labels, version numbers).
+
+    (x, y, z) is the text's lower-left corner on the face; the text runs along
+    the face sketch's horizontal axis (+x on a +z face). height_mm is the
+    character height, depth_mm the engraving depth or embossing height. The
+    position is two dimensions ('x', 'y'); font must be installed (default:
+    SolidWorks' own). Returns text_area_mm2, since letters have no hand calculation.
+    """
+    return await _call(_session.add_text_on_face, text, face, x_mm, y_mm, z_mm,
+                       height_mm, depth_mm, emboss, font, name)
+
+
+@mcp.tool()
 async def cut_profile(points_mm: list, depth_mm: float | None = None, name: str = "Cut",
                       corner_radii_mm: float | list | None = None) -> dict:
     """Cut a polygonal pocket/slot from the +Z face: points_mm = [[x,y], ...] in mm.

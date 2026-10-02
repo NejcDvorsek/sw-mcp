@@ -109,6 +109,10 @@ SW_CONSTRAINT_VERTICAL_POINTS = 26     # two points on one vertical line
 SW_CONSTRAINT_RADIUS = 3               # the relation behind a radius dimension
 SW_RELATIONS_ALL = 0                   # swSketchRelationFilterType_e, for GetRelations
 
+# swTextJustification_e (IModelDoc2.InsertSketchText): the point is the text's
+# lower-left corner and the text runs right from it.
+SW_TEXT_JUSTIFY_LEFT = 1
+
 # swConstrainedCornerAction_e (ISketchManager.CreateFillet): keep a rounded
 # corner as a virtual sharp, so its dimensions and relations stay.
 SW_CONSTRAINED_CORNER_KEEP = 1

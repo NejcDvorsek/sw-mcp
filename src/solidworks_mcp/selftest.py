@@ -110,6 +110,12 @@ def _check_mirror(sw):
     return _volume(sw.add_mirror("right", features=["Hole"]), math.pi * (20 ** 2 - 2 * 3 ** 2) * 10)
 
 
+def _check_text(sw):
+    # letters have no hand calculation: the tool itself refuses text that cuts nothing
+    _block(sw)
+    return f"letters {sw.add_text_on_face('V1', '+z', 10, 5, 10, 5, 0.5)['text_area_mm2']:.3f} mm2"
+
+
 def _check_delete(sw):
     _block(sw)
     sw.add_hole(6, 10, 10, name="Hole")
@@ -141,6 +147,7 @@ CHECKS = [
     ("thread M10x1.5 (Thread feature)", _check_thread),
     ("material 6061 Alloy", _check_material),
     ("mirror a hole about the Right plane", _check_mirror),
+    ("engrave text (sketch text and fonts)", _check_text),
     ("delete a feature", _check_delete),
     ("STL export", _check_export),
     ("new assembly", _check_assembly),

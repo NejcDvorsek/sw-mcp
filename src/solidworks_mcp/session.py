@@ -17,6 +17,7 @@ import uuid
 
 import pythoncom
 import win32com.client
+import win32gui
 
 from . import binding
 from .constants import (
@@ -77,6 +78,7 @@ from .constants import (
     SW_STL_QUALITY_CUSTOM,
     SW_STL_QUALITY_FINE,
     SW_SUPPRESS_FEATURE,
+    SW_TEXT_JUSTIFY_LEFT,
     SW_THIS_CONFIGURATION,
     SW_THREAD_END_BLIND,
     SW_THREAD_METHOD_CUT,
@@ -2071,6 +2073,92 @@ class SolidWorksSession:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         defined = self._sketch_polygon_on_face(face, points_mm, corner_radii_mm)
         return self._extrude_sketch(depth_mm, name, defined, "Is the profile closed and on the face?")
+
+    @staticmethod
+    def _require_installed_font(font: str) -> None:
+        """Windows draws an unknown font in another one, silently, and SolidWorks
+        still reports the name it was given: so check the installed families."""
+        families = set()
+
+        def collect(logfont, *_):
+            families.add(logfont.lfFaceName.lower())
+            return 1
+
+        screen = win32gui.GetDC(0)
+        try:
+            win32gui.EnumFontFamilies(screen, None, collect, None)
+        finally:
+            win32gui.ReleaseDC(0, screen)
+        if font.lower() not in families:
+            raise SolidWorksError(f"Font '{font}' is not installed; leave font out for SolidWorks' own.")
+
+    def add_text_on_face(self, text: str, face: str, x_mm: float, y_mm: float, z_mm: float,
+                         height_mm: float, depth_mm: float, emboss: bool = False,
+                         font: str | None = None, name: str = "Text") -> dict:
+        """Engrave text into any planar face, or emboss it (emboss=True).
+
+        (x, y, z) is the lower-left corner of the text, on the face (found as
+        for add_hole_on_face); the text runs along the face sketch's horizontal
+        axis, +x on a +z face. height_mm is the character height, depth_mm how
+        deep the letters go or how high they stand. The position is two
+        dimensions from the origin ('x', 'y') and the depth a third; font is an
+        installed font (default SolidWorks' own). Letters have no hand
+        calculation, so the result gives text_area_mm2 = volume change / depth.
+        """
+        if not str(text).strip():
+            raise SolidWorksError("No text given.")
+        if height_mm <= 0 or depth_mm <= 0:
+            raise SolidWorksError(f"height and depth must be > 0 (got {height_mm}, {depth_mm}).")
+        model = self._require_model()
+        if font is not None:
+            self._require_installed_font(font)
+        before_volume = self.get_mass_properties()["mass_properties"]["volume_mm3"]
+        before_features = {f.Name for f in self._history()}
+        sk, sketch = self._open_sketch_on_face(face, (x_mm, y_mm, z_mm))
+        try:
+            u, v = self._model_to_sketch_uv(sketch, mm_to_m(x_mm), mm_to_m(y_mm), mm_to_m(z_mm), face)
+            sketch_text = binding.wrap(model.InsertSketchText(u, v, 0.0, str(text), SW_TEXT_JUSTIFY_LEFT, 0, 0, 100, 100),
+                                       self._mod.ISketchText)
+            if sketch_text is None:
+                raise SolidWorksError("InsertSketchText failed (None).")
+            text_format = binding.wrap(sketch_text.GetTextFormat(), self._mod.ITextFormat)
+            text_format.CharHeight = mm_to_m(height_mm)
+            if font is not None:
+                text_format.TypeFaceName = font
+            if not sketch_text.SetTextFormat(False, text_format):
+                raise SolidWorksError("Could not set the text's height and font.")
+            points = sketch.GetSketchPoints2() or ()
+            if len(points) != 1:
+                raise SolidWorksError(f"Expected one insertion point in the text sketch, found {len(points)}.")
+            _, definer = self._open_sketch_definer(sk)
+            u0, v0, _ = self._sketch_coords(sketch, 0.0, 0.0, 0.0)  # the origin, projected
+            dims = definer.place_point(binding.wrap(points[0], self._mod.ISketchPoint),
+                                       (m_to_mm(u - u0), m_to_mm(v - v0)), {("x", 0): "x", ("y", 0): "y"})
+            defined = {"dimensions": dims, "fully_defined": definer.fully_defined()}
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)  # close the sketch, also when the text was refused
+
+        if emboss:
+            result = self._extrude_sketch(depth_mm, name, defined, f"Is ({x_mm}, {y_mm}, {z_mm}) on the {face} face?")
+        else:
+            feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+            cut = feat_mgr.FeatureCut4(
+                True, False, False, SW_END_COND_BLIND, 0, mm_to_m(depth_mm), 0.0,
+                False, False, False, False, 0.0, 0.0,
+                False, False, False, False, False, True, True, False, False, False,
+                SW_START_SKETCH_PLANE, 0.0, False, False,
+            )
+            if cut is None:
+                raise SolidWorksError(f"FeatureCut4 failed (None). Is ({x_mm}, {y_mm}, {z_mm}) on the {face} face?")
+            result = self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
+        change = abs(result["mass_properties"]["volume_mm3"] - before_volume)
+        if change < 1e-6:
+            left = self._remove_features_since(before_features)
+            raise SolidWorksError("The text changed nothing; is its point inside the face?"
+                                  + (f" Could not remove: {', '.join(left)}." if left else ""))
+        result["text_area_mm2"] = round(change / depth_mm, 4)
+        return result
 
     def cut_profile(self, points_mm: list, depth_mm: float | None = None,
                     name: str = "Cut", corner_radii_mm=None) -> dict:
