@@ -20,7 +20,9 @@ All notable changes to this project are documented here. This project follows
   labels and version numbers. The text's position is two dimensions and the
   sketch is fully defined; the result gives `text_area_mm2`, since letters have
   no hand calculation. A font that is not installed is refused: Windows would
-  quietly draw another one. The selftest checks text too (14 checks).
+  quietly draw another one. Text reads upright on the top (+z) and front (-y)
+  faces; SolidWorks turns it on the others.
+- The selftest checks text and a STEP export and import too (15 checks).
 - `open_part` imports STEP, IGES and Parasolid files as a new part, so a
   supplier's model can get holes, pockets and bosses. The result reports the
   solid bodies and mass properties. `open_assembly` imports such assemblies,

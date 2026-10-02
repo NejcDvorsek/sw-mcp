@@ -132,6 +132,20 @@ def _check_export(sw):
             os.remove(path)
 
 
+def _check_import(sw):
+    _block(sw)
+    path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_selftest_{uuid.uuid4().hex}.step")
+    try:
+        sw.export(path)
+        sw.close_part()
+        imported = sw.open_part(path)
+        sw.close_part()  # let go of the file before it is removed
+        return _volume(imported, BLOCK_MM3)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 def _check_assembly(sw):
     return sw.new_assembly()["title"]
 
@@ -150,6 +164,7 @@ CHECKS = [
     ("engrave text (sketch text and fonts)", _check_text),
     ("delete a feature", _check_delete),
     ("STL export", _check_export),
+    ("STEP export and import", _check_import),
     ("new assembly", _check_assembly),
 ]
 
@@ -157,7 +172,7 @@ CHECKS = [
 def _run_one(sw, check) -> str:
     try:
         detail = check(sw)
-        loose = sw._under_defined_sketches()
+        loose = sw._under_defined_sketches() if sw._model is not None else []  # a check may close its own
         if loose:
             raise CheckFailed(f"sketches left under-defined: {', '.join(loose)}")
         return detail
