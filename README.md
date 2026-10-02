@@ -35,12 +35,12 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  54 tools in total.
+  Work on existing parts: list, delete and suppress features. 57 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 299 tests; each feature's integration test
+- **Tested against real SolidWorks.** 309 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -99,7 +99,7 @@ is in [`src/solidworks_mcp/guide.md`](https://github.com/hjbaard/SolidWorks-MCP/
   [open an issue](https://github.com/hjbaard/SolidWorks-MCP/issues) with the
   result, whether it worked or not.
 
-**Status: early (v0.3).** It works end-to-end, but tool names and conventions
+**Status: early (0.x).** It works end-to-end, but tool names and conventions
 may still change. See [CHANGELOG.md](https://github.com/hjbaard/SolidWorks-MCP/blob/main/CHANGELOG.md).
 
 ## Troubleshooting
@@ -212,6 +212,9 @@ The server speaks MCP over **stdio**.
 | `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
 | `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
+| `list_features()` | The part's history in tree order (name, type, suppressed); flags features that fail to rebuild and sketches that are not fully defined |
+| `delete_feature(name, with_children)` | Undo a step: delete a feature with its sketch; refuses (and names them) while other features depend on it, unless `with_children` |
+| `suppress_feature(name, suppress)` | Take a feature out but keep it and its dimensions (try a variant); `suppress=False` brings it back with its dependents |
 | `set_material(name, database)` | Assign a material (e.g. `6061 Alloy`) so mass/density are real |
 | `rebuild(top_only)` | Force rebuild, report errors |
 | `get_mass_properties` | Volume, mass, density, surface area, centre of mass, bounding box |

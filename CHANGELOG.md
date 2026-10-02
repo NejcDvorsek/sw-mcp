@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `list_features`, `delete_feature` and `suppress_feature`: work on a part's
+  history, also of a part opened from disk. `list_features` gives the features
+  in tree order (without SolidWorks' folders, default planes and origin), flags
+  the ones that fail to rebuild, and names sketches that are not fully defined.
+  `delete_feature` undoes a step together with its sketch, and refuses while
+  other features are built on it, naming them, unless `with_children=True`.
+  `suppress_feature` keeps the feature and its dimensions; unsuppressing brings
+  back what depends on it too, so the two calls round-trip.
+
+### Changed
+- Sketches that are not fully defined are reported as 'Sketch3 (under
+  defined)' instead of 'Sketch3 (status 2)'.
+
 ## [0.5.0] — 2026-09-27
 
 ### Added

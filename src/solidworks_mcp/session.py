@@ -29,8 +29,11 @@ from .constants import (
     SW_BODY_SOLID,
     SW_BOUNDING_BOX_SOLID_ONLY,
     SCREW_FITS,
+    SKETCH_STATUSES,
     SW_CHAMFER_ANGLE_DISTANCE,
     SW_COSMETIC_THREAD_WITH_CALLOUT,
+    SW_DELETE_ABSORBED,
+    SW_DELETE_CHILDREN,
     SW_DOC_ASSEMBLY,
     SW_DOC_PART,
     SW_END_COND_BLIND,
@@ -62,10 +65,13 @@ from .constants import (
     SW_STL_QUALITY_COARSE,
     SW_STL_QUALITY_CUSTOM,
     SW_STL_QUALITY_FINE,
+    SW_SUPPRESS_FEATURE,
+    SW_THIS_CONFIGURATION,
     SW_THREAD_END_BLIND,
     SW_THREAD_METHOD_CUT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
+    SW_UNSUPPRESS_DEPENDENT,
     SW_VIEW_ISOMETRIC,
     SW_WZD_COUNTERBORE,
     SW_WZD_COUNTERSINK,
@@ -2233,7 +2239,7 @@ class SolidWorksSession:
         return subs
 
     def _under_defined_sketches(self) -> list:
-        """'Sketch3 (status 2)' for every sketch in the part that is not fully defined.
+        """'Sketch3 (under defined)' for every sketch in the part that is not fully defined.
 
         Includes sketches that exist only as sub-features, such as the position
         sketch of a Hole Wizard hole, which the feature walk does not visit.
@@ -2246,7 +2252,7 @@ class SolidWorksSession:
                 seen.add(candidate.Name)
                 status = binding.wrap(candidate.GetSpecificFeature2(), self._mod.ISketch).GetConstrainedStatus()
                 if status != SW_FULLY_CONSTRAINED:
-                    found.append(f"{candidate.Name} (status {status})")
+                    found.append(f"{candidate.Name} ({SKETCH_STATUSES.get(status, f'status {status}')})")
         return found
 
     def _ref_planes(self) -> list:
@@ -2499,6 +2505,107 @@ class SolidWorksSession:
                     })
                 display = feat.GetNextDisplayDimension(display)
         return {"ok": True, "count": len(dims), "dimensions": dims}
+
+    # --- history: list, delete and suppress features ---------------------------
+
+    def _history(self) -> list:
+        """The part's features after the origin, in tree order: what was modelled.
+
+        Every part starts with SolidWorks' folders, the three default planes and
+        the origin; whatever follows the origin was built by someone.
+        """
+        self._require_part()
+        history, after_origin = [], False
+        for feat in self._iter_features():
+            if after_origin:
+                history.append(feat)
+            elif feat.GetTypeName2() == "OriginProfileFeature":
+                after_origin = True
+        return history
+
+    def _history_feature(self, name: str):
+        history = self._history()
+        for feat in history:
+            if feat.Name == name:
+                return feat
+        listed = ", ".join(f.Name for f in history) or "none"
+        raise SolidWorksError(f"No feature '{name}' in the part's history (there are: {listed}).")
+
+    @staticmethod
+    def _is_suppressed(feat) -> bool:
+        return bool(feat.IsSuppressed2(SW_THIS_CONFIGURATION, None)[0])
+
+    def list_features(self) -> dict:
+        """The part's modelling history in tree order: name, type, suppressed.
+
+        Sketches are listed in their own right; types are SolidWorks' own names
+        (ProfileFeature = sketch, Extrusion, ICE = cut-extrude, Fillet, ...). A
+        feature SolidWorks flags carries `error` {code, warning}: warning False
+        means it fails to rebuild. `under_defined_sketches` names every sketch
+        that can still move, which a part drawn by hand may have.
+        """
+        features = []
+        for feat in self._history():
+            entry = {"name": feat.Name, "type": feat.GetTypeName2(), "suppressed": self._is_suppressed(feat)}
+            code, warning = feat.GetErrorCode2()
+            if code:
+                entry["error"] = {"code": code, "warning": bool(warning)}
+            features.append(entry)
+        return {"ok": True, "count": len(features), "features": features,
+                "under_defined_sketches": self._under_defined_sketches()}
+
+    def delete_feature(self, name: str, with_children: bool = False) -> dict:
+        """Delete a history feature with the sketches it absorbed; rebuild, remeasure.
+
+        What is built on it (a fillet on its edges, a sketch on its face) would
+        be left broken, so it refuses and names those unless with_children=True
+        deletes them too. `deleted` lists what went, in tree order.
+        """
+        model = self._require_model()
+        feature = self._history_feature(name)
+        children = [binding.wrap(c, self._mod.IFeature).Name for c in (feature.GetChildren() or ())]
+        if children and not with_children:
+            raise SolidWorksError(
+                f"'{name}' has dependents: {', '.join(children)}. Delete those first, suppress "
+                f"'{name}' instead, or pass with_children=True to delete them too."
+            )
+        before = [f.Name for f in self._history()]
+        model.ClearSelection2(True)
+        if not feature.Select2(False, 0):
+            raise SolidWorksError(f"Could not select '{name}'.")
+        options = SW_DELETE_ABSORBED | (SW_DELETE_CHILDREN if with_children else 0)
+        if not binding.wrap(model.Extension, self._mod.IModelDocExtension).DeleteSelection2(options):
+            raise SolidWorksError(f"SolidWorks refused to delete '{name}'.")
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        after = {f.Name for f in self._history()}
+        return {
+            "ok": True,
+            "deleted": [n for n in before if n not in after],
+            "rebuild_ok": rebuilt_ok,
+            "mass_properties": self.get_mass_properties()["mass_properties"],
+        }
+
+    def suppress_feature(self, name: str, suppress: bool = True) -> dict:
+        """Suppress a history feature or bring it back; rebuild, remeasure.
+
+        Unlike delete_feature it keeps the feature and its dimensions, so it
+        suits trying a variant. What depends on it follows both ways: SolidWorks
+        suppresses the dependents along, and suppress=False brings them back
+        too. `changed` lists every feature whose state changed.
+        """
+        model = self._require_model()
+        feature = self._history_feature(name)
+        before = {f.Name: self._is_suppressed(f) for f in self._history()}
+        action = SW_SUPPRESS_FEATURE if suppress else SW_UNSUPPRESS_DEPENDENT
+        if not feature.SetSuppression2(action, SW_THIS_CONFIGURATION, None):
+            raise SolidWorksError(f"SolidWorks refused to {'suppress' if suppress else 'unsuppress'} '{name}'.")
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        return {
+            "ok": True,
+            "changed": [f.Name for f in self._history() if self._is_suppressed(f) != before[f.Name]],
+            "rebuild_ok": rebuilt_ok,
+            "mass_properties": self.get_mass_properties()["mass_properties"],
+        }
 
     # --- meshes: slice a reference, compare the part with it ---------------------
 

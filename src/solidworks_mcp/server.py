@@ -26,6 +26,7 @@ Conventions
 Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
 - Look before selecting by index: list_faces / list_edges; screenshot to see the shape.
+- Undo a wrong step with delete_feature; list_features shows the history, also of a part opened from disk.
 - {ok: false, error} means the tool refused or SolidWorks failed; the error names the cause.
 
 Pitfalls
@@ -484,6 +485,36 @@ async def list_dimensions() -> dict:
 
 
 @mcp.tool()
+async def list_features() -> dict:
+    """List the current part's modelling history in tree order: name, type, suppressed.
+
+    For a part opened from disk, or to find the step to undo. Flags features
+    that fail to rebuild and names sketches that are not fully defined.
+    """
+    return await _call(_session.list_features)
+
+
+@mcp.tool()
+async def delete_feature(name: str, with_children: bool = False) -> dict:
+    """Delete a feature (a list_features name) with its sketch, then rebuild and remeasure.
+
+    The way to undo a step. Refuses when other features are built on it and
+    names them; with_children=True deletes those too.
+    """
+    return await _call(_session.delete_feature, name, with_children)
+
+
+@mcp.tool()
+async def suppress_feature(name: str, suppress: bool = True) -> dict:
+    """Suppress a feature, or bring it back with suppress=False; rebuild and remeasure.
+
+    Keeps the feature and its dimensions, unlike delete_feature, so it suits
+    trying a variant. Features that depend on it follow both ways.
+    """
+    return await _call(_session.suppress_feature, name, suppress)
+
+
+@mcp.tool()
 async def set_material(name: str, database: str = "") -> dict:
     """Assign a material by name (e.g. "6061 Alloy", "AISI 1020", "ABS").
 
@@ -574,7 +605,10 @@ async def save_part(path: str) -> dict:
 
 @mcp.tool()
 async def open_part(path: str) -> dict:
-    """Open an existing .sldprt file; it becomes the current part."""
+    """Open an existing .sldprt file; it becomes the current part.
+
+    list_features shows its history, list_dimensions its dimensions.
+    """
     return await _call(_session.open_part, path)
 
 

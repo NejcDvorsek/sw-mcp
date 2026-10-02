@@ -89,8 +89,22 @@ SW_CONSTRAINT_FIXED = 17
 SW_CONSTRAINT_HORIZONTAL_POINTS = 25   # two points on one horizontal line
 SW_CONSTRAINT_VERTICAL_POINTS = 26     # two points on one vertical line
 
-# swConstrainedStatus_e (ISketch.GetConstrainedStatus)
+# swConstrainedStatus_e (ISketch.GetConstrainedStatus), in the words SolidWorks
+# uses in its status bar
 SW_FULLY_CONSTRAINED = 3
+SKETCH_STATUSES = {1: "status unknown", 2: "under defined", 3: "fully defined", 4: "over defined",
+                   5: "no solution", 6: "invalid solution", 7: "autosolve off"}
+
+# swDeleteSelectionOptions_e (IModelDocExtension.DeleteSelection2, a bitmask)
+SW_DELETE_CHILDREN = 1
+SW_DELETE_ABSORBED = 2   # the sketches the feature consumed go with it
+
+# swFeatureSuppressionAction_e / swInConfigurationOpts_e (IFeature.SetSuppression2).
+# Suppressing takes the dependents along by itself; unsuppressing brings them
+# back only with UNSUPPRESS_DEPENDENT (verified).
+SW_SUPPRESS_FEATURE = 0
+SW_UNSUPPRESS_DEPENDENT = 2
+SW_THIS_CONFIGURATION = 1
 
 # swSketchSegments_e (ISketchSegment.GetType)
 SW_SKETCH_LINE = 0

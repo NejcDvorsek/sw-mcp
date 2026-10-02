@@ -34,6 +34,12 @@ short connect-time instructions first; this is the long version.
   thread groove = area x 2 pi x centroid radius / pitch per mm of thread.
 - Look before you select: `list_faces` / `list_edges` give indices, normals,
   areas and axes; `screenshot` shows the shape.
+- **Undo a step** with `delete_feature(name)`: the feature goes together with
+  its sketch. It refuses while other features are built on it (a fillet on its
+  edges, a sketch on its face) and names them; `with_children=True` deletes
+  those too. `suppress_feature` takes a feature out but keeps it and its
+  dimensions, to try a variant; `suppress=False` brings it back together with
+  what depends on it.
 - A tool that cannot do what was asked returns `{ok: false, error}`. The error
   names the cause. Several SolidWorks calls fail silently (no feature, no
   error); the server checks for that and fails loud instead.
@@ -62,6 +68,10 @@ stray drag in SolidWorks can change the part.
   nobody a usable handle. Rebuild them to change them.
 - `list_dimensions` names every dimension in the part with its value, e.g. for
   a part opened from disk.
+- `list_features` gives a part's history in tree order (name, SolidWorks type,
+  suppressed), flags features that fail to rebuild, and names the sketches that
+  are not fully defined. A part drawn by hand may have those: their geometry
+  can still move, so say so before you build on it.
 - Drive several dimensions from one number with a global variable:
   `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`. An
   equation-driven dimension ignores `set_dimension` (`applied: false`).
