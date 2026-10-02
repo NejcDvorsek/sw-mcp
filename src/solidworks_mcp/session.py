@@ -1227,9 +1227,6 @@ class SolidWorksSession:
                 raise SolidWorksError("heights_mm must be strictly increasing.")
         cleaned = [self._clean_polygon(p) for p in profiles_mm]  # validates >= 3 distinct pts
 
-        base = self._first_ref_plane()
-        if base is None:
-            raise SolidWorksError("No reference plane found in the feature tree.")
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
 
@@ -1237,18 +1234,13 @@ class SolidWorksSession:
         helper_planes = []
         dimensions, fully_defined = {}, True
         for k, (poly, height) in enumerate(zip(cleaned, heights_mm)):
-            if not base.Select2(False, 0):
-                raise SolidWorksError("Could not select the Front plane.")
-            if height != 0:
-                if feat_mgr.InsertRefPlane(SW_REF_PLANE_DISTANCE, mm_to_m(height), 0, 0.0, 0, 0.0) is None:
-                    raise SolidWorksError(f"Could not create an offset plane at z={height}.")
-                # InsertRefPlane's return is a generic dispatch without Select2; take
-                # the new plane from the tree instead.
-                plane = self._last_ref_plane()
-                if plane is None or not plane.Select2(False, 0):
-                    raise SolidWorksError(f"Could not select the offset plane at z={height}.")
+            plane, created = self._plane_at("front", height)
+            if created:
                 helper_planes.append(plane)
                 dimensions[f"profile{k}_height"] = self._first_dimension_name(plane)
+            model.ClearSelection2(True)
+            if not plane.Select2(False, 0):
+                raise SolidWorksError(f"Could not select the plane at z={height}.")
             before = self._profile_feature_names()
             sk.InsertSketch(True)
             try:
@@ -1330,17 +1322,12 @@ class SolidWorksSession:
             raise SolidWorksError(f"z_mm must be >= 0 (got {z_mm}); planes are offset from the Front plane toward +Z.")
         reverse = self._rib_material_reversed(start_mm, end_mm, toward_mm)
 
-        base = self._first_ref_plane()
-        if base is None or not base.Select2(False, 0):
-            raise SolidWorksError("Could not select the Front plane.")
+        plane, created = self._plane_at("front", z_mm)
+        helper_plane = plane if created else None
+        model.ClearSelection2(True)
+        if not plane.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the plane at z={z_mm}.")
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        helper_plane = None
-        if z_mm != 0:
-            if feat_mgr.InsertRefPlane(SW_REF_PLANE_DISTANCE, mm_to_m(z_mm), 0, 0.0, 0, 0.0) is None:
-                raise SolidWorksError(f"Could not create a plane at z={z_mm}.")
-            helper_plane = self._last_ref_plane()
-            if helper_plane is None or not helper_plane.Select2(False, 0):
-                raise SolidWorksError(f"Could not select the plane at z={z_mm}.")
         try:
             sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
             sk.InsertSketch(True)
@@ -2462,6 +2449,8 @@ class SolidWorksSession:
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         if feat_mgr.InsertRefPlane(constraint, mm_to_m(abs(offset_mm)), 0, 0.0, 0, 0.0) is None:
             raise SolidWorksError(f"Could not create a plane {offset_mm:g} mm from the {key} plane.")
+        # InsertRefPlane's return is a generic dispatch without Select2; take the
+        # new plane from the tree instead.
         return self._last_ref_plane(), True
 
     def _remove_features_since(self, before: set) -> list:
