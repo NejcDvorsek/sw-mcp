@@ -371,7 +371,9 @@ async def add_text_on_face(text: str, face: str, x_mm: float, y_mm: float, z_mm:
     """Engrave text into ANY planar face, or emboss it with emboss=True (labels, version numbers).
 
     (x, y, z) is the text's lower-left corner on the face; the text runs along
-    the face sketch's horizontal axis (+x on a +z face). height_mm is the
+    the face sketch's horizontal axis: upright along +x on the top (+z) and
+    front (-y) faces, turned on the others (vertical on +/-x, upside down on
+    +y), so put labels on the top or front. height_mm is the
     character height, depth_mm the engraving depth or embossing height. The
     position is two dimensions ('x', 'y'); font must be installed (default:
     SolidWorks' own). Returns text_area_mm2, since letters have no hand calculation.

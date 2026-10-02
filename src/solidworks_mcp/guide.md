@@ -138,7 +138,9 @@ stray drag in SolidWorks can change the part.
 - **Text**: `add_text_on_face(text, face, x, y, z, height_mm, depth_mm)`
   engraves a label into any planar face; `emboss=True` raises it instead. The
   point is the text's lower-left corner, and the text runs along the face
-  sketch's horizontal axis (+x on a +z face). Letters have no hand calculation:
+  sketch's horizontal axis. It reads upright on the top (+z) and front (-y)
+  faces, along +x; SolidWorks turns it on the others (vertical on +x and -x,
+  upside down on +y), so put labels on the top or front. Letters have no hand calculation:
   the result's `text_area_mm2` is what the next steps change by (area x depth).
   `font` must be an installed font; an unknown one is refused, because Windows
   would quietly draw another.

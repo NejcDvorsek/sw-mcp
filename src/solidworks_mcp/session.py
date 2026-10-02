@@ -2135,7 +2135,8 @@ class SolidWorksSession:
 
         (x, y, z) is the lower-left corner of the text, on the face (found as
         for add_hole_on_face); the text runs along the face sketch's horizontal
-        axis, +x on a +z face. height_mm is the character height, depth_mm how
+        axis: upright along +x on the +z and -y faces, turned on the others
+        (see Docs/PROGRESS.md). height_mm is the character height, depth_mm how
         deep the letters go or how high they stand. The position is two
         dimensions from the origin ('x', 'y') and the depth a third; font is an
         installed font (default SolidWorks' own). Letters have no hand
