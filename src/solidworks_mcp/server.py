@@ -633,9 +633,12 @@ async def save_part(path: str) -> dict:
 
 @mcp.tool()
 async def open_part(path: str) -> dict:
-    """Open an existing .sldprt file; it becomes the current part.
+    """Open a .sldprt, or import a STEP/IGES/Parasolid file as a new part; it becomes the current part.
 
-    list_features shows its history, list_dimensions its dimensions.
+    list_features shows its history, list_dimensions its dimensions. An
+    imported body has no history, but the tools work on it (holes and pockets
+    on its faces, bosses, fillets); an import returns its solid body count and
+    mass properties. A file holding an assembly is refused.
     """
     return await _call(_session.open_part, path)
 

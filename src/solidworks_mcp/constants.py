@@ -183,6 +183,9 @@ SW_SAVE_AS_OPTIONS_SILENT = 1
 # swStandardViews_e
 SW_VIEW_ISOMETRIC = 7
 
+# Neutral formats open_part imports as a new part (ISldWorks.LoadFile4).
+IMPORT_FORMATS = {"step", "stp", "iges", "igs", "x_t", "x_b"}
+
 # Formats SaveAs3 can write (by extension), allow-listed for `export`. Image
 # extensions (png/bmp/jpg/tif) are here because `screenshot` writes via the same
 # SaveAs3 path.

@@ -133,6 +133,12 @@ stray drag in SolidWorks can change the part.
   tools returned. Without `features` the whole body is mirrored and merged:
   model half of a symmetric part and mirror it about the face where the
   halves meet.
+- **A supplier's model**: `open_part` imports a STEP (`.step`/`.stp`), IGES or
+  Parasolid (`.x_t`/`.x_b`) file as a new part. The imported body has no
+  history, but the tools work on it: holes, pockets and bosses on its faces,
+  fillets. The result has `solid_bodies` and mass properties: read the bounding
+  box to see where the model lies before you place anything. With several
+  bodies the tools act on the first. A file holding an assembly is refused.
 - **Assemblies**: `insert_component` puts a part's origin at a point;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.

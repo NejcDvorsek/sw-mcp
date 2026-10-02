@@ -21,6 +21,7 @@ import win32com.client
 from . import binding
 from .constants import (
     EXPORT_FORMATS,
+    IMPORT_FORMATS,
     LENGTH_UNITS,
     MATE_TYPES,
     SW_ANGULAR_DIMENSION,
@@ -252,11 +253,25 @@ class SolidWorksSession:
         return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path)}
 
     def open_part(self, path: str) -> dict:
-        """Open an existing .sldprt; it becomes the current part."""
-        sw = self._ensure()
+        """Open an existing .sldprt, or import a STEP, IGES or Parasolid file as a
+        new part; it becomes the current part.
+
+        An imported body has no history, but the tools work on it: holes and
+        pockets on its faces, bosses, fillets. An import also returns its solid
+        body count and mass properties, to see what came in and where it lies.
+        """
         abs_path = os.path.abspath(path)
+        extension = os.path.splitext(abs_path)[1].lower().lstrip(".")
+        if extension != "sldprt" and extension not in IMPORT_FORMATS:
+            raise SolidWorksError(
+                f"Cannot open a .{extension} file as a part: use .sldprt, or import "
+                f"{', '.join('.' + f for f in sorted(IMPORT_FORMATS))}."
+            )
         if not os.path.isfile(abs_path):
             raise SolidWorksError(f"File not found: {abs_path}")
+        sw = self._ensure()
+        if extension != "sldprt":
+            return self._import_part(sw, abs_path)
         result = sw.OpenDoc6(abs_path, SW_DOC_PART, 0, "", 0, 0)
         doc = result[0] if isinstance(result, tuple) else result
         model = binding.wrap(doc, self._mod.IModelDoc2)
@@ -264,6 +279,23 @@ class SolidWorksSession:
             raise SolidWorksError(f"Could not open the part: {abs_path}")
         self._model = model
         return {"ok": True, "title": model.GetTitle(), "path": abs_path}
+
+    def _import_part(self, sw, abs_path: str) -> dict:
+        doc, errors = sw.LoadFile4(abs_path, "r", sw.GetImportFileData(abs_path), 0)
+        model = binding.wrap(doc, self._mod.IModelDoc2)
+        if model is None:
+            raise SolidWorksError(f"SolidWorks could not import {abs_path} (error {errors}).")
+        name = os.path.basename(abs_path)
+        if int(model.GetType()) != SW_DOC_PART:
+            sw.CloseDoc(model.GetTitle())  # closes the component documents it opened too
+            raise SolidWorksError(f"{name} holds an assembly, not a part: open_part imports single parts only.")
+        bodies = binding.wrap(model, self._mod.IPartDoc).GetBodies2(SW_BODY_SOLID, True) or ()
+        if not bodies:
+            sw.CloseDoc(model.GetTitle())
+            raise SolidWorksError(f"{name} brought in no solid body (only surfaces?), so there is nothing to build on.")
+        self._model = model
+        return {"ok": True, "title": model.GetTitle(), "path": abs_path, "imported": True,
+                "solid_bodies": len(bodies), "mass_properties": self.get_mass_properties()["mass_properties"]}
 
     # --- geometry -------------------------------------------------------------
 

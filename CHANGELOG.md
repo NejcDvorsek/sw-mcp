@@ -15,6 +15,10 @@ All notable changes to this project are documented here. This project follows
   editable. Until now a rounded outline meant many points, and over 24 points
   a profile is fixed rather than dimensioned. A radius too big for its edges
   is refused before anything is sketched, naming the edge.
+- `open_part` imports STEP, IGES and Parasolid files as a new part, so a
+  supplier's model can get holes, pockets and bosses. The result reports the
+  solid bodies and mass properties; a file holding an assembly is refused and
+  closed again, components and all.
 
 ## [0.6.0] — 2026-10-02
 

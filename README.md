@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 344 tests; each feature's integration test
+- **Tested against real SolidWorks.** 348 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -233,7 +233,7 @@ The server speaks MCP over **stdio**.
 | `list_faces` / `list_edges` | Inspect faces (normal/area/centre) and edges (type/axis/length) by index |
 | `export(path, file_format, quality, deviation_mm, angle_deg)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg` |
 | `screenshot(path)` | Isometric, zoom-to-fit PNG/BMP/JPG |
-| `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt` |
+| `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt`; `open_part` also imports STEP, IGES and Parasolid files as a part to build on |
 | `close_part(save)` | Close the current part or assembly |
 
 ### Assembly tools
