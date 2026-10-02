@@ -448,6 +448,16 @@ def test_fillet_one_axis(part):
     assert part.add_fillet(2, edges="z")["edges_filleted"] == 4
 
 
+def test_a_pocket_with_a_bad_depth_leaves_no_sketch_behind(part):
+    part.add_box(40, 20, 10)
+    history = part.list_features()["features"]
+
+    with pytest.raises(SolidWorksError, match="depth must be > 0"):
+        part.cut_profile([[5, 5], [15, 5], [15, 15], [5, 15]], -1)
+
+    assert part.list_features()["features"] == history, "the refused pocket left its sketch in the tree"
+
+
 def test_an_edge_index_out_of_range_names_the_valid_ones(part):
     # an agent picks indices from list_edges; a stale one must say which exist
     part.add_box(40, 20, 10)

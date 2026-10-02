@@ -27,6 +27,10 @@ All notable changes to this project are documented here. This project follows
   their parts as components in place, ready to list and mate. Each refuses the
   other kind of file and closes it again, components and all.
 
+### Fixed
+- `cut_profile` with a depth of 0 or less sketched the profile before refusing,
+  leaving a stray sketch in the tree; the depth is checked first now.
+
 ## [0.6.0] — 2026-10-02
 
 ### Added

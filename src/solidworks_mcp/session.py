@@ -2208,6 +2208,8 @@ class SolidWorksSession:
         model = self._require_model()
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
 
         body = self._solid_body()
         self._select_planar_face(body, (0.0, 0.0, 1.0), "+Z")
@@ -2217,8 +2219,6 @@ class SolidWorksSession:
         if depth_mm is None:
             t1, d1 = SW_END_COND_THROUGH_ALL, 0.0
         else:
-            if depth_mm <= 0:
-                raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
             t1, d1 = SW_END_COND_BLIND, mm_to_m(depth_mm)
 
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
