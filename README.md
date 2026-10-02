@@ -32,7 +32,7 @@ it "looks about right".
   by role (`width@Sketch1`), so the part stays editable, in SolidWorks or
   through the agent.
 - **Real CAD, not just primitives.** Extrude, revolve, sweep, loft and splines;
-  holes, counterbores, slots and pockets on any face; ISO holes from the Hole Wizard; real ISO metric threads;
+  holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
   Work on existing parts: list, delete and suppress features. 58 tools in total.
@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 330 tests; each feature's integration test
+- **Tested against real SolidWorks.** 344 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -199,7 +199,7 @@ The server speaks MCP over **stdio**.
 | `add_swept_profile(profile_mm, path_mm, bend_radius_mm, name)` | Sweep any closed cross-section along a 2D path (rails, gaskets, trim, channels) |
 | `add_lofted_solid(profiles_mm, heights_mm, name)` | Loft/blend 2+ polygon profiles on stacked parallel planes (transitions, adapters) |
 | `add_rib(start_mm, end_mm, toward_mm, thickness_mm, z_mm, name)` | Straight rib / gusset in a plane parallel to Front at `z_mm`, grown toward `toward_mm` until it meets the part (L-bracket gussets) |
-| `add_extruded_profile(points_mm, depth_mm, name)` | Extrude any closed polygon `[[x,y],…]` (brackets, sections) |
+| `add_extruded_profile(points_mm, depth_mm, name, corner_radii_mm)` | Extrude any closed polygon `[[x,y],…]` (brackets, sections); `corner_radii_mm` rounds its corners with real sketch fillets, each radius a dimension |
 | `add_extruded_spline(points_mm, depth_mm, name)` | Extrude a smooth closed spline through points (free-form/organic outlines) |
 | `add_hole(diameter_mm, x_mm, y_mm, name)` | Cut a circular through-hole at (x, y) through the depth axis |
 | `add_counterbore_hole(clearance_diameter_mm, cbore_diameter_mm, cbore_depth_mm, x_mm, y_mm, name)` | Counterbored screw hole (flush cap-head / heat-set insert) on +Z |
@@ -207,10 +207,10 @@ The server speaks MCP over **stdio**.
 | `add_hole_on_face(diameter_mm, face, x_mm, y_mm, z_mm, depth_mm, name)` | Round hole on ANY planar face at a 3D point, through or blind (side holes, heat-set insert holes); the face through the point is used |
 | `add_hole_wizard(kind, size, face, x_mm, y_mm, z_mm, depth_mm, fit, thread, name)` | ISO hole from SolidWorks' Hole Wizard tables: clearance (ISO 273 fits), counterbore, countersink or tapped; `thread="modeled"` cuts a real, printable thread |
 | `add_boss_on_face(diameter_mm, face, x_mm, y_mm, z_mm, height_mm, name)` | Round boss (standoff, peg) grown out of ANY planar face |
-| `add_extruded_profile_on_face(points_mm, face, depth_mm, name)` | Polygon pad/ledge grown out of ANY planar face (3D points on the face) |
-| `cut_profile(points_mm, depth_mm, name)` | Cut a polygon pocket/slot from the +Z face (blind or through) |
-| `cut_profile_on_face(points_mm, face, depth_mm, name)` | Cut a polygon pocket on ANY face (3D points on the face) |
-| `cut_profile_through_plane(points_mm, plane, depth_mm, name)` | Cut a polygon drawn on the Front/Top/Right plane, through all both ways or `depth_mm` centred on the plane (wedges, side windows, symmetric recesses) |
+| `add_extruded_profile_on_face(points_mm, face, depth_mm, name, corner_radii_mm)` | Polygon pad/ledge grown out of ANY planar face (3D points on the face) |
+| `cut_profile(points_mm, depth_mm, name, corner_radii_mm)` | Cut a polygon pocket/slot from the +Z face (blind or through) |
+| `cut_profile_on_face(points_mm, face, depth_mm, name, corner_radii_mm)` | Cut a polygon pocket on ANY face (3D points on the face) |
+| `cut_profile_through_plane(points_mm, plane, depth_mm, name, corner_radii_mm)` | Cut a polygon drawn on the Front/Top/Right plane, through all both ways or `depth_mm` centred on the plane (wedges, side windows, symmetric recesses) |
 | `cut_slot(length_mm, width_mm, x_mm, y_mm, angle_deg, depth_mm, name)` | Cut a straight slotted hole (obround) on the +Z face at any angle |
 | `add_fillet(radius_mm, edges, name)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, or indices `"2,5"`) |
 | `add_chamfer(distance_mm, edges, name)` | Chamfer edges at 45° (`edges`: `all`, axis, or indices) |

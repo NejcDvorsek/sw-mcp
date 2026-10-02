@@ -33,7 +33,7 @@ Work in small verified steps
 
 Pitfalls
 - Walls shared by successive polygon cuts must use identical points: sections a few micrometres apart leave sliver faces and the next cut fails.
-- Polygon profiles have no arcs: use enough points, or revolves, splines and holes.
+- Round polygon corners with corner_radii_mm (real sketch fillets; equal radii share one dimension). Other curves: revolves, splines, slots and holes.
 - add_mirror needs its plane where the copies land in material: add_box spans x 0..w, so mirror about offset_mm = w / 2, not x = 0.
 - SolidWorks' memory grows in long sessions: on a low-memory warning, save and restart SolidWorks (never during a run).
 
@@ -123,14 +123,19 @@ async def add_box(width_mm: float, height_mm: float, depth_mm: float,
 
 
 @mcp.tool()
-async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Extrude") -> dict:
+async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Extrude",
+                               corner_radii_mm: float | list | None = None) -> dict:
     """Extrude a closed polygon into a solid: points_mm = [[x,y], ...] in mm.
 
     The polygon (first-plane coordinates, same as add_box) is auto-closed and
     extruded by depth_mm. Unlocks arbitrary prismatic shapes (brackets, profiles,
-    polygons). Returns mass properties (volume = polygon area * depth).
+    polygons). corner_radii_mm rounds the corners with real sketch fillets: one
+    radius for all, or one per vertex (0 = sharp); equal radii share one
+    dimension ('radius', else 'r<i>'). Returns mass properties (volume = polygon
+    area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
+    concave one gains it).
     """
-    return await _call(_session.add_extruded_profile, points_mm, depth_mm, name)
+    return await _call(_session.add_extruded_profile, points_mm, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
@@ -233,16 +238,17 @@ async def add_lofted_solid(profiles_mm: list, heights_mm: list, name: str = "Lof
 
 @mcp.tool()
 async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float | None = None,
-                                    name: str = "Cut") -> dict:
+                                    name: str = "Cut", corner_radii_mm: float | list | None = None) -> dict:
     """Cut a polygon sketched on a reference plane, symmetric about that plane.
 
     plane: 'front' (z = 0), 'top' (y = 0) or 'right' (x = 0); points_mm = 3D
     [x, y, z] points ON that plane (e.g. x = 0 for 'right'). Cuts through all in
     both directions (depth_mm omitted) or depth_mm in total, centred on the
     plane. For shapes seen from the side: wedges, windows, symmetric recesses.
-    Returns mass properties.
+    corner_radii_mm rounds the corners as for add_extruded_profile. Returns
+    mass properties.
     """
-    return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name)
+    return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
@@ -344,35 +350,40 @@ async def add_boss_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: flo
 
 @mcp.tool()
 async def add_extruded_profile_on_face(points_mm: list, face: str, depth_mm: float,
-                                       name: str = "Boss") -> dict:
+                                       name: str = "Boss", corner_radii_mm: float | list | None = None) -> dict:
     """Grow a polygon boss depth_mm out of ANY planar face: points_mm = [[x,y,z], ...] in mm.
 
     The 3D points lie on the face (found as for add_hole_on_face). For pads,
-    ledges and mounting blocks on an existing part. Returns mass properties.
+    ledges and mounting blocks on an existing part. corner_radii_mm rounds the
+    corners as for add_extruded_profile. Returns mass properties.
     """
-    return await _call(_session.add_extruded_profile_on_face, points_mm, face, depth_mm, name)
+    return await _call(_session.add_extruded_profile_on_face, points_mm, face, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
-async def cut_profile(points_mm: list, depth_mm: float | None = None, name: str = "Cut") -> dict:
+async def cut_profile(points_mm: list, depth_mm: float | None = None, name: str = "Cut",
+                      corner_radii_mm: float | list | None = None) -> dict:
     """Cut a polygonal pocket/slot from the +Z face: points_mm = [[x,y], ...] in mm.
 
     Auto-closed polygon, cut blind by depth_mm or all the way through when depth_mm
-    is omitted. For pockets, slots, cutouts. Returns mass properties.
+    is omitted. For pockets, slots, cutouts. corner_radii_mm rounds the corners
+    as for add_extruded_profile. Returns mass properties.
     """
-    return await _call(_session.cut_profile, points_mm, depth_mm, name)
+    return await _call(_session.cut_profile, points_mm, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
 async def cut_profile_on_face(points_mm: list, face: str,
-                             depth_mm: float | None = None, name: str = "Cut") -> dict:
+                             depth_mm: float | None = None, name: str = "Cut",
+                             corner_radii_mm: float | list | None = None) -> dict:
     """Cut a polygon pocket/slot on ANY planar face: points_mm = [[x,y,z], ...] in mm.
 
     The 3D points must lie on one face facing `face` ("+x"/"-x"/...), which is
     found through them; cut blind by depth_mm or through when omitted. For side
-    pockets/cutouts. Returns mass properties.
+    pockets/cutouts. corner_radii_mm rounds the corners as for
+    add_extruded_profile. Returns mass properties.
     """
-    return await _call(_session.cut_profile_on_face, points_mm, face, depth_mm, name)
+    return await _call(_session.cut_profile_on_face, points_mm, face, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()

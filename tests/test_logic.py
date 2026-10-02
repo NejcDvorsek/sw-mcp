@@ -70,6 +70,56 @@ def test_clean_polygon_too_few_distinct():
         SolidWorksSession._clean_polygon([[0, 0], [0, 0], [0, 0]])
 
 
+def test_clean_polygon_takes_3d_points_too():
+    # the on-face tools check their corners on the 3D points, before a sketch opens
+    pts = SolidWorksSession._clean_polygon([[0, 0, 5], [40, 0, 5], [40, 0, 5], [40, 20, 5], [0, 0, 5]])
+    assert pts == [(0.0, 0.0, 5.0), (40.0, 0.0, 5.0), (40.0, 20.0, 5.0)]
+
+
+def test_corner_groups_share_one_dimension_per_radius():
+    groups = SolidWorksSession._corner_groups
+    assert groups(None, 4) == []
+    assert groups(5, 4) == [(5.0, [0, 1, 2, 3])]
+    assert groups([5, 0, 3, 5], 4) == [(5.0, [0, 3]), (3.0, [2])], "same radius, same group; 0 stays sharp"
+
+
+def test_corner_groups_reject_a_list_that_does_not_fit_the_profile():
+    with pytest.raises(SolidWorksError, match="3 values for 4 corners"):
+        SolidWorksSession._corner_groups([5, 5, 5], 4)
+    with pytest.raises(SolidWorksError, match=">= 0"):
+        SolidWorksSession._corner_groups([5, -1, 5, 5], 4)
+    with pytest.raises(SolidWorksError, match="24"):
+        SolidWorksSession._corner_groups(1, 30)  # such profiles are fixed, not dimensioned
+
+
+def test_corner_radii_must_leave_some_straight_edge():
+    check = SolidWorksSession._check_corner_radii
+    rectangle = [(0, 0), (40, 0), (40, 20), (0, 20)]
+    check(rectangle, [(9.9, [0, 1, 2, 3])])  # the 20 mm sides keep 0.2 mm straight
+    with pytest.raises(SolidWorksError, match="Edge 1-2 is 20 mm long"):
+        check(rectangle, [(10, [0, 1, 2, 3])])  # two R10 arcs eat the whole 20 mm side
+
+
+def test_corner_radius_setback_follows_the_corner_angle():
+    # a 60 degree corner sets the arc back r / tan(30 deg) = 1.732 r along each edge
+    triangle = [(0, 0), (10, 0), (5, 5 * 3 ** 0.5)]
+    SolidWorksSession._check_corner_radii(triangle, [(2.8, [0, 1, 2])])  # 2 * 4.85 < 10
+    with pytest.raises(SolidWorksError, match="Edge 0-1"):
+        SolidWorksSession._check_corner_radii(triangle, [(3, [0, 1, 2])])  # 2 * 5.196 > 10
+
+
+def test_a_straight_corner_cannot_be_rounded():
+    with pytest.raises(SolidWorksError, match="Corner 1 .*in line"):
+        SolidWorksSession._check_corner_radii([(0, 0), (20, 0), (40, 0), (40, 20)], [(2, [1])])
+
+
+def test_corner_radii_work_on_3d_points():
+    # the same rectangle on the x = 40 face: lengths and angles do not change
+    side = [(40, 0, 0), (40, 20, 0), (40, 20, 10), (40, 0, 10)]
+    with pytest.raises(SolidWorksError, match="Edge 1-2 is 10 mm long"):
+        SolidWorksSession._check_corner_radii(side, [(5, [0, 1, 2, 3])])
+
+
 def test_round_polyline_straight_is_single_line():
     segs = SolidWorksSession._round_polyline([[0, 0], [50, 0]], 0)
     assert segs == [("line", (0.0, 0.0), (50.0, 0.0))]

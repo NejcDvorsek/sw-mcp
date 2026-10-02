@@ -106,6 +106,12 @@ SW_CONSTRAINT_COINCIDENT = 9
 SW_CONSTRAINT_FIXED = 17
 SW_CONSTRAINT_HORIZONTAL_POINTS = 25   # two points on one horizontal line
 SW_CONSTRAINT_VERTICAL_POINTS = 26     # two points on one vertical line
+SW_CONSTRAINT_RADIUS = 3               # the relation behind a radius dimension
+SW_RELATIONS_ALL = 0                   # swSketchRelationFilterType_e, for GetRelations
+
+# swConstrainedCornerAction_e (ISketchManager.CreateFillet): keep a rounded
+# corner as a virtual sharp, so its dimensions and relations stay.
+SW_CONSTRAINED_CORNER_KEEP = 1
 
 # swConstrainedStatus_e (ISketch.GetConstrainedStatus), in the words SolidWorks
 # uses in its status bar

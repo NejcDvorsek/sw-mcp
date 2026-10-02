@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `corner_radii_mm` on `add_extruded_profile`, `cut_profile`,
+  `add_extruded_profile_on_face`, `cut_profile_on_face` and
+  `cut_profile_through_plane`: round a polygon's corners with real sketch
+  fillets, one radius for all corners or one per vertex (0 = sharp). The
+  corners keep their dimensions as virtual sharps and equal radii share one
+  dimension (`radius`, else `r<i>`), so the profile stays fully defined and
+  editable. Until now a rounded outline meant many points, and over 24 points
+  a profile is fixed rather than dimensioned. A radius too big for its edges
+  is refused before anything is sketched, naming the edge.
+
 ## [0.6.0] — 2026-10-02
 
 ### Added

@@ -32,6 +32,8 @@ from .constants import (
     SCREW_FITS,
     SKETCH_STATUSES,
     SW_CHAMFER_ANGLE_DISTANCE,
+    SW_CONSTRAINED_CORNER_KEEP,
+    SW_CONSTRAINT_RADIUS,
     SW_COSMETIC_THREAD_WITH_CALLOUT,
     SW_DELETE_ABSORBED,
     SW_DELETE_CHILDREN,
@@ -59,6 +61,7 @@ from .constants import (
     SW_ISO_TAPPED_HOLE,
     SW_REF_PLANE_DISTANCE,
     SW_REF_PLANE_FLIP,
+    SW_RELATIONS_ALL,
     SW_SKETCH_ARC,
     SW_SKETCH_LINE,
     SW_SAVE_AS_CURRENT_VERSION,
@@ -91,7 +94,7 @@ from .constants import (
 )
 from .errors import SolidWorksError
 from .mesh_tools import area, compare_sections, extents, load_mesh, section, simplify
-from .sketch_constraints import SketchDefiner
+from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
@@ -568,25 +571,87 @@ class SolidWorksSession:
 
     @staticmethod
     def _clean_polygon(points_mm) -> list:
-        """Distinct polygon vertices [(x, y), ...]; pure (no COM), unit-testable.
+        """Distinct polygon vertices as tuples, [x, y] or [x, y, z]; pure (no COM), unit-testable.
 
         Drops coincident consecutive points and a trailing point equal to the
         first (so open and explicitly-closed rings both work). Raises if fewer
         than 3 distinct vertices remain.
         """
+        def same(a, b):
+            return all(abs(p - q) < 1e-9 for p, q in zip(a, b))
+
         cleaned = []
-        for x, y in points_mm:
-            p = (float(x), float(y))
-            if not cleaned or abs(p[0] - cleaned[-1][0]) > 1e-9 or abs(p[1] - cleaned[-1][1]) > 1e-9:
+        for point in points_mm:
+            p = tuple(float(c) for c in point)
+            if not cleaned or not same(p, cleaned[-1]):
                 cleaned.append(p)
-        if (len(cleaned) >= 2 and abs(cleaned[0][0] - cleaned[-1][0]) < 1e-9
-                and abs(cleaned[0][1] - cleaned[-1][1]) < 1e-9):
+        if len(cleaned) >= 2 and same(cleaned[0], cleaned[-1]):
             cleaned.pop()  # drop an explicit closing point
         if len(cleaned) < 3:
             raise SolidWorksError(
                 f"A profile needs at least 3 distinct points (got {len(cleaned)})."
             )
         return cleaned
+
+    @staticmethod
+    def _corner_groups(corner_radii_mm, count: int) -> list:
+        """[(radius_mm, [corner indices]), ...] in corner order; pure (no COM), unit-tested.
+
+        corner_radii_mm is None, one radius for every corner, or one per vertex
+        (0 = sharp). Corners with the same radius share one dimension, the way
+        vertices at the same x share one, so they form one group.
+        """
+        if corner_radii_mm is None:
+            return []
+        radii = ([float(corner_radii_mm)] * count if isinstance(corner_radii_mm, (int, float))
+                 else [float(r) for r in corner_radii_mm])
+        if len(radii) != count:
+            raise SolidWorksError(
+                f"corner_radii_mm has {len(radii)} values for {count} corners: give one radius for all "
+                "corners, or one per vertex (0 = sharp)."
+            )
+        if any(r < 0 for r in radii):
+            raise SolidWorksError(f"Corner radii must be >= 0 (got {radii}).")
+        groups = {}
+        for i, radius in enumerate(radii):
+            if radius > 0:
+                groups.setdefault(radius, []).append(i)
+        if groups and count > MAX_DIMENSIONED_VERTICES:
+            raise SolidWorksError(
+                f"Corner radii need a profile of at most {MAX_DIMENSIONED_VERTICES} points (this one has "
+                f"{count}): larger profiles are fixed, not dimensioned."
+            )
+        return sorted(groups.items(), key=lambda group: group[1][0])
+
+    @staticmethod
+    def _check_corner_radii(points, groups) -> None:
+        """Fail before SolidWorks does; pure (no COM), unit-tested.
+
+        A rounded corner sets its arc back r / tan(angle / 2) along both edges,
+        so each needs a real corner and each edge room for the arcs at both its
+        ends. Lengths and angles hold in 2D sketch and 3D model points alike.
+        """
+        n = len(points)
+        setback = {}
+        for radius, corners in groups:
+            for i in corners:
+                here = points[i]
+                u = [p - h for p, h in zip(points[i - 1], here)]
+                w = [p - h for p, h in zip(points[(i + 1) % n], here)]
+                cos = sum(a * b for a, b in zip(u, w)) / (math.hypot(*u) * math.hypot(*w))
+                angle = math.acos(max(-1.0, min(1.0, cos)))
+                if angle < 1e-6 or angle > math.pi - 1e-6:
+                    raise SolidWorksError(f"Corner {i} cannot be rounded: its edges are in line.")
+                setback[i] = radius / math.tan(angle / 2)
+        for i in range(n):
+            j = (i + 1) % n
+            need = setback.get(i, 0.0) + setback.get(j, 0.0)
+            length = math.dist(points[i], points[j])
+            if need and need > length - 1e-6:
+                raise SolidWorksError(
+                    f"Edge {i}-{j} is {length:g} mm long, but the corner radii at its ends need "
+                    f"{need:g} mm of it. Use smaller radii."
+                )
 
     @staticmethod
     def _round_polyline(points_mm, radius_mm) -> list:
@@ -732,19 +797,92 @@ class SolidWorksSession:
         definer.fix(segments)
         return {"dimensions": {}, "fully_defined": definer.fully_defined()}
 
-    def _sketch_closed_polygon(self, sk, points_mm) -> dict:
+    def _sketch_closed_polygon(self, sk, points_mm, corner_radii_mm=None) -> dict:
         """Open a sketch, draw a closed polygon from [x, y] points (mm) and define it.
 
-        Tolerant of open and explicitly-closed rings (see _clean_polygon).
-        Returns the _define_sketch result.
+        Tolerant of open and explicitly-closed rings (see _clean_polygon);
+        corner_radii_mm rounds its corners (see _round_corners). Returns the
+        _define_sketch result.
         """
-        pts_m = [(mm_to_m(x), mm_to_m(y)) for x, y in self._clean_polygon(points_mm)]
+        points = self._clean_polygon(points_mm)
+        corners = self._profile_corners(points, corner_radii_mm)
         sk.InsertSketch(True)
         try:
-            return self._define_sketch(sk, self._draw_polyline(sk, pts_m))
+            return self._draw_defined_polygon(sk, [(mm_to_m(x), mm_to_m(y)) for x, y in points], corners)
         finally:
             self._model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when drawing failed
+
+    def _profile_corners(self, points_mm, corner_radii_mm) -> tuple:
+        """Check a profile's corner radii before any sketch opens, so a refused
+        radius leaves nothing behind. Returns (vertex count, corner groups)."""
+        points = self._clean_polygon(points_mm)
+        groups = self._corner_groups(corner_radii_mm, len(points))
+        self._check_corner_radii(points, groups)
+        return len(points), groups
+
+    def _draw_defined_polygon(self, sk, polygon_m, corners) -> dict:
+        """Draw the cleaned polygon (sketch coordinates, metres) in the open
+        sketch, fully define it and round its corners."""
+        count, groups = corners
+        if groups and len(polygon_m) != count:
+            raise SolidWorksError(
+                "Two profile points lie within a micrometre of each other: remove one, so each corner "
+                "radius lands on its own corner."
+            )
+        lines = self._draw_polyline(sk, polygon_m)
+        return self._round_corners(sk, lines, groups, self._define_sketch(sk, lines))
+
+    def _round_corners(self, sk, lines, groups, defined: dict) -> dict:
+        """Round corners of the open, fully defined polygon with sketch fillets.
+
+        Each corner keeps its dimensions as a virtual sharp. One fillet call per
+        group of equal radii: SolidWorks gives it one radius dimension and ties
+        the group with equal relations. Returns `defined` plus that dimension,
+        named 'radius' when every rounded corner shares it, else 'r<i>' after
+        the group's first corner.
+        """
+        if not groups:
+            return defined
+        sketch = binding.wrap(sk.ActiveSketch, self._mod.ISketch)
+        corners = [binding.wrap(binding.wrap(line, self._mod.ISketchLine).GetStartPoint2(), self._mod.ISketchPoint)
+                   for line in lines]
+        dimensions = dict(defined["dimensions"])
+        for radius, indices in groups:
+            radii_before = {d.GetNameForSelection() for d in self._radius_dimensions(sketch)}
+            arcs_before = self._arc_count(sketch)
+            self._model.ClearSelection2(True)
+            if not all(corners[i].Select4(k > 0, None) for k, i in enumerate(indices)):
+                raise SolidWorksError(f"Could not select corner(s) {indices} to round.")
+            if sk.CreateFillet(mm_to_m(radius), SW_CONSTRAINED_CORNER_KEEP) is None:
+                raise SolidWorksError(f"SolidWorks could not round corner(s) {indices} with R{radius:g}.")
+            rounded = self._arc_count(sketch) - arcs_before
+            new = [d for d in self._radius_dimensions(sketch) if d.GetNameForSelection() not in radii_before]
+            if rounded != len(indices) or len(new) != 1:
+                raise SolidWorksError(
+                    f"Rounding corner(s) {indices} with R{radius:g} gave {rounded} arc(s) and {len(new)} "
+                    "radius dimension(s); expected one arc per corner and one dimension."
+                )
+            role = "radius" if len(groups) == 1 else f"r{indices[0]}"
+            new[0].Name = role
+            dimensions[role] = new[0].GetNameForSelection()
+        self._model.ClearSelection2(True)
+        return {"dimensions": dimensions, "fully_defined": sketch.GetConstrainedStatus() == SW_FULLY_CONSTRAINED}
+
+    def _radius_dimensions(self, sketch) -> list:
+        """The sketch's radius dimensions (IDimension), found through their relations."""
+        relations = binding.wrap(sketch.RelationManager, self._mod.ISketchRelationManager)
+        found = []
+        for relation_dispatch in relations.GetRelations(SW_RELATIONS_ALL) or ():
+            relation = binding.wrap(relation_dispatch, self._mod.ISketchRelation)
+            if relation.GetRelationType() == SW_CONSTRAINT_RADIUS:
+                display = binding.wrap(relation.GetDisplayDimension(), self._mod.IDisplayDimension)
+                found.append(binding.wrap(display.GetDimension2(0), self._mod.IDimension))
+        return found
+
+    def _arc_count(self, sketch) -> int:
+        return sum(1 for segment in sketch.GetSketchSegments() or ()
+                   if binding.wrap(segment, self._mod.ISketchSegment).GetType() == SW_SKETCH_ARC)
 
     def _open_face_sketch(self, sk, face: str):
         """Open a sketch on the already-selected face and return it (never None).
@@ -773,14 +911,16 @@ class SolidWorksSession:
         return face
 
     def add_extruded_profile(self, points_mm: list, depth_mm: float,
-                             name: str = "Extrude") -> dict:
+                             name: str = "Extrude", corner_radii_mm=None) -> dict:
         """Extrude a closed polygon profile into a solid on the first plane.
 
         points_mm is a list of [x, y] vertices (mm) in the first-plane coordinate
         system (same as add_box); the polygon is auto-closed and extruded by
         depth_mm along the plane normal. Unlocks arbitrary prismatic shapes
-        (L-brackets, T-sections, polygons, ...). Returns mass properties
-        (volume = polygon area * depth).
+        (L-brackets, T-sections, polygons, ...). corner_radii_mm rounds the
+        corners with real sketch fillets: one radius for all, or one per vertex
+        (0 = sharp). Returns mass properties (volume = polygon area * depth; a
+        right-angled corner of radius r loses r^2 (1 - pi/4), a concave one gains it).
         """
         model = self._require_model()
         if depth_mm <= 0:
@@ -795,7 +935,7 @@ class SolidWorksSession:
             raise SolidWorksError("Could not select the reference plane.")
 
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
-        sketch = self._sketch_closed_polygon(sk, points_mm)
+        sketch = self._sketch_closed_polygon(sk, points_mm, corner_radii_mm)
         return self._extrude_sketch(depth_mm, name, sketch, "Is the profile closed and not self-intersecting?")
 
     def add_extruded_spline(self, points_mm: list, depth_mm: float,
@@ -1822,17 +1962,19 @@ class SolidWorksSession:
             self._model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when the point is rejected
 
-    def _sketch_polygon_on_face(self, face: str, points_mm) -> dict:
-        """A fully defined polygon through 3D points on the face; the sketch is closed again."""
+    def _sketch_polygon_on_face(self, face: str, points_mm, corner_radii_mm=None) -> dict:
+        """A fully defined polygon through 3D points on the face, its corners
+        rounded by corner_radii_mm; the sketch is closed again."""
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        corners = self._profile_corners(points_mm, corner_radii_mm)
         sk, sketch = self._open_sketch_on_face(face, points_mm[0])
         try:
             uv_m = [self._model_to_sketch_uv(sketch, mm_to_m(p[0]), mm_to_m(p[1]),
                                              mm_to_m(p[2]), face)
                     for p in points_mm]
             # x/y dimensions run along the face sketch's own axes
-            return self._define_sketch(sk, self._draw_polyline(sk, self._clean_polygon(uv_m)))
+            return self._draw_defined_polygon(sk, self._clean_polygon(uv_m), corners)
         finally:
             self._model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when a point is rejected
@@ -1884,26 +2026,28 @@ class SolidWorksSession:
         return self._extrude_sketch(height_mm, name, defined, "Is the circle on the face?", role="height")
 
     def add_extruded_profile_on_face(self, points_mm: list, face: str, depth_mm: float,
-                                     name: str = "Boss") -> dict:
+                                     name: str = "Boss", corner_radii_mm=None) -> dict:
         """Grow a polygon boss depth_mm out of any planar face.
 
         points_mm are 3D [x, y, z] vertices on the face (auto-closed); the face is
         found as for add_hole_on_face. For pads, ledges and mounting blocks on an
-        existing part. Volume added = polygon area * depth.
+        existing part. corner_radii_mm rounds the corners as for
+        add_extruded_profile. Volume added = polygon area * depth.
         """
         self._require_model()
         if depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
-        defined = self._sketch_polygon_on_face(face, points_mm)
+        defined = self._sketch_polygon_on_face(face, points_mm, corner_radii_mm)
         return self._extrude_sketch(depth_mm, name, defined, "Is the profile closed and on the face?")
 
     def cut_profile(self, points_mm: list, depth_mm: float | None = None,
-                    name: str = "Cut") -> dict:
+                    name: str = "Cut", corner_radii_mm=None) -> dict:
         """Cut a polygonal pocket/slot from the +Z face, blind or through.
 
         points_mm is a list of [x, y] vertices (mm) in add_box coordinates. The
         polygon is auto-closed and cut into the part: blind by depth_mm, or all
-        the way through when depth_mm is None. Returns mass properties.
+        the way through when depth_mm is None. corner_radii_mm rounds the
+        corners as for add_extruded_profile. Returns mass properties.
         """
         model = self._require_model()
         if not points_mm:
@@ -1912,7 +2056,7 @@ class SolidWorksSession:
         body = self._solid_body()
         self._select_planar_face(body, (0.0, 0.0, 1.0), "+Z")
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
-        sketch = self._sketch_closed_polygon(sk, points_mm)
+        sketch = self._sketch_closed_polygon(sk, points_mm, corner_radii_mm)
 
         if depth_mm is None:
             t1, d1 = SW_END_COND_THROUGH_ALL, 0.0
@@ -1934,19 +2078,21 @@ class SolidWorksSession:
         return self._with_depth(self._finish_feature(cut, name, **sketch), depth_mm)
 
     def cut_profile_on_face(self, points_mm: list, face: str,
-                            depth_mm: float | None = None, name: str = "Cut") -> dict:
+                            depth_mm: float | None = None, name: str = "Cut",
+                            corner_radii_mm=None) -> dict:
         """Cut a polygon pocket/slot on ANY planar face, blind or through.
 
         points_mm is a list of 3D [x, y, z] vertices (mm) that lie on one face
         facing `face` ('+x'/'-x'/...): the face through them is used, as for
         add_hole_on_face. Each is mapped into the face-sketch via the
         model->sketch transform. The polygon is auto-closed; cut blind by depth_mm
-        or through when depth_mm is None. Returns mass properties.
+        or through when depth_mm is None. corner_radii_mm rounds the corners as
+        for add_extruded_profile. Returns mass properties.
         """
         model = self._require_model()
         if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
-        defined = self._sketch_polygon_on_face(face, points_mm)
+        defined = self._sketch_polygon_on_face(face, points_mm, corner_radii_mm)
 
         if depth_mm is None:
             t1, d1 = SW_END_COND_THROUGH_ALL, 0.0
@@ -1968,14 +2114,16 @@ class SolidWorksSession:
     _REF_PLANE_INDEX = {"front": 0, "top": 1, "right": 2}  # tree order in a new part
 
     def cut_profile_through_plane(self, points_mm: list, plane: str,
-                                  depth_mm: float | None = None, name: str = "Cut") -> dict:
+                                  depth_mm: float | None = None, name: str = "Cut",
+                                  corner_radii_mm=None) -> dict:
         """Cut a polygon sketched on a default reference plane, symmetric about it.
 
         plane: 'front' (z = 0), 'top' (y = 0) or 'right' (x = 0). points_mm are
         3D [x, y, z] vertices ON that plane (e.g. x = 0 for 'right'). The cut runs
         through all in both directions (depth_mm None), or depth_mm in total,
         centred on the plane. For shapes seen from the side: wedges, windows and
-        recesses symmetric about the plane. Returns mass properties.
+        recesses symmetric about the plane. corner_radii_mm rounds the corners
+        as for add_extruded_profile. Returns mass properties.
         """
         key = str(plane).lower()
         if key not in self._REF_PLANE_INDEX:
@@ -1985,6 +2133,7 @@ class SolidWorksSession:
         model = self._require_model()
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        corners = self._profile_corners(points_mm, corner_radii_mm)
 
         ref = self._ref_planes()[self._REF_PLANE_INDEX[key]]
         model.ClearSelection2(True)
@@ -1997,7 +2146,7 @@ class SolidWorksSession:
             uv_m = [self._model_to_sketch_uv(sketch, mm_to_m(p[0]), mm_to_m(p[1]),
                                              mm_to_m(p[2]), label)
                     for p in points_mm]
-            defined = self._define_sketch(sk, self._draw_polyline(sk, self._clean_polygon(uv_m)))
+            defined = self._draw_defined_polygon(sk, self._clean_polygon(uv_m), corners)
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when a point is rejected

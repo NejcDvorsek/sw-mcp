@@ -65,6 +65,10 @@ stray drag in SolidWorks can change the part.
   `x`). On a face sketch these are that sketch's own horizontal and vertical
   directions, not the model axes. A coordinate of 0 is a relation, so it has no
   dimension.
+- Rounded corners (`corner_radii_mm`) are sketch fillets: each corner keeps its
+  `x<i>` / `y<i>` as a virtual sharp, and corners with the same radius share one
+  dimension, `radius` when all rounded corners share it, else `r<i>` named after
+  the first corner with that radius.
 - Profiles with more than 24 points (typically traced from a mesh), sweep paths
   and splines are **fixed** instead: dimensioning them takes minutes and gives
   nobody a usable handle. Rebuild them to change them.
@@ -97,6 +101,14 @@ stray drag in SolidWorks can change the part.
   any planar face. A PCB standoff is a boss plus a blind hole in its top.
 - **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
   face), `cut_slot` (obround on +Z).
+- **Rounded outlines**: give `corner_radii_mm` to `add_extruded_profile`,
+  `cut_profile`, the `*_on_face` profile tools or `cut_profile_through_plane`:
+  one radius for every corner, or one per vertex (0 = sharp). Hand calculation:
+  a right-angled corner of radius r loses r^2 (1 - pi/4) of area, a concave one
+  gains it. A radius too big for its edges is refused before anything is
+  sketched, with the edge that is too short. Profiles over 24 points cannot be
+  rounded (they are fixed, not dimensioned). For a plain rounded block,
+  `add_box` plus `add_fillet(edges="z")` works as well.
 - **Side-view shapes** (wedges, windows, symmetric recesses):
   `cut_profile_through_plane` on the Front/Top/Right plane, through all or a
   depth centred on the plane.
@@ -170,8 +182,8 @@ a proven battery socket:
 ## 7. Limits and housekeeping
 
 - Not available: importing meshes as bodies (slice them instead), drawings, sketches on
-  arbitrary planes, arcs inside polygon profiles (approximate them with enough
-  points, or use revolves, splines and holes).
+  arbitrary planes, free arcs inside polygon profiles (round corners with
+  `corner_radii_mm`; other curves need revolves, splines, slots or holes).
 - SolidWorks' memory grows over long sessions. If it warns about low memory,
   save your work and restart SolidWorks. Never restart it during a run: the COM
   connection breaks and every later call fails.
