@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] — 2026-10-02
 
 ### Added
 - `list_features`, `delete_feature` and `suppress_feature`: work on a part's
