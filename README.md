@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 310 tests; each feature's integration test
+- **Tested against real SolidWorks.** 320 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -95,15 +95,25 @@ is in [`src/solidworks_mcp/guide.md`](https://github.com/hjbaard/SolidWorks-MCP/
 - Python 3.11+ (uv fetches one if needed).
 - **Tested on SOLIDWORKS 2026** (3DEXPERIENCE R2026x). The API calls it uses
   exist since SOLIDWORKS 2020 SP2, so 2020–2025 should work, but that is
-  **untested**. Tried another version? Please
-  [open an issue](https://github.com/hjbaard/SolidWorks-MCP/issues) with the
-  result, whether it worked or not.
+  **untested**. To check your installation, run this with SolidWorks open:
+
+  ```bash
+  uvx solidworks-mcp --selftest
+  ```
+
+  It builds a few small parts, compares each with a hand calculation and
+  closes them unsaved. Please paste its output in a
+  [compatibility report](https://github.com/hjbaard/SolidWorks-MCP/issues/new?template=compatibility.yml),
+  whether it worked or not.
 
 **Status: early (0.x).** It works end-to-end, but tool names and conventions
 may still change. See [CHANGELOG.md](https://github.com/hjbaard/SolidWorks-MCP/blob/main/CHANGELOG.md).
 
 ## Troubleshooting
 
+- **Start with the selftest**: `uvx solidworks-mcp --selftest` shows your
+  SolidWorks release, language and templates, and which tool areas work. Add
+  its output to a [bug report](https://github.com/hjbaard/SolidWorks-MCP/issues/new?template=bug_report.yml).
 - **"No running SolidWorks found" / connection fails** — SolidWorks must be
   *running* before you start the server or run a script; it attaches to the active
   instance via `GetActiveObject` and does not launch one.

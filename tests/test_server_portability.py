@@ -89,6 +89,17 @@ def test_server_starts_without_pywin32_and_tools_fail_loud():
     )
 
 
+def test_selftest_off_windows_says_why_it_cannot_run():
+    probe = _PROBE.replace("server.main()", "sys.argv = ['solidworks-mcp', '--selftest']\nserver.main()")
+    run = subprocess.run([sys.executable, "-c", probe], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 1 and "only works on Windows" in run.stdout and "Traceback" not in run.stderr, (
+        "a user who runs the selftest where it cannot work must read why, not get a stack trace: "
+        f"exit {run.returncode}\n{run.stdout}\n{run.stderr}"
+    )
+
+
 def test_server_hands_every_client_its_guidelines():
     """Clients show a server's `instructions` to the model at connect time, and
     list its resources: that is how the modelling guidelines reach an agent

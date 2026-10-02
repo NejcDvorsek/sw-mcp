@@ -14,6 +14,12 @@ All notable changes to this project are documented here. This project follows
   other features are built on it, naming them, unless `with_children=True`.
   `suppress_feature` keeps the feature and its dimensions; unsuppressing brings
   back what depends on it too, so the two calls round-trip.
+- `solidworks-mcp --selftest`: checks your installation before you report an
+  issue. It prints the SolidWorks release, language, templates and units, then
+  runs twelve checks on small parts and an assembly (holes, fillet, revolve,
+  Hole Wizard, thread, material, delete, STL export), compares each with a hand
+  calculation and closes them unsaved. GitHub issue forms for bug and
+  compatibility reports ask for its output.
 
 ### Changed
 - Sketches that are not fully defined are reported as 'Sketch3 (under

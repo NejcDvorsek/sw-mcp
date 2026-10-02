@@ -79,6 +79,15 @@ SW_START_SKETCH_PLANE = 0
 SW_PREF_DEFAULT_TEMPLATE_PART = 8
 SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY = 9
 
+# A document's length unit (IModelDocExtension.GetUserPreferenceInteger with
+# swUnitsLinear, swUserPreferenceIntegerValue_e, and no option): the tools work
+# in SI, but equations are typed in these units. Names per swLengthUnit_e.
+SW_UNITS_LINEAR = 47
+SW_DETAILING_NO_OPTION = 0
+LENGTH_UNITS = {0: "millimetres", 1: "centimetres", 2: "metres", 3: "inches", 4: "feet",
+                5: "feet and inches", 6: "angstroms", 7: "nanometres", 8: "microns", 9: "mils",
+                10: "microinches"}
+
 # swConstraintType_e -- relation types for ISketchRelationManager.AddRelation,
 # which (unlike the string-keyed SketchAddConstraints) returns the relation, so a
 # refusal is detectable.

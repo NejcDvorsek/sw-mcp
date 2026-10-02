@@ -21,6 +21,7 @@ import win32com.client
 from . import binding
 from .constants import (
     EXPORT_FORMATS,
+    LENGTH_UNITS,
     MATE_TYPES,
     SW_ANGULAR_DIMENSION,
     SW_DIMENSION_DRIVING,
@@ -34,6 +35,7 @@ from .constants import (
     SW_COSMETIC_THREAD_WITH_CALLOUT,
     SW_DELETE_ABSORBED,
     SW_DELETE_CHILDREN,
+    SW_DETAILING_NO_OPTION,
     SW_DOC_ASSEMBLY,
     SW_DOC_PART,
     SW_END_COND_BLIND,
@@ -71,6 +73,7 @@ from .constants import (
     SW_THREAD_METHOD_CUT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
+    SW_UNITS_LINEAR,
     SW_UNSUPPRESS_DEPENDENT,
     SW_VIEW_ISOMETRIC,
     SW_WZD_COUNTERBORE,
@@ -167,6 +170,27 @@ class SolidWorksSession:
             "active_document": active_title,
             "current_part": self._model.GetTitle() if self._model is not None else None,
         }
+
+    def describe_installation(self) -> dict:
+        """What differs between SolidWorks installations: release, language,
+        default templates and the part template's length unit.
+
+        For the selftest. Opens a new part to read the unit and closes it again.
+        """
+        sw = self._ensure()
+        templates = {}
+        for kind, preference in (("part", SW_PREF_DEFAULT_TEMPLATE_PART),
+                                 ("assembly", SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY)):
+            path = sw.GetUserPreferenceStringValue(preference)
+            templates[f"{kind}_template"] = {"path": path, "found": bool(path) and os.path.isfile(path)}
+        self.new_part()
+        try:
+            extension = binding.wrap(self._model.Extension, self._mod.IModelDocExtension)
+            unit = extension.GetUserPreferenceInteger(SW_UNITS_LINEAR, SW_DETAILING_NO_OPTION)
+        finally:
+            self.close_part()
+        return {"revision": self._revision(), "language": sw.GetCurrentLanguage(),
+                "units": LENGTH_UNITS.get(unit, f"unit {unit}"), **templates}
 
     # --- document lifecycle ---------------------------------------------------
 

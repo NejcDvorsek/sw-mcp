@@ -1,0 +1,26 @@
+name: Bug report
+description: A tool fails, or builds the wrong geometry.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: |
+        The tool call or your request to the agent, what you expected, and what you got.
+        Paste the error message if there was one; a screenshot of the part helps.
+    validations:
+      required: true
+  - type: textarea
+    id: selftest
+    attributes:
+      label: Selftest output
+      description: With SolidWorks open, run `uvx solidworks-mcp --selftest` in a terminal and paste its output.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Desktop, Claude Code, Cursor, ...

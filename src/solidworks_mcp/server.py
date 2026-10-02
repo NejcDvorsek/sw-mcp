@@ -6,12 +6,14 @@ the agent can read and react to them in the build -> measure -> correct loop,
 rather than getting an opaque stack trace.
 """
 
+import argparse
 import sys
 from importlib import resources
 
 from mcp.server.fastmcp import FastMCP
 
 from .errors import SolidWorksError
+from .selftest import main as run_selftest
 
 # Shown to the model by every MCP client at connect time, so keep it short; the
 # long version is the solidworks://guide resource.
@@ -711,9 +713,18 @@ async def get_assembly_bounding_box() -> dict:
 
 
 def main() -> None:
-    """Entry point: run the MCP server over stdio."""
+    """Entry point: run the MCP server over stdio, or the selftest with --selftest."""
+    parser = argparse.ArgumentParser(prog="solidworks-mcp", description="MCP server for a running SolidWorks.")
+    parser.add_argument("--selftest", action="store_true",
+                        help="check this machine's SolidWorks with a few small parts, print a report and exit")
+    selftest = parser.parse_args().selftest
     try:
-        mcp.run()
+        if not selftest:
+            mcp.run()
+        elif _worker is None:
+            sys.exit(run_selftest(_session))
+        else:
+            sys.exit(_worker.submit(lambda: run_selftest(_session)).result())
     finally:
         if _worker is not None:
             _worker.shutdown()

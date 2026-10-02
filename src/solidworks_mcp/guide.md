@@ -169,3 +169,6 @@ a proven battery socket:
   connection breaks and every later call fails.
 - Close documents you no longer need; saving over a file that is still open in
   SolidWorks fails.
+- Tools failing in ways this guide does not explain? Ask the user to run
+  `uvx solidworks-mcp --selftest` with SolidWorks open: it shows which tool
+  areas work on their installation and ends with where to report it.

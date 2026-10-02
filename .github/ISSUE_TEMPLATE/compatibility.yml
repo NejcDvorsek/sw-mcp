@@ -1,0 +1,38 @@
+name: Compatibility report
+description: Does it work with your SolidWorks? Tell us either way.
+title: "Compatibility: SOLIDWORKS <year>, <language>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only SOLIDWORKS 2026 is tested so far, so every report helps, "it just works" included.
+        With SolidWorks open, run this in a terminal and paste its output below:
+
+        ```
+        uvx solidworks-mcp --selftest
+        ```
+
+        It builds a few small parts, compares each with a hand calculation and closes them without saving.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - All checks passed
+        - Some checks failed
+        - It could not connect to SolidWorks
+    validations:
+      required: true
+  - type: textarea
+    id: selftest
+    attributes:
+      label: Selftest output
+      description: The full output of `uvx solidworks-mcp --selftest`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Your MCP client, what you built with it, what worked or did not.
