@@ -37,7 +37,9 @@ short connect-time instructions first; this is the long version.
 - **Undo a step** with `delete_feature(name)`: the feature goes together with
   its sketch. It refuses while other features are built on it (a fillet on its
   edges, a sketch on its face) and names them; `with_children=True` deletes
-  those too. `suppress_feature` takes a feature out but keeps it and its
+  those too. A loft or rib keeps its hidden helper plane, as in SolidWorks
+  itself: delete that plane as well (`list_features` shows it as a RefPlane).
+  `suppress_feature` takes a feature out but keeps it and its
   dimensions, to try a variant; `suppress=False` brings it back together with
   what depends on it.
 - A tool that cannot do what was asked returns `{ok: false, error}`. The error
