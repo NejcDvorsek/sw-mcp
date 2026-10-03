@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.0] — 2026-10-03
 
 ### Added
 - `add_disc` takes a centre (`x_mm`, `y_mm`), its position two dimensions;
