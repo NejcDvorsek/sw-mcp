@@ -12,6 +12,9 @@ All notable changes to this project are documented here. This project follows
 - `measure_distance`: the smallest distance between two components, or from a
   component to a point, with the nearest point and whether the point lies in
   the material. 0 means they touch or overlap.
+- `add_mirror` and `cut_profile_through_plane` take the name of any plane in
+  the part (`plane="Plane1"`), such as one a person made; an unknown name lists
+  the planes there are.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

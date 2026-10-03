@@ -119,8 +119,8 @@ stray drag in SolidWorks can change the part.
   rounded (they are fixed, not dimensioned). For a plain rounded block,
   `add_box` plus `add_fillet(edges="z")` works as well.
 - **Side-view shapes** (wedges, windows, symmetric recesses):
-  `cut_profile_through_plane` on the Front/Top/Right plane, through all or a
-  depth centred on the plane.
+  `cut_profile_through_plane` on the Front/Top/Right plane or another plane by
+  name, through all or a depth centred on the plane.
 - **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
   holes in it).
@@ -143,7 +143,8 @@ stray drag in SolidWorks can change the part.
   width: `set_equation('"<plane_offset>" = "<width>" / 2')` with the names the
   tools returned. Without `features` the whole body is mirrored and merged:
   model half of a symmetric part and mirror it about the face where the
-  halves meet.
+  halves meet. `plane` may also name another plane of the part (`"Plane1"`),
+  moved `offset_mm` along its normal.
 - **Text**: `add_text_on_face(text, face, x, y, z, height_mm, depth_mm)`
   engraves a label into any planar face; `emboss=True` raises it instead. The
   point is the text's lower-left corner, and the text runs along the face
@@ -217,7 +218,8 @@ a proven battery socket:
 ## 7. Limits and housekeeping
 
 - Not available: importing meshes as bodies (slice them instead), drawings, sketches on
-  arbitrary planes, free arcs inside polygon profiles (round corners with
+  arbitrary planes (a person's planes work in `add_mirror` and
+  `cut_profile_through_plane`), free arcs inside polygon profiles (round corners with
   `corner_radii_mm`; other curves need revolves, splines, slots or holes).
 - SolidWorks' memory grows over long sessions. If it warns about low memory,
   save your work and restart SolidWorks. Never restart it during a run: the COM

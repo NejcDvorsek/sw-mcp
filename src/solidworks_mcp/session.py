@@ -2327,18 +2327,16 @@ class SolidWorksSession:
     def cut_profile_through_plane(self, points_mm: list, plane: str,
                                   depth_mm: float | None = None, name: str = "Cut",
                                   corner_radii_mm=None) -> dict:
-        """Cut a polygon sketched on a default reference plane, symmetric about it.
+        """Cut a polygon sketched on a reference plane, symmetric about it.
 
-        plane: 'front' (z = 0), 'top' (y = 0) or 'right' (x = 0). points_mm are
-        3D [x, y, z] vertices ON that plane (e.g. x = 0 for 'right'). The cut runs
+        plane: 'front' (z = 0), 'top' (y = 0), 'right' (x = 0) or the name of
+        another plane in the part (e.g. 'Plane1'). points_mm are 3D [x, y, z]
+        vertices ON that plane (e.g. x = 0 for 'right'). The cut runs
         through all in both directions (depth_mm None), or depth_mm in total,
         centred on the plane. For shapes seen from the side: wedges, windows and
         recesses symmetric about the plane. corner_radii_mm rounds the corners
         as for add_extruded_profile. Returns mass properties.
         """
-        key = str(plane).lower()
-        if key not in self._REF_PLANE_INDEX:
-            raise SolidWorksError(f"Unknown plane '{plane}'. Use 'front', 'top' or 'right'.")
         if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         model = self._require_model()
@@ -2346,11 +2344,10 @@ class SolidWorksSession:
             raise SolidWorksError("No profile points given.")
         corners = self._profile_corners(points_mm, corner_radii_mm)
 
-        ref = self._ref_planes()[self._REF_PLANE_INDEX[key]]
+        ref, label = self._named_plane(plane)
         model.ClearSelection2(True)
         if not ref.Select2(False, 0):
-            raise SolidWorksError(f"Could not select the {key} plane.")
-        label = f"{key} plane"
+            raise SolidWorksError(f"Could not select the {label}.")
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sketch = self._open_face_sketch(sk, label)
         try:
@@ -2376,7 +2373,7 @@ class SolidWorksSession:
         )
         if cut is None:
             raise SolidWorksError(
-                f"FeatureCut4 failed (None). Does the profile on the {key} plane cross the part?"
+                f"FeatureCut4 failed (None). Does the profile on the {label} cross the part?"
             )
         return self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
 
@@ -2831,20 +2828,34 @@ class SolidWorksSession:
         return self._finish_feature(pattern, "CircularPattern", instances=count,
                                     seed=seed, center_mm=[center_x_mm, center_y_mm])
 
-    def _plane_at(self, key: str, offset_mm: float):
-        """The default plane `key`, or a new plane parallel to it offset_mm along
-        its normal (negative: the other way). Returns (plane, created)."""
+    def _named_plane(self, plane: str):
+        """A reference plane: 'front' / 'top' / 'right' (the default planes, in
+        any template language) or the name of a plane in the tree, such as one a
+        person made. Returns (plane, label)."""
+        key = str(plane).lower()
+        planes = self._ref_planes()
+        if key in self._REF_PLANE_INDEX:
+            return planes[self._REF_PLANE_INDEX[key]], f"{key} plane"
+        named = [p for p in planes if p.Name == plane] or [p for p in planes if p.Name.lower() == key]
+        if len(named) != 1:
+            raise SolidWorksError(f"No plane '{plane}'. Use 'front', 'top', 'right' or a plane of the part: "
+                                  f"{', '.join(p.Name for p in planes)}.")
+        return named[0], f"plane '{named[0].Name}'"
+
+    def _plane_at(self, plane: str, offset_mm: float):
+        """The plane `plane` (see _named_plane), or a new plane parallel to it
+        offset_mm along its normal (negative: the other way). Returns (plane, created)."""
         model = self._require_model()
-        base = self._ref_planes()[self._REF_PLANE_INDEX[key]]
+        base, label = self._named_plane(plane)
         if offset_mm == 0:
             return base, False
         model.ClearSelection2(True)
         if not base.Select2(False, 0):
-            raise SolidWorksError(f"Could not select the {key} plane.")
+            raise SolidWorksError(f"Could not select the {label}.")
         constraint = SW_REF_PLANE_DISTANCE | (SW_REF_PLANE_FLIP if offset_mm < 0 else 0)
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         if feat_mgr.InsertRefPlane(constraint, mm_to_m(abs(offset_mm)), 0, 0.0, 0, 0.0) is None:
-            raise SolidWorksError(f"Could not create a plane {offset_mm:g} mm from the {key} plane.")
+            raise SolidWorksError(f"Could not create a plane {offset_mm:g} mm from the {label}.")
         # InsertRefPlane's return is a generic dispatch without Select2; take the
         # new plane from the tree instead.
         return self._last_ref_plane(), True
@@ -2895,9 +2906,11 @@ class SolidWorksSession:
 
     def add_mirror(self, plane: str, offset_mm: float = 0.0, features: list | None = None,
                    name: str = "Mirror") -> dict:
-        """Mirror features, or the whole body, about a default plane moved offset_mm.
+        """Mirror features, or the whole body, about a plane moved offset_mm.
 
-        plane 'front' / 'top' / 'right' mirrors about z / y / x = offset_mm.
+        plane 'front' / 'top' / 'right' mirrors about z / y / x = offset_mm; the
+        name of another plane in the part (e.g. 'Plane1') mirrors about that
+        plane moved offset_mm along its normal.
         features are list_features names; their copies follow them, so changing
         a seed's dimension changes its copy too. Without features the body is
         mirrored and merged: model half of a symmetric part and mirror it about
@@ -2906,14 +2919,15 @@ class SolidWorksSession:
         lands outside the part or on its seed; that fails here instead, and the
         part stays as it was.
         """
-        key = str(plane).lower()
-        if key not in self._REF_PLANE_INDEX:
-            raise SolidWorksError(f"Unknown plane '{plane}'. Use 'front', 'top' or 'right'.")
         if features is not None and not features:
             raise SolidWorksError("features is empty: name the features to mirror, or leave it out to mirror the body.")
         model = self._require_model()
+        _, label = self._named_plane(plane)
+        key = str(plane).lower()
+        where = (f"{self._MIRROR_AXES[key]} = {offset_mm:g}" if key in self._MIRROR_AXES
+                 else f"{label} + {offset_mm:g} mm")
         seeds = [self._history_feature(n) for n in features or ()]
-        mirror_plane, created = self._plane_at(key, offset_mm)
+        mirror_plane, created = self._plane_at(plane, offset_mm)
         model.ClearSelection2(True)
         if seeds:
             for seed in seeds:
@@ -2926,12 +2940,12 @@ class SolidWorksSession:
             if not self._solid_body().Select2(False, select_data):
                 raise SolidWorksError("Could not select the body.")
         if not mirror_plane.Select2(True, SW_MARK_MIRROR_PLANE):
-            raise SolidWorksError(f"Could not select the mirror plane at {self._MIRROR_AXES[key]} = {offset_mm:g}.")
+            raise SolidWorksError(f"Could not select the mirror plane at {where}.")
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         mirror = binding.wrap(feat_mgr.InsertMirrorFeature2(not seeds, False, not seeds, False,
                                                             SW_FEATURE_SCOPE_ALL_BODIES), self._mod.IFeature)
         model.ForceRebuild3(False)
-        problem = self._mirror_problem(mirror, bool(seeds), f"{self._MIRROR_AXES[key]} = {offset_mm:g}")
+        problem = self._mirror_problem(mirror, bool(seeds), where)
         if problem:
             raise SolidWorksError(problem)  # run_guarded removes the mirror and its plane
         if created and mirror_plane.Select2(False, 0):

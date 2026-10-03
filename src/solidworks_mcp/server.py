@@ -250,8 +250,9 @@ async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float
                                     name: str = "Cut", corner_radii_mm: float | list | None = None) -> dict:
     """Cut a polygon sketched on a reference plane, symmetric about that plane.
 
-    plane: 'front' (z = 0), 'top' (y = 0) or 'right' (x = 0); points_mm = 3D
-    [x, y, z] points ON that plane (e.g. x = 0 for 'right'). Cuts through all in
+    plane: 'front' (z = 0), 'top' (y = 0), 'right' (x = 0) or the name of another
+    plane in the part ('Plane1'); points_mm = 3D [x, y, z] points ON that plane
+    (e.g. x = 0 for 'right'). Cuts through all in
     both directions (depth_mm omitted) or depth_mm in total, centred on the
     plane. For shapes seen from the side: wedges, windows, symmetric recesses.
     corner_radii_mm rounds the corners as for add_extruded_profile. Returns
@@ -490,7 +491,8 @@ async def add_mirror(plane: str, offset_mm: float = 0.0, features: list | None =
                      name: str = "Mirror") -> dict:
     """Mirror features, or the whole body, about the 'front'/'top'/'right' plane moved offset_mm.
 
-    Mirrors about z / y / x = offset_mm. features: list_features names; the
+    Mirrors about z / y / x = offset_mm; plane may also name another plane in
+    the part ('Plane1'), moved offset_mm along its normal. features: list_features names; the
     copies follow their seeds. Without features the body is mirrored and
     merged: model half of a symmetric part, mirror it about the face where the
     halves meet. The plane position comes back as dimension 'plane_offset'.

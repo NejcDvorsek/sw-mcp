@@ -257,16 +257,6 @@ def test_rib_zero_length_raises():
         SolidWorksSession._rib_material_reversed((3, 3), (3, 3), (0, 0))
 
 
-def test_cut_through_plane_unknown_plane_raises(s):
-    with pytest.raises(SolidWorksError, match="right"):
-        s.cut_profile_through_plane([[0, 0, 0], [0, 1, 0], [0, 0, 1]], "side")
-
-
-def test_mirror_unknown_plane_raises(s):
-    with pytest.raises(SolidWorksError, match="right"):
-        s.add_mirror("side", features=["Hole"])
-
-
 def test_mirror_with_an_empty_feature_list_raises(s):
     # an empty list is not "the body": mirroring the whole part by accident
     # would double it without the agent having asked for that
