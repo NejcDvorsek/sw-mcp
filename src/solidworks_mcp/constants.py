@@ -87,6 +87,7 @@ SW_START_SKETCH_PLANE = 0
 # swUserPreferenceStringValue_e
 SW_PREF_DEFAULT_TEMPLATE_PART = 8
 SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY = 9
+SW_PREF_DEFAULT_TEMPLATE_DRAWING = 10
 
 # A document's length unit (IModelDocExtension.GetUserPreferenceInteger with
 # swUnitsLinear, swUserPreferenceIntegerValue_e, and no option): the tools work
@@ -199,6 +200,14 @@ SW_SAVE_AS_OPTIONS_SILENT = 1
 # swStandardViews_e
 SW_VIEW_ISOMETRIC = 7
 VIEWS = {"front": 1, "back": 2, "left": 3, "right": 4, "top": 5, "bottom": 6, "iso": SW_VIEW_ISOMETRIC}
+
+# Drawings (make_drawing): an A4 sheet (swDwgPaperSizes_e) with the model's
+# dimensions (IDrawingDoc.InsertModelAnnotations3: swImportModelItemsSource_e,
+# swInsertAnnotation_e dimensions + those marked for drawings).
+SW_DWG_PAPER_A4 = 6
+SW_IMPORT_ENTIRE_MODEL = 0
+SW_INSERT_DIMENSIONS = 8 | 32768
+DRAWING_FORMATS = {"pdf", "slddrw"}
 
 # swRayPtsOpts_e (IModelDoc2.RayIntersections): hit normals, and entry/exit
 # points. Each hit comes back as 9 doubles: body, ray, hit type, x y z, nx ny nz.

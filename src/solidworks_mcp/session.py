@@ -21,6 +21,7 @@ import win32gui
 
 from . import __version__, binding
 from .constants import (
+    DRAWING_FORMATS,
     EXPORT_FORMATS,
     IMPORT_FORMATS,
     LENGTH_UNITS,
@@ -46,6 +47,7 @@ from .constants import (
     SW_DOC_ASSEMBLY,
     SW_DOC_PART,
     SW_DONT_REBUILD_ACTIVE_DOC,
+    SW_DWG_PAPER_A4,
     SW_END_COND_BLIND,
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
@@ -61,10 +63,13 @@ from .constants import (
     SW_PREF_DEFAULT_TEMPLATE_PART,
     SW_FM_SWEEP_THREAD,
     SW_FULLY_CONSTRAINED,
+    SW_IMPORT_ENTIRE_MODEL,
+    SW_INSERT_DIMENSIONS,
     SW_ISO_SCREW_CLEARANCES,
     SW_ISO_SOCKET_COUNTERSUNK,
     SW_ISO_SOCKET_HEAD_CAP,
     SW_ISO_TAPPED_HOLE,
+    SW_PREF_DEFAULT_TEMPLATE_DRAWING,
     SW_RAY_NORMALS_ENTRY_EXIT,
     SW_REF_PLANE_DISTANCE,
     SW_REF_PLANE_FLIP,
@@ -270,15 +275,16 @@ class SolidWorksSession:
         self._sw.CloseDoc(title)
         return {"ok": True, "closed": title}
 
-    def _write_via_saveas3(self, abs_path: str) -> None:
-        """SaveAs3 to abs_path (silent) and verify the file was actually (re)written.
+    def _write_via_saveas3(self, abs_path: str, document=None) -> None:
+        """SaveAs3 `document` (the current one by default) to abs_path, silent,
+        and verify the file was actually (re)written.
 
         Checks the modification time advanced, so a silent SaveAs3 failure over a
         pre-existing file (locked/read-only target) is not reported as success.
         """
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         before = os.path.getmtime(abs_path) if os.path.isfile(abs_path) else None
-        result = self._model.SaveAs3(abs_path, SW_SAVE_AS_CURRENT_VERSION, SW_SAVE_AS_OPTIONS_SILENT)
+        result = (document or self._model).SaveAs3(abs_path, SW_SAVE_AS_CURRENT_VERSION, SW_SAVE_AS_OPTIONS_SILENT)
         if not os.path.isfile(abs_path) or (before is not None and os.path.getmtime(abs_path) == before):
             raise SolidWorksError(
                 f"Write failed: '{abs_path}' was not (re)written; SaveAs3 returned {result}. "
@@ -3840,6 +3846,53 @@ class SolidWorksSession:
         else:
             model.ViewZoomTo2(*(mm_to_m(c) for c in zoom_mm[0]), *(mm_to_m(c) for c in zoom_mm[1]))
         return self.export(path, ext)
+
+    def make_drawing(self, path: str) -> dict:
+        """A 2D drawing of the current part, saved as PDF or as an editable .slddrw.
+
+        Front, top and right views in European (first angle) projection plus an
+        isometric view, on an A4 sheet at the scale SolidWorks picks, with the
+        model's own dimensions, each shown once. The drawing refers to the part's
+        file, so the part must have been saved; unsaved changes show in a PDF
+        but not when a saved drawing is opened later.
+        """
+        fmt = os.path.splitext(path)[1].lstrip(".").lower()
+        if fmt not in DRAWING_FORMATS:
+            raise SolidWorksError(f"A drawing is saved as {' or '.join(sorted(DRAWING_FORMATS))} (got '{fmt}').")
+        self._require_part()
+        part_path = self._model.GetPathName()
+        if not part_path:
+            raise SolidWorksError("Save the part first (save_part): the drawing refers to its file.")
+        template = self._sw.GetUserPreferenceStringValue(SW_PREF_DEFAULT_TEMPLATE_DRAWING)
+        drawing = binding.wrap(self._sw.NewDocument(template, SW_DWG_PAPER_A4, 0.0, 0.0), self._mod.IModelDoc2)
+        if drawing is None:
+            raise SolidWorksError(f"SolidWorks could not start a drawing from the template '{template}'.")
+        title = drawing.GetTitle()
+        try:
+            sheets = binding.wrap(drawing, self._mod.IDrawingDoc)
+            if not sheets.Create1stAngleViews2(part_path):
+                raise SolidWorksError("SolidWorks could not place the front, top and right views.")
+            iso = binding.wrap(sheets.CreateDrawViewFromModelView3(part_path, "*Isometric", 0.24, 0.16, 0.0),
+                               self._mod.IView)
+            if iso is None:
+                raise SolidWorksError("SolidWorks could not place the isometric view.")
+            iso.UseSheetScale = True
+            # DuplicateDims True leaves out repeats: each dimension in one view
+            dimensions = sheets.InsertModelAnnotations3(SW_IMPORT_ENTIRE_MODEL, SW_INSERT_DIMENSIONS,
+                                                        True, True, False, False) or ()
+            views = []
+            view = binding.wrap(sheets.GetFirstView(), self._mod.IView)  # the sheet itself comes first
+            view = binding.wrap(view.GetNextView(), self._mod.IView)
+            while view is not None:
+                views.append(view.GetName2())
+                view = binding.wrap(view.GetNextView(), self._mod.IView)
+            scale = binding.wrap(sheets.GetCurrentSheet(), self._mod.ISheet).GetProperties2()[2:4]
+            abs_path = os.path.abspath(path)
+            self._write_via_saveas3(abs_path, drawing)
+        finally:
+            self._sw.CloseDoc(title)
+        return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "views": views,
+                "dimensions": len(dimensions), "scale": f"{scale[0]:g}:{scale[1]:g}"}
 
     # --- assemblies -----------------------------------------------------------
     #

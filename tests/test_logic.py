@@ -575,3 +575,6 @@ def test_check_printability_checks_its_input(s, arguments, message):
         s.check_printability(**arguments)
 
 
+def test_a_drawing_is_a_pdf_or_a_slddrw(s):
+    with pytest.raises(SolidWorksError, match="pdf or slddrw"):
+        s.make_drawing("part.png")

@@ -744,6 +744,18 @@ async def screenshot(path: str, view: str = "iso", zoom_mm: list | None = None) 
 
 
 @mcp.tool()
+async def make_drawing(path: str) -> dict:
+    """Make a 2D drawing of the current part: a PDF, or an editable .slddrw.
+
+    Front, top and right views in European (first angle) projection plus an
+    isometric view, on an A4 sheet at the scale SolidWorks picks, with the
+    model's own dimensions, each shown once: a dimensioned sketch to print or
+    send. Save the part first (save_part): the drawing refers to its file.
+    """
+    return await _call(_session.make_drawing, path)
+
+
+@mcp.tool()
 async def close_part(save: bool = False) -> dict:
     """Close the current part or assembly without saving (export/save first if needed).
 

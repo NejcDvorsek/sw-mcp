@@ -173,6 +173,10 @@ stray drag in SolidWorks can change the part.
   bodies the tools act on the first. A file holding an assembly opens with
   `open_assembly` instead: its parts come in as components at their places,
   ready for `list_components` and `add_mate`.
+- **Drawings**: `make_drawing("part.pdf")` puts front, top and right views
+  (first angle) and an isometric view on A4 with the model's own dimensions,
+  each shown once, so a fully dimensioned part gives a complete sketch to
+  print or send; `.slddrw` keeps it editable. Save the part first.
 - **Assemblies**: `insert_component` puts a part's origin at a point;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.
@@ -252,7 +256,7 @@ a proven battery socket:
 
 ## 7. Limits and housekeeping
 
-- Not available: importing meshes as bodies (slice them instead), drawings, sketches on
+- Not available: importing meshes as bodies (slice them instead), sketches on
   arbitrary planes (a person's planes work in `add_mirror` and
   `cut_profile_through_plane`), free arcs inside polygon profiles (round corners with
   `corner_radii_mm`; other curves need revolves, splines, slots or holes).

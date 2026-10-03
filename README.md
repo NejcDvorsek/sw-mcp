@@ -35,12 +35,12 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. 66 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. 68 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 447 tests; each feature's integration test
+- **Tested against real SolidWorks.** 465 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -239,6 +239,7 @@ The server speaks MCP over **stdio**.
 | `check_printability(up, overhang_deg, min_wall_mm)` | For a print direction: overhanging faces (area, worst lean, centre), bed contact, height; with `min_wall_mm` the walls thinner than that |
 | `export(path, file_format, quality, deviation_mm, angle_deg)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg` |
 | `screenshot(path, view, zoom_mm)` | PNG/BMP/JPG from a standard view (`iso`, `front`, `top`, …), zoomed to fit or onto a region |
+| `make_drawing(path)` | 2D drawing as PDF or editable `.slddrw`: front, top, right (first angle) and isometric views on A4 with the model's own dimensions, each once |
 | `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt`; `open_part` also imports STEP, IGES and Parasolid files as a part to build on |
 | `close_part(save)` | Close the current part or assembly; without one, SolidWorks' active document if it is saved |
 

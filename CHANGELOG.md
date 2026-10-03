@@ -38,6 +38,9 @@ All notable changes to this project are documented here. This project follows
   faces on the bed excluded), the bed contact and the print height; with
   `min_wall_mm` also the walls thinner than that, measured through the
   material from points spread over every face.
+- `make_drawing(path)`: a 2D drawing of the part as PDF, or as an editable
+  .slddrw: front, top and right views in first angle projection plus an
+  isometric view on A4, with the model's own dimensions, each shown once.
 
 ### Changed
 - Corner radii whose arcs would meet (R10 on a 20 mm edge) are still refused,
