@@ -211,7 +211,8 @@ The server speaks MCP over **stdio**.
 | `add_text_on_face(text, face, x_mm, y_mm, z_mm, height_mm, depth_mm, emboss, font, name)` | Engrave text into ANY planar face, or emboss it: labels, version numbers; the position is two dimensions |
 | `cut_profile(points_mm, depth_mm, name, corner_radii_mm)` | Cut a polygon pocket/slot from the +Z face (blind or through) |
 | `cut_profile_on_face(points_mm, face, depth_mm, name, corner_radii_mm)` | Cut a polygon pocket on ANY face (3D points on the face) |
-| `cut_profile_through_plane(points_mm, plane, depth_mm, name, corner_radii_mm)` | Cut a polygon drawn on the Front/Top/Right plane or a plane by name, through all both ways or `depth_mm` centred on the plane (wedges, side windows, symmetric recesses) |
+| `cut_profile_through_plane(points_mm, plane, depth_mm, name, corner_radii_mm)` | Cut a polygon drawn on the Front/Top/Right plane or a plane by name, through all both ways or `depth_mm` centred on the plane (wedges, side windows, symmetric recesses); `keep_inside` keeps the profile instead, so two views make a 3D shape |
+| `cut_offset_pocket(face, x_mm, y_mm, z_mm, rim_mm, depth_mm, name)` | Pocket a face leaving a rim along its outline (I-beam web, tray, frame); rim and depth are dimensions |
 | `cut_slot(length_mm, width_mm, x_mm, y_mm, angle_deg, depth_mm, name)` | Cut a straight slotted hole (obround) on the +Z face at any angle |
 | `add_extruded_slot(start_mm, end_mm, width_mm, depth_mm, name)` | Extrude a stadium (rounded tab, lug, link) between two points, the round ends centred on them |
 | `add_fillet(radius_mm, edges, name)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, a face outline `"+z:outline"`, or indices `"2,5"`) |

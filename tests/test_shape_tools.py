@@ -70,3 +70,10 @@ def test_offset_pocket_with_a_rim_too_wide_leaves_the_part_as_it_was(sw):
         sw.close_part()
 
 
+def test_keep_inside_turns_a_side_view_into_the_shape(part):
+    # the front view is the 40 x 20 block; seen from the side only the triangle
+    # y 0..20, z 0..6 is kept (a cut of the triangle would leave 5600 instead)
+    part.add_box(40, 20, 10)
+    wedge = part.cut_profile_through_plane([[0, 0, 0], [0, 20, 0], [0, 0, 6]], "right", keep_inside=True)
+    assert vol(wedge) == pytest.approx(40 * 20 * 6 / 2, abs=1e-3), "the triangle was cut away, not kept"
+    assert wedge["mass_properties"]["bounding_box_mm"]["max_mm"][2] == pytest.approx(6, abs=1e-4)

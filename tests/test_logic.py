@@ -451,6 +451,11 @@ def test_check_motion_needs_values_and_pairs(s, values, distances, message):
         s.check_motion("D1@Angle1", values, distances)
 
 
+def test_keep_inside_cuts_through_all(s):
+    with pytest.raises(SolidWorksError, match="keep_inside cuts through all"):
+        s.cut_profile_through_plane([[0, 0, 0], [0, 1, 0], [0, 0, 1]], "right", depth_mm=5, keep_inside=True)
+
+
 @pytest.mark.parametrize("rim,depth,message", [(0, 3, "rim must be > 0"), (2, -1, "depth must be > 0")])
 def test_an_offset_pocket_needs_a_rim_and_a_depth(s, rim, depth, message):
     with pytest.raises(SolidWorksError, match=message):

@@ -2408,7 +2408,7 @@ class SolidWorksSession:
 
     def cut_profile_through_plane(self, points_mm: list, plane: str,
                                   depth_mm: float | None = None, name: str = "Cut",
-                                  corner_radii_mm=None) -> dict:
+                                  corner_radii_mm=None, keep_inside: bool = False) -> dict:
         """Cut a polygon sketched on a reference plane, symmetric about it.
 
         plane: 'front' (z = 0), 'top' (y = 0), 'right' (x = 0) or the name of
@@ -2417,10 +2417,16 @@ class SolidWorksSession:
         through all in both directions (depth_mm None), or depth_mm in total,
         centred on the plane. For shapes seen from the side: wedges, windows and
         recesses symmetric about the plane. corner_radii_mm rounds the corners
-        as for add_extruded_profile. Returns mass properties.
+        as for add_extruded_profile. keep_inside=True cuts away everything
+        OUTSIDE the profile instead (through all): the part becomes what it has
+        in common with the profile seen from that side, so a front view
+        extruded and a side view cut this way give a 3D shape. Returns mass
+        properties.
         """
         if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        if keep_inside and depth_mm is not None:
+            raise SolidWorksError("keep_inside cuts through all: leave depth_mm out.")
         model = self._require_model()
         if not points_mm:
             raise SolidWorksError("No profile points given.")
@@ -2447,7 +2453,7 @@ class SolidWorksSession:
             single, t1, t2, d1 = True, SW_END_COND_MID_PLANE, 0, mm_to_m(depth_mm)
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         cut = feat_mgr.FeatureCut4(
-            single, False, False, t1, t2, d1, 0.0,
+            single, bool(keep_inside), False, t1, t2, d1, 0.0,  # Flip: cut away the outside
             False, False, False, False, 0.0, 0.0,
             False, False, False, False, False,
             True, True, False, False, False,

@@ -30,6 +30,9 @@ All notable changes to this project are documented here. This project follows
 - `cut_offset_pocket` pockets a face and leaves a rim along its outline, arcs
   and splines included: the recessed web of an I-beam, a tray, or a frame when
   cut through. The rim and the depth are dimensions.
+- `cut_profile_through_plane(keep_inside=True)` cuts away everything outside
+  the profile: extrude a front view, cut a side view this way, and the part is
+  the shape both views agree on.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

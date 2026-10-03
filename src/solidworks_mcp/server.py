@@ -249,7 +249,8 @@ async def add_lofted_solid(profiles_mm: list, heights_mm: list, name: str = "Lof
 
 @mcp.tool()
 async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float | None = None,
-                                    name: str = "Cut", corner_radii_mm: float | list | None = None) -> dict:
+                                    name: str = "Cut", corner_radii_mm: float | list | None = None,
+                                    keep_inside: bool = False) -> dict:
     """Cut a polygon sketched on a reference plane, symmetric about that plane.
 
     plane: 'front' (z = 0), 'top' (y = 0), 'right' (x = 0) or the name of another
@@ -257,10 +258,13 @@ async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float
     (e.g. x = 0 for 'right'). Cuts through all in
     both directions (depth_mm omitted) or depth_mm in total, centred on the
     plane. For shapes seen from the side: wedges, windows, symmetric recesses.
-    corner_radii_mm rounds the corners as for add_extruded_profile. Returns
-    mass properties.
+    corner_radii_mm rounds the corners as for add_extruded_profile.
+    keep_inside=True cuts away everything OUTSIDE the profile (through all):
+    extrude the front view, cut the side view with keep_inside, and the part is
+    the 3D shape both views agree on. Returns mass properties.
     """
-    return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name, corner_radii_mm)
+    return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name, corner_radii_mm,
+                       keep_inside)
 
 
 @mcp.tool()

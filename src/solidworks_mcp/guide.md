@@ -127,6 +127,9 @@ stray drag in SolidWorks can change the part.
 - **Side-view shapes** (wedges, windows, symmetric recesses):
   `cut_profile_through_plane` on the Front/Top/Right plane or another plane by
   name, through all or a depth centred on the plane.
+- **A shape from two views**: extrude the front view, then cut the side view
+  with `cut_profile_through_plane(..., keep_inside=True)`: everything outside
+  the side outline goes, and what is left matches both views.
 - **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
   holes in it).
