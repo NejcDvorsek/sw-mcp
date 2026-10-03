@@ -16,6 +16,8 @@ All notable changes to this project are documented here. This project follows
 - `close_part` without a current document closes SolidWorks' active one, as
   long as that has no unsaved changes (closing never asks, so they would be
   lost). `get_status` names the server's version.
+- `add_extruded_slot`: a stadium (rounded tab, lug or link) from one point to
+  another, with the half-round ends centred on the points themselves.
 
 ### Fixed
 - Every sketch was refused ("SolidWorks refused a horizontal relation") in a

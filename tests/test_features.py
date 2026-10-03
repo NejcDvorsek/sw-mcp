@@ -42,6 +42,19 @@ def test_disc(part):
     assert abs(vol(part.add_disc(40, 10)) - math.pi * 20 ** 2 * 10) < 0.1
 
 
+def test_a_rounded_tab_between_two_points(part):
+    # a stadium from (10, 10) to (40, 25), 8 wide: the arcs are centred on the
+    # points themselves, so nothing has to be worked out by hand
+    length = math.hypot(30, 15)
+    tab = part.add_extruded_slot([10, 10], [40, 25], 8, 5)
+
+    assert abs(vol(tab) - (8 * length + math.pi * 4 ** 2) * 5) < 0.01
+    box = tab["mass_properties"]["bounding_box_mm"]
+    assert box["min_mm"][:2] == pytest.approx([6, 6], abs=1e-6) and box["max_mm"][:2] == pytest.approx([44, 29], abs=1e-6)
+    longer = part.set_dimension(tab["dimensions"]["end2_x"], 50)
+    assert abs(vol(longer) - (8 * math.hypot(40, 15) + math.pi * 4 ** 2) * 5) < 0.01, "the end did not move"
+
+
 def test_a_disc_off_the_origin_keeps_its_centre_as_dimensions(part):
     # a round foot core at x = 69, y = 10: before, only a disc at the origin existed
     disc = part.add_disc(20, 5, x_mm=69, y_mm=10)

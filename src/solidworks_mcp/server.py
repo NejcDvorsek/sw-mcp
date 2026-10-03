@@ -428,6 +428,18 @@ async def cut_slot(length_mm: float, width_mm: float, x_mm: float, y_mm: float,
 
 
 @mcp.tool()
+async def add_extruded_slot(start_mm: list, end_mm: list, width_mm: float, depth_mm: float,
+                            name: str = "Slot") -> dict:
+    """Extrude a stadium (rounded tab, lug or link) from point start_mm to end_mm ([x, y] mm).
+
+    The half-round ends are centred on the two points themselves; width_mm is
+    the tab's width, depth_mm the extrusion along +Z. Volume = (width * length
+    + pi * (width/2)^2) * depth. Returns mass properties.
+    """
+    return await _call(_session.add_extruded_slot, start_mm, end_mm, width_mm, depth_mm, name)
+
+
+@mcp.tool()
 async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet") -> dict:
     """Round edges of the current part with one constant radius (mm).
 

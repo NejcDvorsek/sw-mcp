@@ -103,7 +103,9 @@ stray drag in SolidWorks can change the part.
   peg) and `add_extruded_profile_on_face` (a polygon pad or ledge) grow out of
   any planar face. A PCB standoff is a boss plus a blind hole in its top.
 - **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
-  face), `cut_slot` (obround on +Z).
+  face), `cut_slot` (obround on +Z). A rounded tab or lug between two points
+  is `add_extruded_slot(start, end, width, depth)`: the round ends are centred
+  on the points, so nothing needs working out.
 - **Rounded outlines**: give `corner_radii_mm` to `add_extruded_profile`,
   `cut_profile`, the `*_on_face` profile tools, `cut_profile_through_plane`,
   `add_revolved_profile` (rounded edges of a turned part; not corners on the

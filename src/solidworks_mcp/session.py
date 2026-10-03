@@ -2395,6 +2395,51 @@ class SolidWorksSession:
                  ("diameter", 0): "width"}
         return self._define_sketch(sk, [centreline], [arc], names=names)
 
+    def _sketch_slot(self, sk, c1, c2, width_mm: float) -> dict:
+        """Draw a straight slot in the open sketch between end-arc centres c1 and
+        c2 ([x, y] mm) and define it; returns the _define_slot result."""
+        dx, dy = c2[0] - c1[0], c2[1] - c1[1]
+        length = math.hypot(dx, dy)
+        if length < 1e-9:
+            raise SolidWorksError("The slot's two ends coincide; give two different points.")
+        px, py = -dy / length, dx / length  # perpendicular: CreateSketchSlot takes a point on a side
+        edge = ((c1[0] + c2[0]) / 2 + width_mm / 2 * px, (c1[1] + c2[1]) / 2 + width_mm / 2 * py)
+        seg = sk.CreateSketchSlot(
+            SW_SLOT_CREATION_LINE, SW_SLOT_LENGTH_CENTER, mm_to_m(width_mm),
+            mm_to_m(c1[0]), mm_to_m(c1[1]), 0.0,
+            mm_to_m(c2[0]), mm_to_m(c2[1]), 0.0,
+            mm_to_m(edge[0]), mm_to_m(edge[1]), 0.0,
+            1, False,
+        )
+        if not seg:
+            raise SolidWorksError("Slot sketch failed: CreateSketchSlot returned nothing.")
+        return self._define_slot(sk)
+
+    def add_extruded_slot(self, start_mm: list, end_mm: list, width_mm: float, depth_mm: float,
+                          name: str = "Slot") -> dict:
+        """Extrude a stadium on the first plane: half circles of diameter width_mm
+        centred on start_mm and end_mm ([x, y] mm), joined by straight sides.
+
+        A rounded tab, lug or link between two points, with the points themselves
+        as the arc centres (end1_x ... end2_y and width are its dimensions).
+        Volume = (width * length + pi * (width / 2)^2) * depth.
+        """
+        model = self._require_model()
+        if width_mm <= 0 or depth_mm <= 0:
+            raise SolidWorksError(f"width and depth must be > 0 (got {width_mm}, {depth_mm}).")
+        plane = self._first_ref_plane()
+        if plane is None or not plane.Select2(False, 0):
+            raise SolidWorksError("Could not select the Front plane.")
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sk.InsertSketch(True)
+        try:
+            sketch = self._sketch_slot(sk, (float(start_mm[0]), float(start_mm[1])),
+                                       (float(end_mm[0]), float(end_mm[1])), width_mm)
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)
+        return self._extrude_sketch(depth_mm, name, sketch, "Is the slot valid?")
+
     def cut_slot(self, length_mm: float, width_mm: float, x_mm: float, y_mm: float,
                  angle_deg: float = 0.0, depth_mm: float | None = None, name: str = "Slot") -> dict:
         """Cut a straight slotted hole (obround) on the +Z face, blind or through.
@@ -2409,27 +2454,16 @@ class SolidWorksSession:
 
         rad = deg_to_rad(angle_deg)
         ax, ay = math.cos(rad), math.sin(rad)      # slot axis direction
-        px, py = -math.sin(rad), math.cos(rad)     # perpendicular (width side)
         half = length_mm / 2.0
         c1 = (x_mm - half * ax, y_mm - half * ay)
         c2 = (x_mm + half * ax, y_mm + half * ay)
-        edge = (x_mm + (width_mm / 2.0) * px, y_mm + (width_mm / 2.0) * py)
 
         body = self._solid_body()
         self._select_planar_face(body, (0.0, 0.0, 1.0), "+Z")
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)
         try:
-            seg = sk.CreateSketchSlot(
-                SW_SLOT_CREATION_LINE, SW_SLOT_LENGTH_CENTER, mm_to_m(width_mm),
-                mm_to_m(c1[0]), mm_to_m(c1[1]), 0.0,
-                mm_to_m(c2[0]), mm_to_m(c2[1]), 0.0,
-                mm_to_m(edge[0]), mm_to_m(edge[1]), 0.0,
-                1, False,
-            )
-            if not seg:
-                raise SolidWorksError("Slot sketch failed: CreateSketchSlot returned nothing.")
-            sketch = self._define_slot(sk)
+            sketch = self._sketch_slot(sk, c1, c2, width_mm)
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)
