@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.9.0] — 2026-10-03
 
 ### Added
 - `screenshot` takes a `view` (`front`, `back`, `left`, `right`, `top`,
