@@ -25,6 +25,7 @@ from .constants import (
     IMPORT_FORMATS,
     LENGTH_UNITS,
     MATE_TYPES,
+    RAY_HIT_WIDTH,
     SW_ANGULAR_DIMENSION,
     SW_DIMENSION_DRIVING,
     SW_DIMENSION_PARAM_ANGULAR,
@@ -64,6 +65,7 @@ from .constants import (
     SW_ISO_SOCKET_COUNTERSUNK,
     SW_ISO_SOCKET_HEAD_CAP,
     SW_ISO_TAPPED_HOLE,
+    SW_RAY_NORMALS_ENTRY_EXIT,
     SW_REF_PLANE_DISTANCE,
     SW_REF_PLANE_FLIP,
     SW_RELATIONS_ALL,
@@ -3614,6 +3616,132 @@ class SolidWorksSession:
                     entry["axis"] = self._axis_of(dx, dy, dz, length)
             out.append(entry)
         return {"ok": True, "count": len(out), "edges": out}
+
+    # --- 3D printing --------------------------------------------------------------
+
+    _MAX_WALL_SAMPLES = 100_000  # rays per check; beyond that the samples spread out
+
+    def check_printability(self, up: str = "+z", overhang_deg: float = 45.0,
+                           min_wall_mm: float | None = None) -> dict:
+        """Check the current part for 3D printing, built along `up`.
+
+        Overhangs: downward faces leaning more than overhang_deg from vertical
+        (90 = a flat ceiling) need support; faces resting on the bed do not
+        count. With min_wall_mm, also the walls thinner than that, measured
+        straight through the material from points spread over every face.
+        Faces are list_faces indexes, so a finding can be selected and fixed.
+        """
+        direction = self._parse_direction(up)
+        if not 0.0 < overhang_deg < 90.0:
+            raise SolidWorksError(f"overhang_deg must be between 0 and 90 (got {overhang_deg}).")
+        if min_wall_mm is not None and min_wall_mm <= 0:
+            raise SolidWorksError(f"min_wall_mm must be > 0 (got {min_wall_mm}).")
+        self._require_model()
+        body = self._solid_body()
+        triangles = [(index, *tri) for index, face in enumerate(self._body_faces(body))
+                     for tri in self._face_triangles(binding.wrap(face, self._mod.IFace2))]
+        result = {"ok": True, "up": up, **self._overhangs(triangles, direction, overhang_deg)}
+        if min_wall_mm is not None:
+            result["thin_walls"] = self._thin_walls(body, triangles, min_wall_mm)
+        return result
+
+    @staticmethod
+    def _face_triangles(face) -> list:
+        """The face's display tessellation as (a, b, c, unit outward normal) in mm."""
+        corners, normals = face.GetTessTriangles(True) or (), face.GetTessNorms() or ()
+        triangles = []
+        for t in range(len(corners) // 9):
+            a, b, c = ([m_to_mm(v) for v in corners[9 * t + 3 * k:9 * t + 3 * k + 3]] for k in range(3))
+            normal = [sum(normals[9 * t + 3 * k + i] for k in range(3)) for i in range(3)]
+            length = math.hypot(*normal)
+            if length:
+                triangles.append((a, b, c, [n / length for n in normal]))
+        return triangles
+
+    @staticmethod
+    def _triangle_area(a, b, c) -> float:
+        ab, ac = [q - p for p, q in zip(a, b)], [q - p for p, q in zip(a, c)]
+        return math.hypot(ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2],
+                          ab[0] * ac[1] - ab[1] * ac[0]) / 2
+
+    def _overhangs(self, triangles, up, limit_deg) -> dict:
+        """Overhanging area per face, and the area resting on the bed."""
+        def height(p):
+            return sum(c * u for c, u in zip(p, up))
+
+        bed = min(height(p) for _, *corners, _ in triangles for p in corners)
+        faces, bed_area = {}, 0.0
+        for index, a, b, c, normal in triangles:
+            area = self._triangle_area(a, b, c)
+            if all(abs(height(p) - bed) < 1e-4 for p in (a, b, c)):
+                bed_area += area
+                continue
+            lean = math.degrees(math.asin(max(0.0, min(1.0, -sum(n * u for n, u in zip(normal, up))))))
+            if lean > limit_deg + 1e-6:
+                entry = faces.setdefault(index, {"index": index, "area_mm2": 0.0, "worst_deg": 0.0, "sum": [0.0] * 3})
+                entry["area_mm2"] += area
+                entry["worst_deg"] = max(entry["worst_deg"], lean)
+                entry["sum"] = [s + area * (p + q + r) / 3 for s, p, q, r in zip(entry["sum"], a, b, c)]
+        found = []
+        for entry in sorted(faces.values(), key=lambda e: -e["area_mm2"]):
+            centre = [s / entry["area_mm2"] for s in entry.pop("sum")]
+            found.append({**entry, "area_mm2": round(entry["area_mm2"], 3), "worst_deg": round(entry["worst_deg"], 2),
+                          "center_mm": [round(c, 3) for c in centre]})
+        heights = [height(p) for _, *corners, _ in triangles for p in corners]
+        return {"height_mm": round(max(heights) - bed, 4), "bed_contact_mm2": round(bed_area, 3),
+                "overhang": {"limit_deg": limit_deg, "area_mm2": round(sum(f["area_mm2"] for f in found), 3),
+                             "faces": found}}
+
+    @staticmethod
+    def _triangle_samples(a, b, c, spacing) -> list:
+        """Points spread over triangle abc at most about `spacing` apart: the
+        centres of its n x n sub-triangles. Pure, unit-tested."""
+        n = max(1, math.ceil(max(math.dist(a, b), math.dist(b, c), math.dist(c, a)) / spacing))
+        points = []
+        for i in range(n):
+            for j in range(n - i):
+                # the upright sub-triangle at (i, j), and the inverted one beside it
+                for di, dj in ((1 / 3, 1 / 3), (2 / 3, 2 / 3)) if i + j < n - 1 else ((1 / 3, 1 / 3),):
+                    u, v = (i + di) / n, (j + dj) / n
+                    points.append([p + u * (q - p) + v * (r - p) for p, q, r in zip(a, b, c)])
+        return points
+
+    def _thin_walls(self, body, triangles, min_wall_mm) -> dict:
+        """Wall thickness straight through the material from sample points on
+        every face (one batch of rays), and the faces thinner than min_wall_mm."""
+        area = sum(self._triangle_area(a, b, c) for _, a, b, c, _ in triangles)
+        spacing = max(min_wall_mm, math.sqrt(2 * area / self._MAX_WALL_SAMPLES))
+        starts, directions, owners = [], [], []
+        for index, a, b, c, normal in triangles:
+            for point in self._triangle_samples(a, b, c, spacing):
+                starts += [mm_to_m(p - 1e-4 * n) for p, n in zip(point, normal)]  # just inside the material
+                directions += [-n for n in normal]
+                owners.append((index, point))
+        model = self._model
+        hits = model.RayIntersections(
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [body._oleobj_]),
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, starts),
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, directions),
+            SW_RAY_NORMALS_ENTRY_EXIT, 0.0, 0.0)
+        points = model.GetRayIntersectionsPoints() if hits else ()
+        through = {}
+        for h in range(hits):
+            row = points[h * RAY_HIT_WIDTH:(h + 1) * RAY_HIT_WIDTH]
+            ray = int(row[1])
+            depth = m_to_mm(math.dist(row[3:6], starts[3 * ray:3 * ray + 3]))
+            if depth > 1e-3 and depth < through.get(ray, math.inf):
+                through[ray] = depth
+        if not through:
+            raise SolidWorksError("No ray came out of the part: the wall thickness could not be measured.")
+        thinnest = {}
+        for ray, depth in through.items():
+            index, point = owners[ray]
+            if depth < thinnest.get(index, (math.inf,))[0]:
+                thinnest[index] = (depth, point)
+        thin = [{"index": index, "thinnest_mm": round(depth, 3), "at_mm": [round(c, 3) for c in point]}
+                for index, (depth, point) in sorted(thinnest.items()) if depth < min_wall_mm - 1e-6]
+        return {"min_wall_mm": min_wall_mm, "thinnest_mm": round(min(d for d, _ in thinnest.values()), 3),
+                "sample_spacing_mm": round(spacing, 3), "faces": thin}
 
     # --- output ---------------------------------------------------------------
 

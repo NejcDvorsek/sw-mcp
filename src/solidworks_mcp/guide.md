@@ -214,6 +214,12 @@ stray drag in SolidWorks can change the part.
 - Text prints best large and bold: as a rule of thumb at least 5 mm high, with
   strokes wider than the nozzle (0.4 mm), engraved 0.4-0.6 mm or embossed about
   1 mm. On a face that prints facing down, engrave rather than emboss.
+- Before printing, `check_printability(up="+z", overhang_deg=45, min_wall_mm=0.8)`
+  names the faces that need support for that build direction (worst lean,
+  area, centre) and the walls thinner than the minimum (two nozzle widths is
+  a common floor), with where they are thinnest. Try another `up` to find the
+  orientation with the least overhang; the bed contact area tells how well it
+  sticks.
 - Export for slicing with `export(..., quality="fine")` as 3MF or STL. **STL
   output is moved into positive space** by SolidWorks: compare geometry in the
   model frame, not in raw STL coordinates.

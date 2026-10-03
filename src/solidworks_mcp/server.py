@@ -705,6 +705,21 @@ async def list_edges() -> dict:
 
 
 @mcp.tool()
+async def check_printability(up: str = "+z", overhang_deg: float = 45.0,
+                             min_wall_mm: float | None = None) -> dict:
+    """Check the current part for 3D printing, built along `up` ('+z', '-y', ...).
+
+    Overhangs: downward faces leaning more than overhang_deg from vertical (90 =
+    a flat ceiling) need support; the faces on the bed do not count. Gives the
+    overhanging area per face (list_faces index) with its worst lean and centre,
+    the bed contact area and the print height. With min_wall_mm (e.g. two
+    nozzle widths) also the walls thinner than that, measured straight through
+    the material from points spread over every face, with where each is thinnest.
+    """
+    return await _call(_session.check_printability, up, overhang_deg, min_wall_mm)
+
+
+@mcp.tool()
 async def export(path: str, file_format: str | None = None, quality: str = "fine",
                  deviation_mm: float | None = None, angle_deg: float | None = None) -> dict:
     """Export the current part or assembly to STEP/STL/IGES/Parasolid/3MF (format from extension).

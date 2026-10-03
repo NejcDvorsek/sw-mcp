@@ -33,6 +33,11 @@ All notable changes to this project are documented here. This project follows
 - `cut_profile_through_plane(keep_inside=True)` cuts away everything outside
   the profile: extrude a front view, cut a side view this way, and the part is
   the shape both views agree on.
+- `check_printability(up, overhang_deg, min_wall_mm)`: for a print direction,
+  the faces that overhang more than the limit (area, worst lean, centre; the
+  faces on the bed excluded), the bed contact and the print height; with
+  `min_wall_mm` also the walls thinner than that, measured through the
+  material from points spread over every face.
 
 ### Changed
 - Corner radii whose arcs would meet (R10 on a 20 mm edge) are still refused,

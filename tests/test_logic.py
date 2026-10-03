@@ -530,3 +530,48 @@ def test_tool_forwards_its_arguments_in_order(tool, params, target, passed):
     assert passed == params, f"{tool} forwards {passed} but takes {params}"
     accepted = list(inspect.signature(method).parameters)[1:]  # drop self
     assert params == accepted[:len(params)], f"{tool} does not match {target}{tuple(accepted)}"
+
+
+# --- 3D printing and drawings (pure parts) --------------------------------------
+
+
+@pytest.mark.parametrize("spacing,count", [(30, 1), (7.5, 4), (5, 9)])
+def test_triangle_samples_spread_over_the_whole_triangle(spacing, count):
+    # the longest edge, 14.1 mm, sets how finely the triangle is divided
+    a, b, c = (0, 0, 0), (10, 0, 0), (0, 10, 0)
+    points = SolidWorksSession._triangle_samples(a, b, c, spacing)
+    assert len(points) == count
+    assert all(x >= 0 and y >= 0 and x + y <= 10 + 1e-9 and z == 0 for x, y, z in points), "a sample left the triangle"
+    if count == 9:  # the corners are reached, not just the middle
+        assert min(math.dist(p, (0, 0, 0)) for p in points) < 2.5
+        assert min(math.dist(p, (10, 0, 0)) for p in points) < 2.5
+
+
+def _quad(index, corners, normal):
+    """A flat quadrilateral as two (index, a, b, c, normal) triangles."""
+    return [(index, corners[0], corners[k], corners[k + 1], list(normal)) for k in (1, 2)]
+
+
+def test_a_ceiling_overhangs_and_the_bed_does_not(s):
+    """The underside of an arm at z = 5 faces down, like the bed face at z = 0:
+    only the arm needs support."""
+    triangles = (_quad(0, [(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)], (0, 0, -1))
+                 + _quad(1, [(10, 0, 5), (14, 0, 5), (14, 10, 5), (10, 10, 5)], (0, 0, -1))
+                 + _quad(2, [(0, 0, 10), (14, 0, 10), (14, 10, 10), (0, 10, 10)], (0, 0, 1)))
+    found = s._overhangs(triangles, (0, 0, 1), 45)
+    assert found["bed_contact_mm2"] == pytest.approx(100) and found["height_mm"] == pytest.approx(10)
+    [arm] = found["overhang"]["faces"]
+    assert (arm["index"], arm["area_mm2"], arm["worst_deg"]) == (1, pytest.approx(40), pytest.approx(90))
+    assert arm["center_mm"] == pytest.approx([12, 5, 5])
+    # built the other way up, the top rests on the bed and the old bed faces up
+    assert s._overhangs(triangles, (0, 0, -1), 45)["overhang"]["faces"] == []
+
+
+@pytest.mark.parametrize("arguments,message", [({"up": "up"}, "Unknown direction"),
+                                               ({"overhang_deg": 90}, "between 0 and 90"),
+                                               ({"min_wall_mm": 0}, "min_wall_mm must be > 0")])
+def test_check_printability_checks_its_input(s, arguments, message):
+    with pytest.raises(SolidWorksError, match=message):
+        s.check_printability(**arguments)
+
+
