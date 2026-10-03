@@ -451,6 +451,12 @@ def test_check_motion_needs_values_and_pairs(s, values, distances, message):
         s.check_motion("D1@Angle1", values, distances)
 
 
+@pytest.mark.parametrize("rim,depth,message", [(0, 3, "rim must be > 0"), (2, -1, "depth must be > 0")])
+def test_an_offset_pocket_needs_a_rim_and_a_depth(s, rim, depth, message):
+    with pytest.raises(SolidWorksError, match=message):
+        s.cut_offset_pocket("+z", 10, 10, 10, rim, depth)
+
+
 class _FakeDimension:
     def __init__(self, param_type):
         self._type = param_type

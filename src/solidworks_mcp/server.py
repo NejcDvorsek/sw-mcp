@@ -417,6 +417,21 @@ async def cut_profile_on_face(points_mm: list, face: str,
 
 
 @mcp.tool()
+async def cut_offset_pocket(face: str, x_mm: float, y_mm: float, z_mm: float, rim_mm: float,
+                            depth_mm: float | None = None, name: str = "Pocket") -> dict:
+    """Pocket a planar face, leaving a rim rim_mm wide along its outline.
+
+    The recessed web of an I-beam that follows a curved link, a tray, or a frame
+    (depth_mm omitted: through all). The face is the one facing `face`
+    ('+z', ...) through the point (x, y, z). The rim follows the outline, arcs
+    and splines included; holes in the face stay holes. rim and depth come back
+    as dimensions, and the pocket follows the outline when it changes. Returns
+    mass properties.
+    """
+    return await _call(_session.cut_offset_pocket, face, x_mm, y_mm, z_mm, rim_mm, depth_mm, name)
+
+
+@mcp.tool()
 async def cut_slot(length_mm: float, width_mm: float, x_mm: float, y_mm: float,
                    angle_deg: float = 0.0, depth_mm: float | None = None,
                    name: str = "Slot") -> dict:

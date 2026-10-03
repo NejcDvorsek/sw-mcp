@@ -109,7 +109,11 @@ stray drag in SolidWorks can change the part.
 - **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
   face), `cut_slot` (obround on +Z). A rounded tab or lug between two points
   is `add_extruded_slot(start, end, width, depth)`: the round ends are centred
-  on the points, so nothing needs working out.
+  on the points, so nothing needs working out. `cut_offset_pocket(face, x, y,
+  z, rim_mm, depth_mm)` pockets a whole face and leaves a rim along its
+  outline, whatever its shape: the recessed web of an I-beam along a curved
+  link, a tray, or a frame when cut through. Hand calculation: the face's area
+  shrunk by the rim (a corner of radius R keeps radius R - rim).
 - **Rounded outlines**: give `corner_radii_mm` to `add_extruded_profile`,
   `cut_profile`, the `*_on_face` profile tools, `cut_profile_through_plane`,
   `add_revolved_profile` (rounded edges of a turned part; not corners on the

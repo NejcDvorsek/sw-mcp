@@ -2333,6 +2333,77 @@ class SolidWorksSession:
             raise SolidWorksError(f"FeatureCut4 failed (None). Are the points on the {face} face?")
         return self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
 
+    def cut_offset_pocket(self, face: str, x_mm: float, y_mm: float, z_mm: float, rim_mm: float,
+                          depth_mm: float | None = None, name: str = "Pocket") -> dict:
+        """Pocket a planar face, leaving a rim rim_mm wide along its outline.
+
+        The recessed web of an I-beam that follows a curved link, a tray, or a
+        frame (depth_mm None: through all). The face is the one facing `face`
+        through (x, y, z), as for the *_on_face tools. The rim follows the
+        outline, arcs and splines included; holes in the face stay holes. The
+        pocket's edge is the outline offset inwards, tied to it, so rim and
+        depth are dimensions and the pocket follows the outline when it changes.
+        """
+        if rim_mm <= 0:
+            raise SolidWorksError(f"rim must be > 0 (got {rim_mm}).")
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        model = self._require_model()
+        normal, side = self._parse_face_selector(face, default_side=None)
+        target = self._select_face_through(self._solid_body(), normal, side, (x_mm, y_mm, z_mm), face)
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sketch = self._open_face_sketch(sk, face)
+        try:
+            fully_defined = self._offset_outline(sketch, target, rim_mm, face)
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)
+        dimensions = {"rim": self._rename_first_dimension(self._history()[-1], "rim")}
+        model.ClearSelection2(True)
+        if not self._history()[-1].Select2(False, 0):
+            raise SolidWorksError("Could not select the pocket's sketch.")
+        t1, d1 = (SW_END_COND_THROUGH_ALL, 0.0) if depth_mm is None else (SW_END_COND_BLIND, mm_to_m(depth_mm))
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        cut = feat_mgr.FeatureCut4(
+            True, False, False, t1, 0, d1, 0.0,
+            False, False, False, False, 0.0, 0.0,
+            False, False, False, False, False,
+            True, True, False, False, False,
+            SW_START_SKETCH_PLANE, 0.0, False, False,
+        )
+        if cut is None:
+            raise SolidWorksError(f"FeatureCut4 failed (None) for the pocket in the {face} face.")
+        return self._with_depth(self._finish_feature(cut, name, dimensions=dimensions, fully_defined=fully_defined),
+                                depth_mm)
+
+    def _offset_outline(self, sketch, face, offset_mm: float, label: str) -> bool:
+        """Draw the face's outer loop offset offset_mm inwards in the open sketch
+        (Offset Entities: tied to the edges by one dimension); whether the
+        sketch is then fully defined."""
+        loops = [binding.wrap(loop, self._mod.ILoop2) for loop in binding.wrap(face, self._mod.IFace2).GetLoops() or ()]
+        outer = next((loop for loop in loops if loop.IsOuter()), None)
+        if outer is None:
+            raise SolidWorksError(f"The {label} face has no outer loop.")
+        self._model.ClearSelection2(True)
+        for edge in outer.GetEdges() or ():
+            if not binding.wrap(edge, self._mod.IEntity).Select4(True, None):
+                raise SolidWorksError(f"Could not select the outline of the {label} face.")
+        # a negative offset runs inwards from a face's outer loop (verified)
+        if not self._model.SketchOffsetEntities2(-mm_to_m(offset_mm), False, True):
+            raise SolidWorksError(f"SolidWorks could not offset the {label} face's outline by {offset_mm:g} mm: "
+                                  "is the rim wider than half the face?")
+        return sketch.GetConstrainedStatus() == SW_FULLY_CONSTRAINED
+
+    def _rename_first_dimension(self, feature, role: str) -> str:
+        """Give the feature's first dimension the name `role`; returns the name
+        set_dimension takes, e.g. 'rim@Sketch2'."""
+        display = binding.wrap(feature.GetFirstDisplayDimension(), self._mod.IDisplayDimension)
+        if display is None:
+            raise SolidWorksError(f"'{feature.Name}' has no dimension to name '{role}'.")
+        dim = binding.wrap(display.GetDimension2(0), self._mod.IDimension)
+        dim.Name = role
+        return dim.GetNameForSelection()
+
     _REF_PLANE_INDEX = {"front": 0, "top": 1, "right": 2}  # tree order in a new part
 
     def cut_profile_through_plane(self, points_mm: list, plane: str,

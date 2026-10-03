@@ -27,6 +27,9 @@ All notable changes to this project are documented here. This project follows
 - `check_motion` steps a joint through its range and gives per step the
   overlapping pairs and the distances between chosen pairs, with each pair's
   smallest distance and the angle where it occurs.
+- `cut_offset_pocket` pockets a face and leaves a rim along its outline, arcs
+  and splines included: the recessed web of an I-beam, a tray, or a frame when
+  cut through. The rim and the depth are dimensions.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too
