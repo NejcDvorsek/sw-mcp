@@ -42,6 +42,7 @@ from .constants import (
     SW_DETAILING_NO_OPTION,
     SW_DOC_ASSEMBLY,
     SW_DOC_PART,
+    SW_DONT_REBUILD_ACTIVE_DOC,
     SW_END_COND_BLIND,
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
@@ -140,8 +141,19 @@ class SolidWorksSession:
         return rev() if callable(rev) else rev
 
     def _require_model(self):
+        """The current document, made SolidWorks' active one first.
+
+        Sketching in a document that is open but not active fails at the first
+        relation ('refused a horizontal relation'); that happened after
+        open_part returned a part that was already open behind another document,
+        and would after any switch of window in SolidWorks itself.
+        """
         if self._model is None:
             raise SolidWorksError("No active document. Call 'new_part' or 'new_assembly' first.")
+        title = self._model.GetTitle()
+        active = binding.wrap(self._sw.ActiveDoc, self._mod.IModelDoc2)
+        if active is None or active.GetTitle() != title:
+            self._sw.ActivateDoc3(title, False, SW_DONT_REBUILD_ACTIVE_DOC, 0)
         return self._model
 
     def _require_part(self):

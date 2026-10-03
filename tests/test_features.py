@@ -514,6 +514,21 @@ def test_inspect_counts(part):
     assert part.list_edges()["count"] == 12
 
 
+def test_a_part_reopened_behind_another_document_can_still_be_cut(part, tmp_path):
+    """open_part on a part that is already open returned it without making it
+    SolidWorks' active document, and every sketch on it was refused ('refused
+    a horizontal relation'), until everything was closed and reopened."""
+    part.add_box(40, 20, 10)
+    shin = part.save_part(str(tmp_path / "shin.sldprt"))["path"]
+    other = part.new_part()["title"]  # now SolidWorks' active document
+    try:
+        part.open_part(shin)
+        pocket = part.cut_profile([[5, 5], [15, 5], [15, 15], [5, 15]], 2)
+        assert abs(vol(pocket) - (8000 - 10 * 10 * 2)) < 0.01
+    finally:
+        part._sw.CloseDoc(other)
+
+
 def test_save_open_roundtrip(part, tmp_path):
     part.add_box(40, 20, 10)
     path = str(tmp_path / "rt.sldprt")

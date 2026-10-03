@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Every sketch was refused ("SolidWorks refused a horizontal relation") in a
+  part that `open_part` returned while it was already open behind another
+  document: it became the server's current part without becoming SolidWorks'
+  active document. Tools now bring the current document to the front first,
+  which also covers a window switched by hand in SolidWorks.
+
 ## [0.7.0] — 2026-10-02
 
 ### Added

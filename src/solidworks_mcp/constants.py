@@ -177,6 +177,9 @@ SW_TOGGLE_STL_DONT_TRANSLATE = 71  # keep STL output in model coordinates (defau
 # wrapped sub-assembly, so its parts cannot be listed or mated (verified)
 SW_TOGGLE_3D_INTERCONNECT = 691
 
+# swRebuildOnActivation_e (ISldWorks.ActivateDoc3): bring a document to the front as it is
+SW_DONT_REBUILD_ACTIVE_DOC = 1
+
 # swOpenDocOptions_e -- silent load, no dialogs. AddComponent5 returns None for a
 # part that is not loaded yet (verified), so components are opened this way first.
 SW_OPEN_DOC_SILENT = 1
