@@ -143,6 +143,8 @@ SW_SKETCH_TEXT = 4
 # swDimensionType_e (IDisplayDimension.GetType) / swDimensionDrivenState_e
 SW_ANGULAR_DIMENSION = 3
 SW_DIMENSION_DRIVING = 2
+# swDimensionParamType_e (IDimension.GetType): its SystemValue is in radians
+SW_DIMENSION_PARAM_ANGULAR = 1
 
 # --- assemblies ---------------------------------------------------------------
 

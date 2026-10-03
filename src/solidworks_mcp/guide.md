@@ -85,7 +85,9 @@ stray drag in SolidWorks can change the part.
   can still move, so say so before you build on it.
 - Drive several dimensions from one number with a global variable:
   `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`. An
-  equation-driven dimension ignores `set_dimension` (`applied: false`).
+  equation-driven dimension ignores `set_dimension` (`applied: false`). An
+  angle (a revolve's, an angle mate's) is set in degrees; `list_dimensions`
+  shows each dimension's unit.
 
 ## 4. Recipes
 

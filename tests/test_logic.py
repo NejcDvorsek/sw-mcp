@@ -432,6 +432,23 @@ def test_sketch_features_need_a_positive_depth(s, call):
         call(s)
 
 
+class _FakeDimension:
+    def __init__(self, param_type):
+        self._type = param_type
+
+    def GetType(self):
+        return self._type
+
+
+def test_an_angle_dimension_is_written_in_radians():
+    """set_dimension wrote every value as millimetres: 180 degrees landed as
+    0.18 radians, about 10 degrees."""
+    unit, to_system, from_system = SolidWorksSession._dimension_unit(_FakeDimension(1))  # angular
+    assert (unit, to_system(180)) == ("deg", pytest.approx(math.pi))
+    unit, to_system, from_system = SolidWorksSession._dimension_unit(_FakeDimension(0))  # linear
+    assert (unit, to_system(25)) == ("mm", pytest.approx(0.025))
+
+
 # --- MCP wiring ---------------------------------------------------------------
 
 

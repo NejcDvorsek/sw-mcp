@@ -27,6 +27,9 @@ All notable changes to this project are documented here. This project follows
   `get_assembly_bounding_box` now give each part's own extent. Sub-assemblies
   are boxed by their parts; a lightweight component is refused, as its geometry
   is not loaded.
+- `set_dimension` wrote an angle as millimetres: 180 degrees landed as 0.18
+  radians, about 10 degrees. An angle (a revolve, an angle mate) now takes
+  degrees, and the result's keys end in `_deg`.
 
 ## [0.8.0] — 2026-10-03
 

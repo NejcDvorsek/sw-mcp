@@ -27,6 +27,7 @@ from .constants import (
     MATE_TYPES,
     SW_ANGULAR_DIMENSION,
     SW_DIMENSION_DRIVING,
+    SW_DIMENSION_PARAM_ANGULAR,
     SW_ADD_COMPONENT_CURRENT_CONFIG,
     SW_ADD_MATE_NO_ERROR,
     SW_BODY_SOLID,
@@ -2975,31 +2976,48 @@ class SolidWorksSession:
     # --- parametric edit ------------------------------------------------------
 
     def set_dimension(self, dimension_name: str, value_mm: float) -> dict:
-        """Set a named driving dimension (e.g. 'D1@BlockExtrude'), rebuild, remeasure."""
+        """Set a named driving dimension (e.g. 'D1@BlockExtrude'), rebuild, remeasure.
+
+        value_mm is in degrees for an angle (a revolve, an angle mate); the
+        result's keys then end in _deg.
+        """
         model = self._require_model()
-        dim = binding.wrap(model.Parameter(dimension_name), self._mod.IDimension)
+        dim = self._dimension(dimension_name)
+        unit, to_system, from_system = self._dimension_unit(dim)
+        old = from_system(dim.SystemValue)
+        dim.SystemValue = to_system(value_mm)
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        # Read the value back: a driven/reference or equation-controlled dimension
+        # ignores the write silently, so the applied value can differ from the
+        # request. Report the actual value so the agent's loop sees a no-op.
+        applied = from_system(dim.SystemValue)
+        return {
+            "ok": True,
+            "dimension": dimension_name,
+            f"old_value_{unit}": round(old, 6),
+            f"requested_value_{unit}": value_mm,
+            f"new_value_{unit}": round(applied, 6),
+            "applied": abs(applied - value_mm) < 1e-6,
+            "rebuild_ok": rebuilt_ok,
+            "mass_properties": self.get_mass_properties()["mass_properties"],
+        }
+
+    def _dimension(self, dimension_name: str):
+        dim = binding.wrap(self._require_model().Parameter(dimension_name), self._mod.IDimension)
         if dim is None:
             raise SolidWorksError(
                 f"Dimension '{dimension_name}' not found. "
                 "Use the 'D1@<feature>' notation."
             )
-        old_mm = m_to_mm(dim.SystemValue)
-        dim.SystemValue = mm_to_m(value_mm)
-        rebuilt_ok = bool(model.ForceRebuild3(False))
-        # Read the value back: a driven/reference or equation-controlled dimension
-        # ignores the write silently, so the applied value can differ from the
-        # request. Report the actual value so the agent's loop sees a no-op.
-        applied_mm = m_to_mm(dim.SystemValue)
-        return {
-            "ok": True,
-            "dimension": dimension_name,
-            "old_value_mm": round(old_mm, 6),
-            "requested_value_mm": value_mm,
-            "new_value_mm": round(applied_mm, 6),
-            "applied": abs(applied_mm - value_mm) < 1e-6,
-            "rebuild_ok": rebuilt_ok,
-            "mass_properties": self.get_mass_properties()["mass_properties"],
-        }
+        return dim
+
+    @staticmethod
+    def _dimension_unit(dim):
+        """('deg', to radians, from radians) for an angle, else ('mm', to m, from m).
+        An angle written as millimetres would land as a thousandth of a radian."""
+        if dim.GetType() == SW_DIMENSION_PARAM_ANGULAR:
+            return "deg", math.radians, math.degrees
+        return "mm", mm_to_m, m_to_mm
 
     def set_equation(self, equation: str) -> dict:
         """Add a global equation linking dimensions, then rebuild and remeasure.

@@ -23,6 +23,15 @@ def test_box(part):
     assert abs(vol(part.add_box(40, 20, 10)) - 8000) < 0.01
 
 
+def test_set_dimension_turns_an_angle_in_degrees(part):
+    """180 used to land as 0.18 radians: the ring came out 10 degrees, not half."""
+    full = vol(part.add_revolved_profile([[5, 0], [10, 0], [10, 10], [5, 10]], 360))
+    [angle] = [d["name"] for d in part.list_dimensions()["dimensions"] if d["unit"] == "deg"]
+    half = part.set_dimension(angle, 180)
+    assert half["applied"] and half["new_value_deg"] == pytest.approx(180)
+    assert vol(half) == pytest.approx(full / 2, rel=1e-6)
+
+
 def test_set_dimension(part):
     box = part.add_box(40, 20, 10)
     assert abs(vol(part.set_dimension(box["depth_dimension"], 25)) - 20000) < 0.01

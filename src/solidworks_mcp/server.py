@@ -542,7 +542,8 @@ async def set_dimension(dimension_name: str, value_mm: float) -> dict:
     """Set a named driving dimension (e.g. 'D1@BlockExtrude') in mm, rebuild, and remeasure.
 
     This is the parametric edit at the heart of the correction loop. Every
-    modelling tool returns its dimensions by role in `dimensions`.
+    modelling tool returns its dimensions by role in `dimensions`. An angle (a
+    revolve, an angle mate) takes degrees; list_dimensions shows the unit.
     """
     return await _call(_session.set_dimension, dimension_name, value_mm)
 
