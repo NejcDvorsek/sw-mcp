@@ -137,6 +137,8 @@ SW_THIS_CONFIGURATION = 1
 # swSketchSegments_e (ISketchSegment.GetType)
 SW_SKETCH_LINE = 0
 SW_SKETCH_ARC = 1
+SW_SKETCH_SPLINE = 3
+SW_SKETCH_TEXT = 4
 
 # swDimensionType_e (IDisplayDimension.GetType) / swDimensionDrivenState_e
 SW_ANGULAR_DIMENSION = 3

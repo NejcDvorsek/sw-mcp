@@ -68,6 +68,8 @@ from .constants import (
     SW_RELATIONS_ALL,
     SW_SKETCH_ARC,
     SW_SKETCH_LINE,
+    SW_SKETCH_SPLINE,
+    SW_SKETCH_TEXT,
     SW_SAVE_AS_CURRENT_VERSION,
     SW_SAVE_AS_OPTIONS_SILENT,
     SW_SLOT_CREATION_LINE,
@@ -619,16 +621,17 @@ class SolidWorksSession:
         return result
 
     def _extrude_sketch(self, depth_mm: float, name: str, sketch: dict, hint: str = "",
-                        role: str = "depth") -> dict:
+                        role: str = "depth", reverse: bool = False) -> dict:
         """Extrude the sketch just closed (it stays selected) depth_mm along its
-        normal, merged with the body; finish the feature and name its depth.
+        normal (reverse: the other way), merged with the body; finish the
+        feature and name its depth.
 
         Shared by every boss. `sketch` is the _define_sketch result, `role` the
         depth's name among the dimensions, `hint` what to check when it fails.
         """
         feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
         extrude = feat_mgr.FeatureExtrusion3(
-            True, False, False,        # Sd (single dir), Flip, Dir
+            True, False, reverse,      # Sd (single dir), Flip, Dir
             SW_END_COND_BLIND, 0,      # T1, T2 (end conditions)
             mm_to_m(depth_mm), 0.0,    # D1 (depth), D2
             False, False,              # Dchk1, Dchk2
@@ -3037,24 +3040,134 @@ class SolidWorksSession:
         self._require_part()
         dims, seen = [], set()
         for feat in self._iter_features():
-            display = feat.GetFirstDisplayDimension()
-            while display is not None:
-                shown = binding.wrap(display, self._mod.IDisplayDimension)
-                dim = binding.wrap(shown.GetDimension2(0), self._mod.IDimension)
-                name = dim.GetNameForSelection()
-                if name not in seen:
-                    seen.add(name)
-                    angular = shown.GetType() == SW_ANGULAR_DIMENSION
-                    value = dim.SystemValue
-                    dims.append({
-                        "name": name,
-                        "feature": feat.Name,
-                        "value": round(math.degrees(value) if angular else m_to_mm(value), 6),
-                        "unit": "deg" if angular else "mm",
-                        "driving": dim.DrivenState == SW_DIMENSION_DRIVING,
-                    })
-                display = feat.GetNextDisplayDimension(display)
+            for entry in self._dimension_entries(feat):
+                if entry["name"] not in seen:
+                    seen.add(entry["name"])
+                    dims.append(entry)
         return {"ok": True, "count": len(dims), "dimensions": dims}
+
+    def _dimension_entries(self, feat) -> list:
+        """The feature's dimensions: name (as set_dimension takes it), value in
+        mm or degrees, and whether it is driving."""
+        entries = []
+        display = feat.GetFirstDisplayDimension()
+        while display is not None:
+            shown = binding.wrap(display, self._mod.IDisplayDimension)
+            dim = binding.wrap(shown.GetDimension2(0), self._mod.IDimension)
+            angular = shown.GetType() == SW_ANGULAR_DIMENSION
+            value = dim.SystemValue
+            entries.append({
+                "name": dim.GetNameForSelection(),
+                "feature": feat.Name,
+                "value": round(math.degrees(value) if angular else m_to_mm(value), 6),
+                "unit": "deg" if angular else "mm",
+                "driving": dim.DrivenState == SW_DIMENSION_DRIVING,
+            })
+            display = feat.GetNextDisplayDimension(display)
+        return entries
+
+    # --- a person's sketches: read, extrude, cut ---------------------------------
+
+    def _sketch_by_name(self, name: str):
+        """A sketch of the current part by name, also one absorbed by a feature."""
+        self._require_part()
+        sketches = [candidate for feat in self._iter_features() for candidate in [feat, *self._sub_features(feat)]
+                    if candidate.GetTypeName2() == "ProfileFeature"]
+        for sketch in sketches:
+            if sketch.Name == name:
+                return sketch
+        names = sorted({s.Name for s in sketches})
+        raise SolidWorksError(f"No sketch '{name}' in the part (there are: {', '.join(names) or 'none'}).")
+
+    def read_sketch(self, name: str) -> dict:
+        """A sketch of the current part read back in MODEL coordinates (mm): its
+        lines, arcs, circles and splines (construction ones marked), its
+        dimensions, and whether it is fully defined. For checking a design
+        against fixed points before building on it.
+        """
+        feature = self._sketch_by_name(name)
+        sketch = binding.wrap(feature.GetSpecificFeature2(), self._mod.ISketch)
+        to_model = binding.wrap(binding.wrap(sketch.ModelToSketchTransform, self._mod.IMathTransform).Inverse(),
+                                self._mod.IMathTransform)
+        segments = [self._segment_entry(s, to_model) for s in sketch.GetSketchSegments() or ()]
+        status = sketch.GetConstrainedStatus()
+        return {"ok": True, "name": feature.Name, "fully_defined": status == SW_FULLY_CONSTRAINED,
+                "status": SKETCH_STATUSES.get(status, f"status {status}"), "segments": segments,
+                "dimensions": self._dimension_entries(feature)}
+
+    def _segment_entry(self, segment_dispatch, to_model) -> dict:
+        segment = binding.wrap(segment_dispatch, self._mod.ISketchSegment)
+        kind = segment.GetType()
+        entry = {"construction": bool(segment.ConstructionGeometry)}
+
+        def point(dispatch):
+            p = binding.wrap(dispatch, self._mod.ISketchPoint)
+            return self._to_model_mm(to_model, p.X, p.Y, p.Z)
+
+        if kind == SW_SKETCH_LINE:
+            line = binding.wrap(segment_dispatch, self._mod.ISketchLine)
+            entry.update(type="line", start_mm=point(line.GetStartPoint2()), end_mm=point(line.GetEndPoint2()))
+        elif kind == SW_SKETCH_ARC:
+            arc = binding.wrap(segment_dispatch, self._mod.ISketchArc)
+            circle = bool(arc.IsCircle())
+            entry.update(type="circle" if circle else "arc", centre_mm=point(arc.GetCenterPoint2()),
+                         radius_mm=round(m_to_mm(arc.GetRadius()), 4))
+            if not circle:
+                entry.update(start_mm=point(arc.GetStartPoint2()), end_mm=point(arc.GetEndPoint2()))
+        else:
+            names = {SW_SKETCH_SPLINE: "spline", SW_SKETCH_TEXT: "text"}
+            entry.update(type=names.get(kind, f"segment type {kind}"), length_mm=round(m_to_mm(segment.GetLength()), 4))
+        return entry
+
+    def _to_model_mm(self, transform, x_m, y_m, z_m) -> list:
+        mathutil = binding.wrap(self._sw.GetMathUtility(), self._mod.IMathUtility)
+        coords = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, [x_m, y_m, z_m])
+        moved = binding.wrap(binding.wrap(mathutil.CreatePoint(coords), self._mod.IMathPoint).MultiplyTransform(transform),
+                             self._mod.IMathPoint)
+        return [round(m_to_mm(c), 4) + 0.0 for c in moved.ArrayData]
+
+    def extrude_sketch(self, sketch: str, depth_mm: float, reverse: bool = False, name: str = "Extrude") -> dict:
+        """Extrude an existing sketch of the current part, by name (one a person
+        drew), depth_mm along its normal (reverse=True: the other way), merged
+        with the body. The sketch's own dimensions come back."""
+        if depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        defined = self._select_person_sketch(sketch)
+        return self._extrude_sketch(depth_mm, name, defined, f"Is '{sketch}' a closed profile?", reverse=reverse)
+
+    def cut_sketch(self, sketch: str, depth_mm: float | None = None, reverse: bool = False,
+                   name: str = "Cut") -> dict:
+        """Cut an existing sketch of the current part, by name, into the body:
+        depth_mm deep, or through all when depth_mm is None, against the
+        sketch's normal (FeatureCut4's own direction, verified): into the part
+        from a face. reverse=True cuts along the normal, as needed from a plane
+        with the part in front of it."""
+        if depth_mm is not None and depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        model = self._require_model()
+        defined = self._select_person_sketch(sketch)
+        t1, d1 = (SW_END_COND_THROUGH_ALL, 0.0) if depth_mm is None else (SW_END_COND_BLIND, mm_to_m(depth_mm))
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        cut = feat_mgr.FeatureCut4(
+            True, False, reverse, t1, 0, d1, 0.0,
+            False, False, False, False, 0.0, 0.0,
+            False, False, False, False, False, True, True, False, False, False,
+            SW_START_SKETCH_PLANE, 0.0, False, False,
+        )
+        if cut is None:
+            raise SolidWorksError(f"FeatureCut4 failed (None). Is '{sketch}' a closed profile that meets the part"
+                                  f"{'' if reverse else ' (or does it need reverse=True)'}?")
+        return self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
+
+    def _select_person_sketch(self, name: str) -> dict:
+        """Select a sketch by name for a feature; its dimensions and definition state."""
+        feature = self._sketch_by_name(name)
+        self._model.ClearSelection2(True)
+        if not feature.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the sketch '{name}'.")
+        dims = {entry["name"].split("@")[0]: entry["name"] for entry in self._dimension_entries(feature)}
+        status = binding.wrap(feature.GetSpecificFeature2(), self._mod.ISketch).GetConstrainedStatus()
+        return {"dimensions": dims, "fully_defined": status == SW_FULLY_CONSTRAINED}
 
     # --- history: list, delete and suppress features ---------------------------
 

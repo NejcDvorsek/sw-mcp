@@ -169,6 +169,15 @@ stray drag in SolidWorks can change the part.
   `measure_distance` gives the clearance between two components (0 when
   they touch or overlap), or from a component to a point such as a pivot,
   with the nearest point; `inside: true` means the point lies in the material.
+- **A person's part**: `list_features` names their sketches and planes.
+  `read_sketch` reads a sketch back in model coordinates, so you can check it
+  against the points that must fit before building on it. `extrude_sketch` and
+  `cut_sketch` build on it by name, and it keeps its own dimensions and
+  relations. A cut goes against the sketch's normal: from a face that is into
+  the part; from a plane with the part in front of it (a box standing on the
+  Front plane) it needs `reverse=True`. Change the person's dimensions with
+  `set_dimension` (names from `read_sketch` or `list_dimensions`). Their
+  planes work by name in `add_mirror` and `cut_profile_through_plane`.
 
 ## 5. 3D printing
 

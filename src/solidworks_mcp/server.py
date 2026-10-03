@@ -24,6 +24,7 @@ Conventions
 - Millimetres and degrees. New geometry starts on the Front plane (XY) and extrudes along +Z from z = 0. add_box spans x 0..w, y 0..h; add_disc is centred on the origin; revolves turn about Y.
 - Faces are picked by direction: '+z', '-x', ... *_on_face tools take 3D points on the face and use the face facing that way through them (the top, a pocket floor, a step); '+z:outer' / '+z:inner' force the outermost / innermost one. Other tools use the outermost face.
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
+- In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror and cut_profile_through_plane.
 
 Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
@@ -441,6 +442,31 @@ async def add_extruded_slot(start_mm: list, end_mm: list, width_mm: float, depth
 
 
 @mcp.tool()
+async def extrude_sketch(sketch: str, depth_mm: float, reverse: bool = False, name: str = "Extrude") -> dict:
+    """Extrude an existing sketch of the current part by name, e.g. one a person drew.
+
+    depth_mm along the sketch's normal (reverse=True: the other way), merged
+    with the body. The sketch keeps its own dimensions and relations, so the
+    person's design stays in charge; read_sketch shows it first. Returns mass
+    properties.
+    """
+    return await _call(_session.extrude_sketch, sketch, depth_mm, reverse, name)
+
+
+@mcp.tool()
+async def cut_sketch(sketch: str, depth_mm: float | None = None, reverse: bool = False,
+                     name: str = "Cut") -> dict:
+    """Cut an existing sketch of the current part by name into the body.
+
+    depth_mm deep, or through all when depth_mm is omitted, against the
+    sketch's normal: into the part from a face. From a plane with the part in
+    front of it (a box on the Front plane) give reverse=True. Returns mass
+    properties.
+    """
+    return await _call(_session.cut_sketch, sketch, depth_mm, reverse, name)
+
+
+@mcp.tool()
 async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet") -> dict:
     """Round edges of the current part with one constant radius (mm).
 
@@ -552,6 +578,18 @@ async def list_dimensions() -> dict:
     For a part opened from disk, or when the names the tools returned are gone.
     """
     return await _call(_session.list_dimensions)
+
+
+@mcp.tool()
+async def read_sketch(name: str) -> dict:
+    """Read a sketch of the current part back, e.g. one a person drew (a list_features name).
+
+    Gives its lines, arcs, circles and splines in MODEL coordinates (mm),
+    construction geometry marked, its dimensions (for set_dimension) and
+    whether it is fully defined: check a design against fixed points before
+    building on it with extrude_sketch / cut_sketch.
+    """
+    return await _call(_session.read_sketch, name)
 
 
 @mcp.tool()

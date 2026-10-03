@@ -15,6 +15,10 @@ All notable changes to this project are documented here. This project follows
 - `add_mirror` and `cut_profile_through_plane` take the name of any plane in
   the part (`plane="Plane1"`), such as one a person made; an unknown name lists
   the planes there are.
+- `read_sketch` reads a sketch back in model coordinates: its lines, arcs,
+  circles and splines, its dimensions and whether it is fully defined.
+  `extrude_sketch` and `cut_sketch` build on an existing sketch by name, such as
+  one a person drew; it keeps its own dimensions and relations.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

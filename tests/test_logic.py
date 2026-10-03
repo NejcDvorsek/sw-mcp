@@ -425,6 +425,13 @@ def test_measure_distance_point_needs_three_coordinates(s):
         s.measure_distance("A-1", point_mm=[0, 0])
 
 
+@pytest.mark.parametrize("call", [lambda s: s.extrude_sketch("Sketch1", 0),
+                                  lambda s: s.cut_sketch("Sketch1", -2)])
+def test_sketch_features_need_a_positive_depth(s, call):
+    with pytest.raises(SolidWorksError, match="depth must be > 0"):
+        call(s)
+
+
 # --- MCP wiring ---------------------------------------------------------------
 
 
