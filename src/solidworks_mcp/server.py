@@ -103,7 +103,7 @@ async def _call(fn, *args, **kwargs) -> dict:
 
 @mcp.tool()
 async def get_status() -> dict:
-    """Report whether SolidWorks is reachable, its revision, and the active/current part."""
+    """Report whether SolidWorks is reachable, its revision, this server's version, and the active/current part."""
     return await _call(_session.get_status)
 
 
@@ -652,7 +652,11 @@ async def screenshot(path: str) -> dict:
 
 @mcp.tool()
 async def close_part(save: bool = False) -> dict:
-    """Close the current part or assembly without saving (export/save first if needed)."""
+    """Close the current part or assembly without saving (export/save first if needed).
+
+    With no current document it closes SolidWorks' active one, but only when
+    that has no unsaved changes.
+    """
     return await _call(_session.close_part, save)
 
 

@@ -9,6 +9,7 @@ import math
 
 import pytest
 
+from solidworks_mcp import binding
 from solidworks_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
@@ -568,6 +569,43 @@ def test_a_part_reopened_behind_another_document_can_still_be_cut(part, tmp_path
         assert abs(vol(pocket) - (8000 - 10 * 10 * 2)) < 0.01
     finally:
         part._sw.CloseDoc(other)
+
+
+def test_close_part_without_a_current_document_closes_the_saved_active_one(sw, tmp_path):
+    """After close_part there is no current document, yet SolidWorks still shows
+    one; closing that took an open_part first. A saved one may simply close."""
+    sw.new_part()
+    sw.add_box(10, 10, 10)
+    sw.save_part(str(tmp_path / "saved.sldprt"))
+    sw.new_part()
+    sw.close_part()
+    assert sw.get_status()["current_part"] is None
+
+    closed = sw.close_part()
+
+    assert closed["closed"].lower() == "saved.sldprt", closed
+
+
+def test_close_part_leaves_an_active_document_with_unsaved_work_open(sw):
+    # closing never asks, so unsaved work in SolidWorks' active document would be lost
+    sw.new_part()
+    sw.add_box(10, 10, 10)
+    unsaved = sw.get_status()["current_part"]
+    sw.new_part()
+    sw.close_part()
+    try:
+        with pytest.raises(SolidWorksError, match="unsaved"):
+            sw.close_part()
+        open_titles = [binding.wrap(d, binding.module().IModelDoc2).GetTitle() for d in sw._sw.GetDocuments()]
+        assert unsaved in open_titles, "the unsaved document was closed"
+    finally:
+        sw._sw.CloseDoc(unsaved)
+
+
+def test_status_names_the_server_version(sw):
+    from solidworks_mcp import __version__
+
+    assert sw.get_status()["server_version"] == __version__, "a user cannot tell which server version runs"
 
 
 def test_save_open_roundtrip(part, tmp_path):

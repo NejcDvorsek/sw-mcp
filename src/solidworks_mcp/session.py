@@ -19,7 +19,7 @@ import pythoncom
 import win32com.client
 import win32gui
 
-from . import binding
+from . import __version__, binding
 from .constants import (
     EXPORT_FORMATS,
     IMPORT_FORMATS,
@@ -190,6 +190,7 @@ class SolidWorksSession:
         return {
             "ok": True,
             "connected": True,
+            "server_version": __version__,
             "revision": self._revision(),
             "active_document": active_title,
             "current_part": self._model.GetTitle() if self._model is not None else None,
@@ -234,13 +235,33 @@ class SolidWorksSession:
         return {"ok": True, "title": model.GetTitle()}
 
     def close_part(self, save: bool = False) -> dict:
-        """Close the current document (part or assembly). CloseDoc never prompts."""
-        model = self._require_model()
+        """Close the current document (part or assembly). CloseDoc never prompts.
+
+        Without a current document it closes SolidWorks' active one, but only
+        when that has no unsaved changes: closing never asks, so they would be
+        lost.
+        """
         if save:
             raise SolidWorksError("Saving on close is not supported yet; use 'save_part', 'save_assembly' or 'export' first.")
-        title = model.GetTitle()
+        if self._model is None:
+            return self._close_active_document()
+        title = self._require_model().GetTitle()
         self._sw.CloseDoc(title)
         self._model = None
+        return {"ok": True, "closed": title}
+
+    def _close_active_document(self) -> dict:
+        active = binding.wrap(self._ensure().ActiveDoc, self._mod.IModelDoc2)
+        if active is None:
+            raise SolidWorksError("No document is open.")
+        title = active.GetTitle()
+        if active.GetSaveFlag():
+            raise SolidWorksError(
+                f"There is no current document, and SolidWorks' active document '{title}' has unsaved "
+                "changes, so it stays open. Save it in SolidWorks, or open it with open_part or "
+                "open_assembly to work on it."
+            )
+        self._sw.CloseDoc(title)
         return {"ok": True, "closed": title}
 
     def _write_via_saveas3(self, abs_path: str) -> None:

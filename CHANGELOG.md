@@ -13,6 +13,9 @@ All notable changes to this project are documented here. This project follows
 - `list_faces` gives a cylindrical face's axis, radius and a point on the axis
   (a hole's centre), and lists a component's faces in its own frame with
   `component`, so a hole circle on an imported part can be read off.
+- `close_part` without a current document closes SolidWorks' active one, as
+  long as that has no unsaved changes (closing never asks, so they would be
+  lost). `get_status` names the server's version.
 
 ### Fixed
 - Every sketch was refused ("SolidWorks refused a horizontal relation") in a

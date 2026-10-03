@@ -188,7 +188,7 @@ The server speaks MCP over **stdio**.
 
 | Tool | Purpose |
 |---|---|
-| `get_status` | Is SolidWorks reachable? revision + active/current part |
+| `get_status` | Is SolidWorks reachable? revision, server version, active/current part |
 | `new_part` | Create a new empty part (becomes current) |
 | `add_box(width_mm, height_mm, depth_mm, name)` | Sketch rectangle + extrude; returns mass properties |
 | `add_cylinder(diameter_mm, height_mm, name)` | Cylinder by revolving a profile 360° about an axis (Y axis) |
@@ -235,7 +235,7 @@ The server speaks MCP over **stdio**.
 | `export(path, file_format, quality, deviation_mm, angle_deg)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg` |
 | `screenshot(path)` | Isometric, zoom-to-fit PNG/BMP/JPG |
 | `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt`; `open_part` also imports STEP, IGES and Parasolid files as a part to build on |
-| `close_part(save)` | Close the current part or assembly |
+| `close_part(save)` | Close the current part or assembly; without one, SolidWorks' active document if it is saved |
 
 ### Assembly tools
 
