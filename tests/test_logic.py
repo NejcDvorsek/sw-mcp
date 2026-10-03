@@ -424,6 +424,17 @@ def test_a_suppressed_component_has_no_box(s):
     assert s._component_box(_FakePart(0)) is None
 
 
+@pytest.mark.parametrize("target", [{}, {"component_b": "B-1", "point_mm": [0, 0, 0]}])
+def test_measure_distance_needs_exactly_one_target(s, target):
+    with pytest.raises(SolidWorksError, match="one of the two"):
+        s.measure_distance("A-1", **target)
+
+
+def test_measure_distance_point_needs_three_coordinates(s):
+    with pytest.raises(SolidWorksError, match=r"\[x, y, z\]"):
+        s.measure_distance("A-1", point_mm=[0, 0])
+
+
 # --- MCP wiring ---------------------------------------------------------------
 
 

@@ -9,6 +9,9 @@ All notable changes to this project are documented here. This project follows
 - `screenshot` takes a `view` (`front`, `back`, `left`, `right`, `top`,
   `bottom` or `iso`) and `zoom_mm`, the corners of a region to fill the image,
   to judge a detail.
+- `measure_distance`: the smallest distance between two components, or from a
+  component to a point, with the nearest point and whether the point lies in
+  the material. 0 means they touch or overlap.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

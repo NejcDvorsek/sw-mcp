@@ -271,6 +271,7 @@ def test_a_sub_assembly_is_measured_through_its_parts(sw, blocks, tmp_path):
         assert sw._require_assembly().AddComponent5(sub, 0, "", False, "", 0.0, 0.0, 0.0) is not None
         sw.set_component_transform("sub", 0, 100, 0, rz_deg=90)
         box = only(sw, "sub")["bounding_box_mm"]
+        measured = sw.measure_distance("sub", point_mm=[-10, 160, 5])
     finally:
         sw.close_part()
         sw._sw.CloseDoc("sub.sldasm")
@@ -280,6 +281,49 @@ def test_a_sub_assembly_is_measured_through_its_parts(sw, blocks, tmp_path):
     assert box is not None, "the sub-assembly got no box: its parts were not searched"
     assert box["min_mm"] == pytest.approx([-20, 110, 0], abs=1e-4) and \
         box["max_mm"] == pytest.approx([0, 150, 10], abs=1e-4), f"wrong box for the nested part: {box}"
+    assert measured["distance_mm"] == pytest.approx(10, abs=1e-4), measured
+    assert measured["nearest_mm"] == pytest.approx([-10, 150, 5], abs=1e-4), measured
+
+
+def test_measure_distance_between_two_components(assembly, blocks):
+    # block_a spans x 0..40 and block_b starts at x = 100: 60 mm of air
+    two_blocks(assembly, blocks, b_at=(100.0, 0.0, 0.0))
+    assert assembly.measure_distance("block_a", "block_b")["distance_mm"] == pytest.approx(60, abs=1e-4)
+
+
+def test_measure_distance_follows_a_turned_component(assembly, blocks):
+    # block_b turned 90 degrees about Z at x = 100 spans x 80..100: 40 mm, not 60
+    two_blocks(assembly, blocks, b_at=(100.0, 0.0, 0.0))
+    assembly.set_component_transform("block_b", 100, 0, 0, rz_deg=90)
+    assert assembly.measure_distance("block_a", "block_b")["distance_mm"] == pytest.approx(40, abs=1e-4)
+
+
+@pytest.mark.parametrize("b_x", [40.0, 35.0], ids=["touching", "overlapping"])
+def test_components_that_meet_are_0_apart(assembly, blocks, b_x):
+    # SolidWorks measures no distance between bodies that meet
+    two_blocks(assembly, blocks, b_at=(b_x, 0.0, 0.0))
+    assert assembly.measure_distance("block_a", "block_b")["distance_mm"] == 0
+
+
+def test_measure_distance_to_a_point_gives_the_nearest_point(assembly, blocks):
+    # block_a is turned 90 degrees about Z: x -20..0, y 0..40. The point is
+    # 10 mm past its far end; unturned, the block would be 31.6 mm away.
+    two_blocks(assembly, blocks)
+    assembly.set_component_transform("block_a", 0, 0, 0, rz_deg=90)
+    measured = assembly.measure_distance("block_a", point_mm=[-10, 50, 5])
+    assert measured["distance_mm"] == pytest.approx(10, abs=1e-4), measured
+    assert measured["nearest_mm"] == pytest.approx([-10, 40, 5], abs=1e-4), measured
+    assert measured["inside"] is False
+
+
+def test_a_point_in_the_material_is_flagged_inside(assembly, blocks):
+    """A positive distance alone would read as clearance; 2 mm deep is not."""
+    # 2 mm under block_a's top face (z = 10); every other face is further away
+    two_blocks(assembly, blocks)
+    measured = assembly.measure_distance("block_a", point_mm=[20, 10, 8])
+    assert measured["inside"] is True, f"a point in the material reads as clearance: {measured}"
+    assert measured["distance_mm"] == pytest.approx(2, abs=1e-4)
+    assert measured["nearest_mm"] == pytest.approx([20, 10, 10], abs=1e-4)
 
 
 def test_get_assembly_bounding_box_rejects_a_part(part):

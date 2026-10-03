@@ -165,6 +165,9 @@ stray drag in SolidWorks can change the part.
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.
   Component boxes are the parts' own extent, also when turned.
+  `measure_distance` gives the clearance between two components (0 when
+  they touch or overlap), or from a component to a point such as a pivot,
+  with the nearest point; `inside: true` means the point lies in the material.
 
 ## 5. 3D printing
 

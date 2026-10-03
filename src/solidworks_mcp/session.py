@@ -4044,6 +4044,76 @@ class SolidWorksSession:
             entry["volume_mm3"] = round(entry["volume_mm3"], 4)
         return {"ok": True, "count": len(result), "interferences": result}
 
+    def measure_distance(self, component_a: str, component_b: str | None = None,
+                         point_mm: list | None = None) -> dict:
+        """The smallest distance (mm) from a component of the current assembly to
+        another one, or to a point (assembly mm, with the nearest point on the
+        component). 0 where they touch or overlap; check_interference tells
+        which. A point in the material comes back with inside: true and its
+        distance to the surface.
+        """
+        if (component_b is None) == (point_mm is None):
+            raise SolidWorksError("Give component_b or point_mm: one of the two.")
+        if point_mm is not None and len(point_mm) != 3:
+            raise SolidWorksError(f"point_mm needs [x, y, z] (got {point_mm}).")
+        asm = self._require_assembly()
+        comp = self._component_by_name(asm, component_a)
+        if component_b is not None:
+            return self._distance_between(comp, self._component_by_name(asm, component_b))
+        return self._distance_to_point(comp, [float(c) for c in point_mm])
+
+    def _distance_between(self, first, second) -> dict:
+        model = self._require_model()
+        selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+        model.ClearSelection2(True)
+        try:
+            if not (first.Select4(False, selmgr.CreateSelectData(), False)
+                    and second.Select4(True, selmgr.CreateSelectData(), False)):
+                raise SolidWorksError(f"Could not select '{first.Name2}' and '{second.Name2}'.")
+            measure = binding.wrap(binding.wrap(model.Extension, self._mod.IModelDocExtension).CreateMeasure(),
+                                   self._mod.IMeasure)
+            if measure is None or not measure.Calculate(None) or not (measure.IsIntersect or measure.Distance >= 0):
+                raise SolidWorksError(f"SolidWorks could not measure between '{first.Name2}' and '{second.Name2}'.")
+            # touching or overlapping: SolidWorks reports no distance then, only the meeting (verified)
+            distance = 0.0 if measure.IsIntersect else measure.Distance
+        finally:
+            model.ClearSelection2(True)
+        return {"ok": True, "between": [first.Name2, second.Name2], "distance_mm": round(m_to_mm(distance), 4)}
+
+    def _distance_to_point(self, comp, point_mm) -> dict:
+        """Nearest point on the faces of the component's parts, each searched in
+        its own frame."""
+        best = None  # (gap in assembly m, face, nearest and point in part m, part frame)
+        for part in self._solid_parts(comp):
+            rotation, shift, scale = self._frame(part)
+            relative = [mm_to_m(p) - s for p, s in zip(point_mm, shift)]
+            local = [sum(rotation[row][i] * relative[row] for row in range(3)) / scale for i in range(3)]  # R^T (p - t)
+            for body in self._solid_bodies(part):
+                for face_dispatch in body.GetFaces() or ():
+                    face = binding.wrap(face_dispatch, self._mod.IFace2)
+                    nearest = face.GetClosestPointOn(*local)
+                    if not nearest or len(nearest) < 3:
+                        raise SolidWorksError(f"SolidWorks found no nearest point on a face of '{part.Name2}'.")
+                    gap = math.dist(local, nearest[:3]) * scale
+                    if best is None or gap < best[0]:
+                        best = (gap, face, nearest[:3], local, (rotation, shift, scale))
+        if best is None:
+            raise SolidWorksError(f"Component '{comp.Name2}' has no solid body to measure to.")
+        gap, face, nearest, local, (rotation, shift, scale) = best
+        on_component = [scale * sum(rotation[row][i] * nearest[i] for i in range(3)) + shift[row] for row in range(3)]
+        return {"ok": True, "from": comp.Name2, "point_mm": point_mm, "distance_mm": round(m_to_mm(gap), 4),
+                "nearest_mm": [round(m_to_mm(c), 4) for c in on_component],
+                "inside": self._on_material_side(face, nearest, local)}
+
+    def _on_material_side(self, face, nearest, point) -> bool:
+        """Whether `point` lies behind `face` at its nearest point `nearest`."""
+        surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
+        normal = surface.EvaluateAtPoint(*nearest)[:3]
+        # With FaceInSurfaceSense the surface normal points INTO the material
+        # (verified on planes and cylinders, with both senses).
+        outward = [-n for n in normal] if face.FaceInSurfaceSense() else list(normal)
+        return sum((p - q) * n for p, q, n in zip(point, nearest, outward)) < 0
+
     def get_assembly_bounding_box(self) -> dict:
         """Bounding box of the whole assembly (min/max/size in mm)."""
         self._require_assembly()

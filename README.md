@@ -249,7 +249,8 @@ The server speaks MCP over **stdio**.
 | `set_component_transform(name, x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg)` | Move/rotate a component; the transform is read back and verified |
 | `add_mate(comp_a, face_a, comp_b, face_b, mate_type, distance_mm, flip)` | Mate two planar faces: `coincident`, `distance`, `parallel`, `perpendicular` — measured back from the geometry afterwards |
 | `check_interference` | Component pairs whose solids overlap, with the volume in mm³ (touching faces don't count) |
-| `get_assembly_bounding_box` | Bounding box of the whole assembly (min/max/size, mm) |
+| `measure_distance(component_a, component_b, point_mm)` | Smallest distance between two components, or to a point (with the nearest point, and whether the point is in the material) |
+| `get_assembly_bounding_box` | Tight bounding box of the whole assembly (min/max/size, mm) |
 
 `export` and `screenshot` work on assemblies too.
 
