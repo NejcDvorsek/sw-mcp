@@ -174,8 +174,8 @@ def test_flip_puts_the_distance_on_the_other_side(assembly, blocks):
 
 def test_mate_unknown_type_raises(assembly, blocks):
     two_blocks(assembly, blocks)
-    with pytest.raises(SolidWorksError):
-        assembly.add_mate("block_a", "+x", "block_b", "-x", mate_type="concentric")
+    with pytest.raises(SolidWorksError, match="Unknown mate type"):
+        assembly.add_mate("block_a", "+x", "block_b", "-x", mate_type="glue")
 
 
 def test_mate_needs_two_different_components(assembly, blocks):

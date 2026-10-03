@@ -479,6 +479,13 @@ class SolidWorksSession:
             raise SolidWorksError(f"Unknown direction '{token}'. Use +x/-x/+y/-y/+z/-z.")
         return self._DIRECTIONS[key]
 
+    @staticmethod
+    def _face_index(selector) -> int | None:
+        """'#5' or '5' -> 5, a face by its list_faces index; a direction -> None."""
+        text = str(selector).strip()
+        digits = text[1:] if text.startswith("#") else text
+        return int(digits) if digits.isdigit() else None
+
     def _parse_face_selector(self, token: str, default_side: str | None = "outer"):
         """'+z' or '+z:inner' -> ((0,0,1), 'outer'|'inner'); pure, unit-tested.
 
@@ -3966,10 +3973,23 @@ class SolidWorksSession:
         return {"ok": True, "component": self._component_entry(comp)}
 
     def list_components(self) -> dict:
-        """List the components: name, path, fixed, placement, bounding box."""
+        """List the components (name, path, fixed, placement, bounding box) and
+        the mates: name, SolidWorks type, the dimension of a distance or angle
+        mate, and the error of a mate SolidWorks flags."""
         asm = self._require_assembly()
         comps = [self._component_entry(c) for c in self._components(asm)]
-        return {"ok": True, "count": len(comps), "components": comps}
+        return {"ok": True, "count": len(comps), "components": comps,
+                "mates": [self._mate_entry(mate) for mate in self._mates()]}
+
+    def _mate_entry(self, mate) -> dict:
+        entry = {"name": mate.Name, "type": mate.GetTypeName2()}
+        dimensions = self._dimension_entries(mate)
+        if dimensions:
+            entry["dimensions"] = [{key: d[key] for key in ("name", "value", "unit")} for d in dimensions]
+        code, warning = mate.GetErrorCode2()
+        if code:
+            entry["error"] = {"code": code, "warning": bool(warning)}
+        return entry
 
     def set_component_transform(self, name: str, x_mm: float, y_mm: float, z_mm: float,
                                 rx_deg: float = 0.0, ry_deg: float = 0.0,
@@ -4006,13 +4026,22 @@ class SolidWorksSession:
         return faces
 
     def _component_face(self, comp, selector: str):
-        """Face '+x' / '-z:inner' of a component; returns (IFace2, position_mm).
+        """Face '+x' / '-z:inner' of a component, or face '#5' by its
+        list_faces(component=...) index; returns (IFace2, position_mm or None).
 
         The direction is read in the COMPONENT's own coordinate system (verified:
         a component's faces keep part coordinates however the component is
         turned), so '-x' is always the part's own -X face. ':inner' picks the
         cavity side of a hollow part -- the inside of a room wall, not its skin.
+        An index reaches any face, such as a hole for a concentric mate.
         """
+        index = self._face_index(selector)
+        if index is not None:
+            faces = self._component_faces(comp)
+            if index >= len(faces):
+                raise SolidWorksError(f"Component '{comp.Name2}' has faces #0 to #{len(faces) - 1}; "
+                                      "list_faces(component=...) shows them.")
+            return binding.wrap(faces[index], self._mod.IFace2), None
         normal, side = self._parse_face_selector(selector)
         face, position_mm = self._pick_planar_face(self._component_faces(comp), normal, side)
         if face is None:
@@ -4044,37 +4073,130 @@ class SolidWorksSession:
 
     # A mate that builds but resolves to the wrong side is a silent geometry
     # error, so every mate is measured back from the geometry afterwards: the
-    # perpendicular distance between the two mated planes (coincident/distance)
-    # or the angle between their normals (parallel/perpendicular).
+    # perpendicular distance between the two mated planes (coincident/distance),
+    # the angle between their normals (parallel/perpendicular/angle), or how far
+    # apart two cylinders' axes lie (concentric).
     _MATE_DISTANCE_TOLERANCE_MM = 1e-3
     _MATE_ANGLE_TOLERANCE_DEG = 0.01
     _MATE_EXPECTED_ANGLE_DEG = {"parallel": 0.0, "perpendicular": 90.0}
 
     def _measure_mate(self, comp_a, face_a, comp_b, face_b) -> tuple:
-        """(perpendicular distance mm, angle between normals deg) after a rebuild."""
+        """(perpendicular distance mm, angle between normals deg) after a rebuild.
+
+        The angle is 0..180 degrees: normals pointing the same way are 0 apart."""
         point_a, normal_a = self._face_plane_in_assembly(comp_a, face_a)
         point_b, normal_b = self._face_plane_in_assembly(comp_b, face_b)
         gap = abs(sum((point_b[i] - point_a[i]) * normal_a[i] for i in range(3)))
-        dot = abs(sum(normal_a[i] * normal_b[i] for i in range(3)))
+        dot = sum(normal_a[i] * normal_b[i] for i in range(3))
         return m_to_mm(gap), math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+    def _axis_in_assembly(self, comp, face):
+        """A cylindrical component face's axis as (point, unit direction) in
+        ASSEMBLY coordinates, in metres."""
+        params = binding.wrap(face.GetSurface(), self._mod.ISurface).CylinderParams
+        rotation, shift, scale = self._frame(comp)
+        point = [scale * sum(rotation[row][i] * params[i] for i in range(3)) + shift[row] for row in range(3)]
+        direction = [sum(rotation[row][i] * params[3 + i] for i in range(3)) for row in range(3)]
+        length = math.hypot(*direction)
+        return point, [d / length for d in direction]
+
+    def _axes_apart(self, comp_a, face_a, comp_b, face_b) -> tuple:
+        """(distance mm of b's axis from a's, angle deg between the axes) for two
+        cylindrical faces: both 0 when they share one axis."""
+        point_a, axis_a = self._axis_in_assembly(comp_a, face_a)
+        point_b, axis_b = self._axis_in_assembly(comp_b, face_b)
+        offset = [b - a for a, b in zip(point_a, point_b)]
+        along = sum(o * d for o, d in zip(offset, axis_a))
+        across = math.dist(offset, [along * d for d in axis_a])
+        dot = abs(sum(a * b for a, b in zip(axis_a, axis_b)))
+        return m_to_mm(across), math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+    def _check_mate_faces(self, key, faces):
+        """Concentric takes cylinders, every other type planar faces."""
+        for selector, comp, face in faces:
+            surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
+            if key == "concentric" and not surface.IsCylinder():
+                raise SolidWorksError(f"A concentric mate takes cylindrical faces; {comp.Name2}:{selector} is not "
+                                      "one. list_faces(component=...) shows the cylinders with their index.")
+            if key != "concentric" and not surface.IsPlane():
+                raise SolidWorksError(f"A {key} mate takes planar faces; {comp.Name2}:{selector} is not planar.")
+
+    def _mates(self) -> list:
+        """The assembly's mates (the MateGroup's sub-features), in tree order."""
+        return [mate for feat in self._iter_features() if feat.GetTypeName2() == "MateGroup"
+                for mate in self._sub_features(feat)]
+
+    def _undo_mate(self, asm, mates_before: set, placements: list) -> None:
+        """Delete the mates added since mates_before and put the components back,
+        so a refused mate does not stay to fight the next attempt."""
+        model = self._model
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        for mate in [m for m in self._mates() if m.Name not in mates_before]:
+            model.ClearSelection2(True)
+            if mate.Select2(False, 0):
+                extension.DeleteSelection2(0)
+        model.ClearSelection2(True)
+        for comp, data in placements:
+            comp.Transform2 = self._transform_from_data(data)
+        asm.EditRebuild()
+
+    def _transform_from_data(self, data):
+        mathutil = binding.wrap(self._sw.GetMathUtility(), self._mod.IMathUtility)
+        coords = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, list(data))
+        return binding.wrap(mathutil.CreateTransform(coords), self._mod.IMathTransform)
+
+    def _mate_problem(self, key, first, face_1, second, face_2, distance_mm, angle_deg) -> str | None:
+        """Why the rebuilt mate does not hold what was asked, or None."""
+        where = f"{first.Name2} and {second.Name2}"
+        if key == "concentric":
+            across_mm, tilt_deg = self._axes_apart(first, face_1, second, face_2)
+            if across_mm > self._MATE_DISTANCE_TOLERANCE_MM or tilt_deg > self._MATE_ANGLE_TOLERANCE_DEG:
+                return (f"Mate 'concentric' was built but the axes of {where} are {across_mm:.4f} mm and "
+                        f"{tilt_deg:.4f} degrees apart. Check whether another mate works against it.")
+            return None
+        measured_mm, measured_deg = self._measure_mate(first, face_1, second, face_2)
+        expected_mm = {"distance": distance_mm, "coincident": 0.0}.get(key)
+        if expected_mm is not None and abs(measured_mm - expected_mm) > self._MATE_DISTANCE_TOLERANCE_MM:
+            return (f"Mate '{key}' was built but gives {measured_mm:.4f} mm instead of {expected_mm:g} mm "
+                    f"between {where}. Try flip=True, or check whether another mate works against it.")
+        if key in self._MATE_EXPECTED_ANGLE_DEG:
+            # parallel and perpendicular hold whichever way the normals point
+            apart = min(measured_deg, 180.0 - measured_deg)
+            if abs(apart - self._MATE_EXPECTED_ANGLE_DEG[key]) > self._MATE_ANGLE_TOLERANCE_DEG:
+                return (f"Mate '{key}' was built but the faces of {where} are {apart:.4f} degrees apart "
+                        f"instead of {self._MATE_EXPECTED_ANGLE_DEG[key]:g}.")
+        if key == "angle" and abs(measured_deg - angle_deg) > self._MATE_ANGLE_TOLERANCE_DEG:
+            return (f"Mate 'angle' was built but the faces of {where} are {measured_deg:.4f} degrees apart "
+                    f"instead of {angle_deg:g}. Check whether another mate works against it.")
+        return None
+
+    def _mate_dimension(self, mate) -> str:
+        """The name set_dimension takes for a distance or angle mate's value."""
+        display = binding.wrap(binding.wrap(mate, self._mod.IMate2).DisplayDimension2(0), self._mod.IDisplayDimension)
+        if display is None:
+            raise SolidWorksError("The mate has no dimension to drive.")
+        return binding.wrap(display.GetDimension2(0), self._mod.IDimension).GetNameForSelection()
 
     def add_mate(self, comp_a: str, face_a: str, comp_b: str, face_b: str,
                  mate_type: str = "coincident", distance_mm: float = 0.0,
-                 flip: bool = False) -> dict:
-        """Mate a planar face of one component to a planar face of another.
+                 angle_deg: float = 0.0, flip: bool = False) -> dict:
+        """Mate a face of one component to a face of another.
 
         comp_a/comp_b are component names ('Bed' or 'Bed-1'); face_a/face_b are
         direction selectors in each component's OWN frame ('+x', '-z', or
-        '+y:inner' for the cavity side of a hollow part). mate_type is
-        'coincident', 'distance', 'parallel' or 'perpendicular'; distance_mm
-        applies to 'distance'. flip swaps the solution when SolidWorks lands on
-        the mirror side.
+        '+y:inner' for the cavity side of a hollow part), or a face index from
+        list_faces(component=...) ('#5'). mate_type: 'coincident', 'distance'
+        (distance_mm), 'parallel', 'perpendicular' or 'angle' (angle_deg, the
+        angle between the faces' normals) between planar faces; 'concentric'
+        between two cylindrical faces (a pin in a hole, a hinge), which leaves
+        the turn about the axis free. flip takes the other solution: the
+        mirror side of a distance, the other turning direction of an angle.
 
-        After the rebuild the result is measured back from the geometry, and the
-        mate is rejected if it did not deliver what was asked.
+        A distance or angle mate returns its `dimension`, which set_dimension
+        and check_motion drive: a joint angle as one number. After the rebuild
+        the result is measured back from the geometry; a mate that does not
+        hold what was asked is removed again and the components put back.
         """
-        asm = self._require_assembly()
-        model = self._model
         key = (mate_type or "").lower().strip()
         if key not in MATE_TYPES:
             raise SolidWorksError(
@@ -4082,13 +4204,21 @@ class SolidWorksSession:
             )
         if key == "distance" and distance_mm < 0:
             raise SolidWorksError(f"distance must be >= 0 (got {distance_mm}).")
+        if key == "angle" and not 0.0 < angle_deg < 180.0:
+            raise SolidWorksError(f"angle must be between 0 and 180 degrees (got {angle_deg}); "
+                                  "0 and 180 are a parallel mate.")
         if (comp_a or "").strip().lower() == (comp_b or "").strip().lower():
             raise SolidWorksError("A mate constrains two DIFFERENT components.")
+        asm = self._require_assembly()
+        model = self._model
 
         first = self._component_by_name(asm, comp_a)
         second = self._component_by_name(asm, comp_b)
         face_1, _ = self._component_face(first, face_a)
         face_2, _ = self._component_face(second, face_b)
+        self._check_mate_faces(key, ((face_a, first, face_1), (face_b, second, face_2)))
+        placements = [(comp, self._transform_data(comp)) for comp in (first, second)]
+        mates_before = {m.Name for m in self._mates()}
 
         # Both mate entities go in with selection mark 1 (cracked empirically).
         model.ClearSelection2(True)
@@ -4102,6 +4232,7 @@ class SolidWorksSession:
                 )
 
         distance_m = mm_to_m(distance_mm) if key == "distance" else 0.0
+        angle_rad = math.radians(angle_deg) if key == "angle" else 0.0
         result = asm.AddMate5(
             MATE_TYPES[key],           # MateTypeFromEnum
             SW_MATE_ALIGN_CLOSEST,     # AlignFromEnum (components are pre-positioned)
@@ -4109,7 +4240,8 @@ class SolidWorksSession:
             distance_m,                # Distance
             distance_m, distance_m,    # DistanceAbsUpperLimit, DistanceAbsLowerLimit
             1.0, 1.0,                  # GearRatioNumerator, GearRatioDenominator
-            0.0, 0.0, 0.0,             # Angle, AngleAbsUpperLimit, AngleAbsLowerLimit
+            angle_rad,                 # Angle
+            angle_rad, angle_rad,      # AngleAbsUpperLimit, AngleAbsLowerLimit
             False,                     # ForPositioningOnly
             False,                     # LockRotation
             0,                         # WidthMateOption
@@ -4118,38 +4250,37 @@ class SolidWorksSession:
         model.ClearSelection2(True)
         mate, status = (result[0], result[-1]) if isinstance(result, tuple) else (result, None)
         if mate is None or (status is not None and int(status) != SW_ADD_MATE_NO_ERROR):
+            # An over-defining mate is added all the same, in error, and flags the
+            # mates it fights (verified), so name those before it goes again.
+            fought = [m.Name for m in self._mates() if m.Name in mates_before and m.GetErrorCode2()[0]]
+            self._undo_mate(asm, mates_before, placements)
             raise SolidWorksError(
                 f"Mate '{key}' between {first.Name2}:{face_a} and {second.Name2}:{face_b} "
-                f"failed (AddMate5 status {status}). Are the faces in a position that "
-                "allows this mate, without contradicting existing mates?"
+                f"failed (AddMate5 status {status}). "
+                + (f"It contradicts {', '.join(fought)}." if fought else
+                   "Are the faces in a position that allows this mate, without contradicting existing mates?")
             )
 
         asm.EditRebuild()
-        measured_mm, angle_deg = self._measure_mate(first, face_1, second, face_2)
-        expected_mm = distance_mm if key == "distance" else (0.0 if key == "coincident" else None)
-        if (expected_mm is not None
-                and abs(measured_mm - expected_mm) > self._MATE_DISTANCE_TOLERANCE_MM):
-            raise SolidWorksError(
-                f"Mate '{key}' was built but gives {measured_mm:.4f} mm instead of "
-                f"{expected_mm:g} mm between {first.Name2}:{face_a} and {second.Name2}:{face_b}. "
-                "Try flip=True, or check whether another mate works against it."
-            )
-        expected_angle = self._MATE_EXPECTED_ANGLE_DEG.get(key)
-        if (expected_angle is not None
-                and abs(angle_deg - expected_angle) > self._MATE_ANGLE_TOLERANCE_DEG):
-            raise SolidWorksError(
-                f"Mate '{key}' was built but the faces are {angle_deg:.4f} degrees apart "
-                f"instead of {expected_angle:g}."
-            )
-        return {
+        problem = self._mate_problem(key, first, face_1, second, face_2, distance_mm, angle_deg)
+        if problem:
+            self._undo_mate(asm, mates_before, placements)
+            raise SolidWorksError(problem)
+        entry = {
             "ok": True,
             "mate_type": key,
             "components": [first.Name2, second.Name2],
             "faces": [face_a, face_b],
-            "distance_mm": round(measured_mm, 6),
-            "angle_deg": round(angle_deg, 6),
             "placements": {c.Name2: self._placement(c) for c in (first, second)},
         }
+        if key == "concentric":
+            entry["axis_offset_mm"] = round(self._axes_apart(first, face_1, second, face_2)[0], 6)
+        else:
+            measured_mm, measured_deg = self._measure_mate(first, face_1, second, face_2)
+            entry.update(distance_mm=round(measured_mm, 6), angle_deg=round(measured_deg, 6))
+        if key in ("distance", "angle"):
+            entry["dimension"] = self._mate_dimension(mate)
+        return entry
 
     # --- interference ---------------------------------------------------------
 

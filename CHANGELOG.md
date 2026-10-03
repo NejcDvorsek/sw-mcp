@@ -19,6 +19,11 @@ All notable changes to this project are documented here. This project follows
   circles and splines, its dimensions and whether it is fully defined.
   `extrude_sketch` and `cut_sketch` build on an existing sketch by name, such as
   one a person drew; it keeps its own dimensions and relations.
+- `add_mate` takes `concentric` (two cylindrical faces: a pin in a hole, a
+  hinge) and `angle` (`angle_deg`), and a face by its `list_faces(component=...)`
+  index, `"#5"`. A distance or angle mate returns its dimension, so a joint
+  angle is one number for `set_dimension`. A refused mate is removed again,
+  naming the mate it contradicts; `list_components` lists the mates.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

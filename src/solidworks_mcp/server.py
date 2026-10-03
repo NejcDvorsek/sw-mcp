@@ -781,10 +781,12 @@ async def insert_component(path: str, x_mm: float = 0.0, y_mm: float = 0.0,
 
 @mcp.tool()
 async def list_components() -> dict:
-    """List the assembly's components: name, path, fixed, position, rotation, bounding box.
+    """List the assembly's components (name, path, fixed, position, rotation, bounding box) and mates.
 
     Positions are in mm and rotations in degrees, both in assembly coordinates;
-    the bounding box of each component is in assembly coordinates too.
+    the bounding box of each component is in assembly coordinates too. Each
+    mate gives its name, SolidWorks type, the dimension of a distance or angle
+    mate, and an error when SolidWorks flags it.
     """
     return await _call(_session.list_components)
 
@@ -808,19 +810,25 @@ async def set_component_transform(name: str, x_mm: float, y_mm: float, z_mm: flo
 @mcp.tool()
 async def add_mate(comp_a: str, face_a: str, comp_b: str, face_b: str,
                    mate_type: str = "coincident", distance_mm: float = 0.0,
-                   flip: bool = False) -> dict:
-    """Mate a planar face of one component to a planar face of another.
+                   angle_deg: float = 0.0, flip: bool = False) -> dict:
+    """Mate a face of one component to a face of another.
 
     comp_a/comp_b are component names ('Bed' or 'Bed-1'). face_a/face_b select a
-    planar face by direction in that component's OWN frame: "+x"/"-x"/"+y"/...,
-    optionally "+y:inner" for the cavity side of a hollow part (the inside of a
-    room wall instead of its outer skin). mate_type: "coincident", "distance"
-    (uses distance_mm), "parallel" or "perpendicular". flip swaps the solution
-    if SolidWorks lands on the mirror side. The result is measured back from the
-    geometry after the rebuild and rejected if it is not what was asked.
+    face in that component's OWN frame: by direction "+x"/"-x"/"+y"/...
+    (optionally "+y:inner" for the cavity side of a hollow part), or by its
+    list_faces(component=...) index, "#5". mate_type between planar faces:
+    "coincident", "distance" (distance_mm), "parallel", "perpendicular" or
+    "angle" (angle_deg between the faces' normals, 0..180); "concentric" between
+    two cylindrical faces (a pin in a hole, a hinge axis), leaving the turn
+    about the axis free. flip takes the other solution: the mirror side of a
+    distance, the other turning direction of an angle. A distance or angle
+    mate returns its `dimension`: drive it with
+    set_dimension, or step it with check_motion. The result is measured back
+    after the rebuild; a mate that does not hold is removed and the components
+    are put back.
     """
     return await _call(_session.add_mate, comp_a, face_a, comp_b, face_b,
-                       mate_type, distance_mm, flip)
+                       mate_type, distance_mm, angle_deg, flip)
 
 
 @mcp.tool()

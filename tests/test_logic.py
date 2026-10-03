@@ -432,6 +432,18 @@ def test_sketch_features_need_a_positive_depth(s, call):
         call(s)
 
 
+@pytest.mark.parametrize("selector,index", [("#5", 5), ("5", 5), (" #12 ", 12), ("+x", None),
+                                            ("-z:inner", None), ("#x", None), ("#-1", None)])
+def test_a_face_is_picked_by_index_or_by_direction(selector, index):
+    assert SolidWorksSession._face_index(selector) == index
+
+
+@pytest.mark.parametrize("angle", [0, 180, -30, 200])
+def test_an_angle_mate_takes_an_angle_strictly_between_0_and_180(s, angle):
+    with pytest.raises(SolidWorksError, match="between 0 and 180"):
+        s.add_mate("Thigh-1", "-y", "Shin-1", "-y", mate_type="angle", angle_deg=angle)
+
+
 class _FakeDimension:
     def __init__(self, param_type):
         self._type = param_type

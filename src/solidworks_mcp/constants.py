@@ -152,14 +152,15 @@ SW_DIMENSION_PARAM_ANGULAR = 1
 # that is currently selected in the part.
 SW_ADD_COMPONENT_CURRENT_CONFIG = 0
 
-# swMateType_e. Only the types that make sense between two PLANAR faces are
-# exposed; concentric/tangent need a cylindrical selection, which the planar
-# face selector cannot produce.
+# swMateType_e. Concentric takes two cylindrical faces (picked by list_faces
+# index), the others two planar faces.
 MATE_TYPES = {
     "coincident": 0,     # swMateCOINCIDENT
+    "concentric": 1,     # swMateCONCENTRIC
     "perpendicular": 2,  # swMatePERPENDICULAR
     "parallel": 3,       # swMatePARALLEL
     "distance": 5,       # swMateDISTANCE
+    "angle": 6,          # swMateANGLE
 }
 
 # swMateAlign_e -- CLOSEST lets SolidWorks keep the solution nearest the current
