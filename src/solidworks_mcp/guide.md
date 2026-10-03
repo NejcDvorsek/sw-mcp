@@ -33,7 +33,9 @@ short connect-time instructions first; this is the long version.
   centroid radius (Pappus); sweep = profile area x path length; a helical
   thread groove = area x 2 pi x centroid radius / pitch per mm of thread.
 - Look before you select: `list_faces` / `list_edges` give indices, normals,
-  areas and axes; `screenshot` shows the shape. A cylindrical face comes with
+  areas and axes; `screenshot` shows the shape, from any standard view
+  (`view="front"`, `"top"`, ...) and zoomed onto a detail with
+  `zoom_mm=[[x1, y1, z1], [x2, y2, z2]]`. A cylindrical face comes with
   its axis, radius and a point on the axis, so holes and hole circles can be
   measured; `list_faces(component=...)` does that for a part in an assembly,
   in the part's own frame.

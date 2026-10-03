@@ -192,6 +192,7 @@ SW_SAVE_AS_OPTIONS_SILENT = 1
 
 # swStandardViews_e
 SW_VIEW_ISOMETRIC = 7
+VIEWS = {"front": 1, "back": 2, "left": 3, "right": 4, "top": 5, "bottom": 6, "iso": SW_VIEW_ISOMETRIC}
 
 # Neutral formats open_part imports as a new part (ISldWorks.LoadFile4).
 IMPORT_FORMATS = {"step", "stp", "iges", "igs", "x_t", "x_b"}

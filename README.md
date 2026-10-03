@@ -234,7 +234,7 @@ The server speaks MCP over **stdio**.
 | `get_bounding_box` | Tight part bounding box (min/max/size, mm) |
 | `list_faces(component)` / `list_edges` | Inspect faces (normal/area/centre; a cylinder's axis, radius and centre, also of a component in an assembly) and edges (type/axis/length) by index |
 | `export(path, file_format, quality, deviation_mm, angle_deg)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg` |
-| `screenshot(path)` | Isometric, zoom-to-fit PNG/BMP/JPG |
+| `screenshot(path, view, zoom_mm)` | PNG/BMP/JPG from a standard view (`iso`, `front`, `top`, …), zoomed to fit or onto a region |
 | `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt`; `open_part` also imports STEP, IGES and Parasolid files as a part to build on |
 | `close_part(save)` | Close the current part or assembly; without one, SolidWorks' active document if it is saved |
 

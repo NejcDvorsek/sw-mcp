@@ -657,9 +657,14 @@ async def export(path: str, file_format: str | None = None, quality: str = "fine
 
 
 @mcp.tool()
-async def screenshot(path: str) -> dict:
-    """Save an isometric, zoom-to-fit screenshot of the current part or assembly (PNG/BMP/JPG)."""
-    return await _call(_session.screenshot, path)
+async def screenshot(path: str, view: str = "iso", zoom_mm: list | None = None) -> dict:
+    """Save a screenshot of the current part or assembly (PNG/BMP/JPG).
+
+    view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or 'bottom'.
+    Zoomed to fit, or onto a detail: zoom_mm = [[x1, y1, z1], [x2, y2, z2]], the
+    corners of the region to fill the image (model mm).
+    """
+    return await _call(_session.screenshot, path, view, zoom_mm)
 
 
 @mcp.tool()

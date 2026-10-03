@@ -88,7 +88,6 @@ from .constants import (
     SW_TOGGLE_STL_DONT_TRANSLATE,
     SW_UNITS_LINEAR,
     SW_UNSUPPRESS_DEPENDENT,
-    SW_VIEW_ISOMETRIC,
     SW_WZD_COUNTERBORE,
     SW_WZD_COUNTERSINK,
     SW_WZD_HOLE,
@@ -96,6 +95,7 @@ from .constants import (
     SW_WZD_TAP,
     THREAD_PROFILE_EXTERNAL,
     THREAD_PROFILE_INTERNAL,
+    VIEWS,
 )
 from .errors import SolidWorksError
 from .mesh_tools import area, compare_sections, extents, load_mesh, section, simplify
@@ -3458,21 +3458,29 @@ class SolidWorksSession:
         result["bytes"] = os.path.getsize(abs_path)
         return result
 
-    def screenshot(self, path: str) -> dict:
-        """Isometric, zoom-to-fit screenshot of the current part to PNG/BMP/JPG.
+    def screenshot(self, path: str, view: str = "iso", zoom_mm: list | None = None) -> dict:
+        """Screenshot of the current part or assembly to PNG/BMP/JPG.
 
-        Writes via the same SaveAs3 path as `export`, so the return shape matches:
-        {"ok", "path", "format", "bytes"} where "format" is the image extension.
+        view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or
+        'bottom'. Zoomed to fit, or onto the box zoom_mm = [[x1, y1, z1],
+        [x2, y2, z2]] (model mm) to judge a detail. Writes via the same SaveAs3
+        path as `export`, so the return shape matches: {"ok", "path", "format",
+        "bytes"} where "format" is the image extension.
         """
-        model = self._require_model()
         ext = os.path.splitext(path)[1].lstrip(".").lower()
         if ext not in {"png", "bmp", "jpg", "tif"}:
             raise SolidWorksError(f"Screenshot extension '{ext}' is not supported (png/bmp/jpg/tif).")
-        try:
-            model.ShowNamedView2("", SW_VIEW_ISOMETRIC)  # best-effort orientation
-        except pythoncom.com_error:
-            pass
-        model.ViewZoomtofit2()
+        key = str(view).lower()
+        if key not in VIEWS:
+            raise SolidWorksError(f"Unknown view '{view}'. Use {', '.join(VIEWS)}.")
+        if zoom_mm is not None and (len(zoom_mm) != 2 or any(len(corner) != 3 for corner in zoom_mm)):
+            raise SolidWorksError(f"zoom_mm needs two corners [[x1, y1, z1], [x2, y2, z2]] (got {zoom_mm}).")
+        model = self._require_model()
+        model.ShowNamedView2("", VIEWS[key])
+        if zoom_mm is None:
+            model.ViewZoomtofit2()
+        else:
+            model.ViewZoomTo2(*(mm_to_m(c) for c in zoom_mm[0]), *(mm_to_m(c) for c in zoom_mm[1]))
         return self.export(path, ext)
 
     # --- assemblies -----------------------------------------------------------

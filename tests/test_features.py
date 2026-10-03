@@ -647,6 +647,35 @@ def test_export_restores_stl_prefs(part, tmp_path):
     assert part._sw.GetUserPreferenceIntegerValue(SW_STL_QUALITY) == before
 
 
+# The model axis that points at the viewer in each standard view.
+VIEW_FACING_AXES = {"front": [0, 0, 1], "back": [0, 0, -1], "right": [1, 0, 0], "left": [-1, 0, 0],
+                    "top": [0, 1, 0], "bottom": [0, -1, 0], "iso": [3 ** -0.5] * 3}
+
+
+def shown_view(session):
+    return binding.wrap(session._model.ActiveView, binding.module().IModelView)
+
+
+@pytest.mark.parametrize("view", sorted(VIEW_FACING_AXES))
+def test_screenshot_looks_from_the_chosen_side(part, tmp_path, view):
+    """Checked by the axis that faces the viewer, so a view SolidWorks numbers
+    differently from what we assumed shows up."""
+    part.add_box(40, 20, 10)
+    assert part.screenshot(str(tmp_path / f"{view}.png"), view=view)["bytes"] > 0
+    data = binding.wrap(shown_view(part).Orientation3, binding.module().IMathTransform).ArrayData
+    facing = [sum(data[col * 3 + row] * VIEW_FACING_AXES[view][col] for col in range(3)) for row in range(3)]
+    assert facing == pytest.approx([0, 0, 1], abs=1e-3), f"the '{view}' screenshot looks from another side"
+
+
+def test_screenshot_zooms_onto_a_detail(part, tmp_path):
+    # a 4 x 2 mm region of the 40 x 20 mm front fills the image: about 10 times larger
+    part.add_box(40, 20, 10)
+    part.screenshot(str(tmp_path / "whole.png"), view="front")
+    whole = shown_view(part).Scale2
+    part.screenshot(str(tmp_path / "detail.png"), view="front", zoom_mm=[[0, 0, 10], [4, 2, 10]])
+    assert shown_view(part).Scale2 > 5 * whole, "the zoomed screenshot shows the whole part"
+
+
 # --- fully defined sketches: the returned dimensions drive the geometry --------
 # The part fixture already fails any test whose sketches are under-defined; these
 # prove the dimensions are the right ones: changing one gives the volume a hand

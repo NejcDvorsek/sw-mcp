@@ -379,6 +379,21 @@ def test_euler_gimbal_lock_still_reproduces_the_matrix():
     assert SolidWorksSession._rotation_columns(rx, ry, rz) == pytest.approx(columns, abs=1e-9)
 
 
+# The session below is not connected: a check that came after the first COM
+# call would fail with "No active document" instead of naming the bad input.
+
+
+def test_screenshot_rejects_an_unknown_view(s):
+    with pytest.raises(SolidWorksError, match="Unknown view 'side'"):
+        s.screenshot("shot.png", view="side")
+
+
+@pytest.mark.parametrize("zoom", [[[0, 0, 0]], [[0, 0], [1, 1]], [[0, 0, 0], [1, 1, 1], [2, 2, 2]]])
+def test_screenshot_zoom_needs_two_3d_corners(s, zoom):
+    with pytest.raises(SolidWorksError, match="two corners"):
+        s.screenshot("shot.png", zoom_mm=zoom)
+
+
 # --- MCP wiring ---------------------------------------------------------------
 
 

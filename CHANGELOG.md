@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `screenshot` takes a `view` (`front`, `back`, `left`, `right`, `top`,
+  `bottom` or `iso`) and `zoom_mm`, the corners of a region to fill the image,
+  to judge a detail.
+
 ## [0.8.0] — 2026-10-03
 
 ### Added
