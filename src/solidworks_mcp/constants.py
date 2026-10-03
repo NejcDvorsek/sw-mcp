@@ -166,9 +166,10 @@ SW_MATE_ALIGN_CLOSEST = 2
 # swAddMateError_e -- note NoError is 1, not 0.
 SW_ADD_MATE_NO_ERROR = 1
 
-# swBoundingBoxOptions_e bitmask for IAssemblyDoc.GetBox: 0 = solid geometry
-# only (1 would add reference planes, 2 sketches, which would inflate the box).
-SW_BOUNDING_BOX_SOLID_ONLY = 0
+# swComponentSuppressionState_e (IComponent2.GetSuppression2): a suppressed
+# component holds no material; a lightweight one has its geometry unloaded.
+SW_COMPONENT_SUPPRESSED = 0
+SW_COMPONENT_LIGHTWEIGHT_STATES = {1, 4}
 
 # swUserPreferenceToggle_e
 SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE = 10

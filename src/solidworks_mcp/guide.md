@@ -164,6 +164,7 @@ stray drag in SolidWorks can change the part.
 - **Assemblies**: `insert_component` puts a part's origin at a point;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.
+  Component boxes are the parts' own extent, also when turned.
 
 ## 5. 3D printing
 

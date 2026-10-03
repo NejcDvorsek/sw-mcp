@@ -8,6 +8,7 @@ Distances are in mm, volumes in mm^3.
 
 import pytest
 
+from solidworks_mcp.constants import SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT
 from solidworks_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
@@ -223,6 +224,62 @@ def test_assembly_bounding_box_spans_all_components(assembly, blocks):
     assert box["min_mm"] == [0.0, 0.0, 0.0]
     assert box["max_mm"] == [120.0, 20.0, 20.0]
     assert box["size_mm"] == [120.0, 20.0, 20.0]
+
+
+@pytest.fixture(scope="module")
+def disc(sw, tmp_path_factory):
+    """A saved disc, 20 across and 10 thick: turning it about its axis must not grow its box."""
+    sw.new_part()
+    sw.add_disc(20, 10)
+    path = sw.save_part(str(tmp_path_factory.mktemp("disc") / "disc.sldprt"))["path"]
+    sw.close_part()
+    return path
+
+
+def test_a_turned_round_part_keeps_its_own_box(sw, disc):
+    """SolidWorks' component box turns with the component and grows: this disc
+    came out 28.3 wide, and an arm in the Quadruped reached 4.7 mm further than
+    its box said. Every box the tools report must be the part's own."""
+    sw.new_assembly()
+    try:
+        sw.insert_component(disc, 0, 0, 0)
+        turned = sw.set_component_transform("disc", 0, 0, 0, rz_deg=45)
+        listed = only(sw, "disc")
+        whole = sw.get_assembly_bounding_box()["bounding_box_mm"]
+    finally:
+        sw.close_part()
+        sw._sw.CloseDoc("disc.sldprt")
+    for label, box in (("set_component_transform", turned["bounding_box_mm"]),
+                       ("list_components", listed["bounding_box_mm"]), ("get_assembly_bounding_box", whole)):
+        assert box["min_mm"] == pytest.approx([-10, -10, 0], abs=1e-4), f"{label} boxes the turned disc too big: {box}"
+        assert box["size_mm"] == pytest.approx([20, 20, 10], abs=1e-4), f"{label} boxes the turned disc too big: {box}"
+
+
+def test_a_sub_assembly_is_measured_through_its_parts(sw, blocks, tmp_path):
+    """A person's assembly or an imported STEP nests parts in sub-assemblies,
+    which have no body of their own: box and distance must reach the parts."""
+    sw.new_assembly()
+    sw.insert_component(blocks["block_a"], 10, 0, 0)
+    sub = sw.save_assembly(str(tmp_path / "sub.sldasm"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        # insert_component takes parts only, so the sub-assembly goes in by hand
+        top = sw._model.GetTitle()
+        sw._sw.OpenDoc6(sub, SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT, "", 0, 0)
+        sw._sw.ActivateDoc3(top, True, 0, 0)
+        assert sw._require_assembly().AddComponent5(sub, 0, "", False, "", 0.0, 0.0, 0.0) is not None
+        sw.set_component_transform("sub", 0, 100, 0, rz_deg=90)
+        box = only(sw, "sub")["bounding_box_mm"]
+    finally:
+        sw.close_part()
+        sw._sw.CloseDoc("sub.sldasm")
+        sw._sw.CloseDoc("block_a.sldprt")
+    # block_a (x 0..40, y 0..20) sits at x = 10 in the sub-assembly, which is
+    # turned 90 degrees about Z and moved to y = 100: x -20..0, y 110..150
+    assert box is not None, "the sub-assembly got no box: its parts were not searched"
+    assert box["min_mm"] == pytest.approx([-20, 110, 0], abs=1e-4) and \
+        box["max_mm"] == pytest.approx([0, 150, 10], abs=1e-4), f"wrong box for the nested part: {box}"
 
 
 def test_get_assembly_bounding_box_rejects_a_part(part):

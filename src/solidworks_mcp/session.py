@@ -30,10 +30,11 @@ from .constants import (
     SW_ADD_COMPONENT_CURRENT_CONFIG,
     SW_ADD_MATE_NO_ERROR,
     SW_BODY_SOLID,
-    SW_BOUNDING_BOX_SOLID_ONLY,
     SCREW_FITS,
     SKETCH_STATUSES,
     SW_CHAMFER_ANGLE_DISTANCE,
+    SW_COMPONENT_LIGHTWEIGHT_STATES,
+    SW_COMPONENT_SUPPRESSED,
     SW_CONSTRAINED_CORNER_KEEP,
     SW_CONSTRAINT_RADIUS,
     SW_COSMETIC_THREAD_WITH_CALLOUT,
@@ -3267,21 +3268,19 @@ class SolidWorksSession:
         return {"ok": True, "mass_properties": props}
 
     def _bounding_box(self):
-        # IModelDoc2 has no GetBox, so the call depends on the document type: a
-        # part measures via IPartDoc.GetPartBox(NoConversion=True), an assembly
-        # via IAssemblyDoc.GetBox. Both return system units (metres).
-        # Best-effort: a bbox failure must not break the core measurement.
+        # IModelDoc2 has no GetBox, so the call depends on the document type. A
+        # part measures via IPartDoc.GetPartBox(NoConversion=True), in metres;
+        # best-effort, so a failure there does not break the core measurement.
+        # An assembly joins the tight boxes of its components: IAssemblyDoc.GetBox
+        # joins their turned outer boxes, too big for a rotated part (verified:
+        # a 20 mm disc turned 45 degrees came out 28.3 wide).
         model = self._require_model()
+        if int(model.GetType()) == SW_DOC_ASSEMBLY:
+            assembly = binding.wrap(model, self._mod.IAssemblyDoc)
+            assembly.EditRebuild()  # mates move components on a rebuild: measure where they end up
+            return self._joined_box([self._component_box(c) for c in self._components(assembly)])
         try:
-            if int(model.GetType()) == SW_DOC_ASSEMBLY:
-                assembly = binding.wrap(model, self._mod.IAssemblyDoc)
-                # IAssemblyDoc.GetBox is STALE until the assembly is rebuilt: after
-                # moving a component it still reports the previous extents
-                # (verified). Rebuild first rather than hand back an old number.
-                assembly.EditRebuild()
-                box = assembly.GetBox(SW_BOUNDING_BOX_SOLID_ONLY)
-            else:
-                box = binding.wrap(model, self._mod.IPartDoc).GetPartBox(True)
+            box = binding.wrap(model, self._mod.IPartDoc).GetPartBox(True)
         except pythoncom.com_error:
             return None
         if not box or len(box) < 6:
@@ -3678,17 +3677,87 @@ class SolidWorksSession:
             f"Component '{name}' not found. Present: {[c.Name2 for c in comps]}."
         )
 
-    def _component_box(self, comp) -> dict:
-        """The component's bounding box in ASSEMBLY coordinates (mm)."""
-        box = comp.GetBox(False, False)  # no reference planes, no sketches
-        if not box or len(box) < 6:
+    def _component_box(self, comp) -> dict | None:
+        """The component's tight bounding box in ASSEMBLY coordinates (mm), or
+        None when it holds no solid material (suppressed, or surfaces only).
+
+        IComponent2.GetBox boxes the component's own box, turned with it: too
+        big for a rotated round or slanted part (an arm was reported reaching
+        y = 0 while it ended at -4.7). So each solid body's extreme points along
+        the assembly axes are found in its part's frame and mapped through that
+        part's transform; a sub-assembly joins the boxes of its parts.
+        """
+        return self._joined_box([self._part_box(part) for part in self._solid_parts(comp)])
+
+    def _part_box(self, part) -> dict | None:
+        bodies = self._solid_bodies(part)
+        if not bodies:
             return None
-        xmin, ymin, zmin, xmax, ymax, zmax = (m_to_mm(v) for v in box[:6])
-        return {
-            "min_mm": [round(xmin, 4), round(ymin, 4), round(zmin, 4)],
-            "max_mm": [round(xmax, 4), round(ymax, 4), round(zmax, 4)],
-            "size_mm": [round(xmax - xmin, 4), round(ymax - ymin, 4), round(zmax - zmin, 4)],
-        }
+        rotation, shift, scale = self._frame(part)
+        low, high = [math.inf] * 3, [-math.inf] * 3
+        for body in bodies:
+            for axis in range(3):
+                for sign in (1.0, -1.0):
+                    # the assembly axis seen from the part: row `axis` of R (R transposed)
+                    point = self._extreme_point(body, [sign * c for c in rotation[axis]])
+                    coordinate = scale * sum(r * p for r, p in zip(rotation[axis], point)) + shift[axis]
+                    low[axis], high[axis] = min(low[axis], coordinate), max(high[axis], coordinate)
+        return self._joined_box([{"min_mm": [round(m_to_mm(v), 4) for v in low],
+                                  "max_mm": [round(m_to_mm(v), 4) for v in high]}])
+
+    @staticmethod
+    def _joined_box(boxes) -> dict | None:
+        """The box around `boxes` (min_mm / max_mm); None entries hold nothing."""
+        boxes = [box for box in boxes if box]
+        if not boxes:
+            return None
+        low = [min(box["min_mm"][axis] for box in boxes) for axis in range(3)]
+        high = [max(box["max_mm"][axis] for box in boxes) for axis in range(3)]
+        return {"min_mm": low, "max_mm": high, "size_mm": [round(h - l, 4) for l, h in zip(low, high)]}
+
+    def _part_components(self, comp) -> list:
+        """comp itself when it is a part, else the parts inside it at any depth.
+        A part's transform is relative to the top assembly (verified), so each
+        maps straight to assembly coordinates."""
+        children = comp.GetChildren() or ()
+        if not children:
+            return [comp]
+        return [part for child in children
+                for part in self._part_components(binding.wrap(child, self._mod.IComponent2))]
+
+    def _solid_parts(self, comp) -> list:
+        """The parts holding comp's material. A suppressed part holds none; a
+        lightweight one cannot be measured, as its geometry is not loaded."""
+        parts = []
+        for part in self._part_components(comp):
+            state = part.GetSuppression2()
+            if state in SW_COMPONENT_LIGHTWEIGHT_STATES:
+                raise SolidWorksError(f"Component '{part.Name2}' is lightweight: SolidWorks has not loaded its "
+                                      "geometry, so it cannot be measured. Set it to resolved.")
+            if state != SW_COMPONENT_SUPPRESSED:
+                parts.append(part)
+        return parts
+
+    def _solid_bodies(self, part) -> list:
+        """The part component's solid bodies (part coordinates)."""
+        bodies = part.GetBodies2(SW_BODY_SOLID) or ()
+        if not isinstance(bodies, (list, tuple)):
+            bodies = [bodies]
+        return [binding.wrap(body, self._mod.IBody2) for body in bodies]
+
+    def _frame(self, comp):
+        """(rotation rows, shift in m, scale) of the component's transform, whose
+        ArrayData holds the rotation column-major."""
+        data = self._transform_data(comp)
+        return [[data[col * 3 + row] for col in range(3)] for row in range(3)], data[9:12], data[12]
+
+    @staticmethod
+    def _extreme_point(body, direction) -> tuple:
+        """The body's point furthest along `direction` (its own coordinates, m)."""
+        result = body.GetExtremePoint(*direction)
+        if not isinstance(result, tuple) or len(result) < 3 or (len(result) == 4 and not result[0]):
+            raise SolidWorksError(f"SolidWorks found no extreme point of a body (got {result!r}).")
+        return result[-3:]
 
     def _component_entry(self, comp) -> dict:
         return {
@@ -3778,16 +3847,14 @@ class SolidWorksSession:
 
     def _component_faces(self, comp) -> list:
         """Every face of every solid body of the component (component coordinates)."""
-        bodies = comp.GetBodies2(SW_BODY_SOLID)
+        bodies = self._solid_bodies(comp)
         if not bodies:
             raise SolidWorksError(
                 f"Component '{comp.Name2}' has no solid body to pick a face on."
             )
-        if not isinstance(bodies, (list, tuple)):
-            bodies = [bodies]
         faces = []
-        for body_dispatch in bodies:
-            body_faces = binding.wrap(body_dispatch, self._mod.IBody2).GetFaces()
+        for body in bodies:
+            body_faces = body.GetFaces()
             if not body_faces:
                 continue
             faces.extend(body_faces if isinstance(body_faces, (list, tuple)) else [body_faces])

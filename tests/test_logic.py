@@ -394,6 +394,36 @@ def test_screenshot_zoom_needs_two_3d_corners(s, zoom):
         s.screenshot("shot.png", zoom_mm=zoom)
 
 
+class _FakePart:
+    """Just enough of an IComponent2 part for the suppression checks."""
+
+    Name2 = "Arm-1"
+
+    def __init__(self, state):
+        self._state = state
+
+    def GetChildren(self):
+        return ()
+
+    def GetSuppression2(self):
+        return self._state
+
+    def GetBodies2(self, body_type):
+        return None  # lightweight or suppressed: no geometry loaded
+
+
+@pytest.mark.parametrize("state", [1, 4])  # swComponentLightweight, swComponentFullyLightweight
+def test_a_lightweight_component_is_not_measured_as_empty(s, state):
+    """Its geometry is not loaded, so it has no bodies: skipping it would
+    shrink the assembly's box without a word."""
+    with pytest.raises(SolidWorksError, match="'Arm-1' is lightweight"):
+        s._component_box(_FakePart(state))
+
+
+def test_a_suppressed_component_has_no_box(s):
+    assert s._component_box(_FakePart(0)) is None
+
+
 # --- MCP wiring ---------------------------------------------------------------
 
 

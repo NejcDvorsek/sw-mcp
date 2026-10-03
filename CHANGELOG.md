@@ -10,6 +10,14 @@ All notable changes to this project are documented here. This project follows
   `bottom` or `iso`) and `zoom_mm`, the corners of a region to fill the image,
   to judge a detail.
 
+### Fixed
+- The bounding box of a turned component was SolidWorks' turned outer box, too
+  big for a round or slanted part (a 20 mm disc turned 45 degrees came out
+  28.3 mm wide). `list_components`, `set_component_transform` and
+  `get_assembly_bounding_box` now give each part's own extent. Sub-assemblies
+  are boxed by their parts; a lightweight component is refused, as its geometry
+  is not loaded.
+
 ## [0.8.0] — 2026-10-03
 
 ### Added

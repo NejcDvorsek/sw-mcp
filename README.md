@@ -245,7 +245,7 @@ The server speaks MCP over **stdio**.
 | `new_assembly` | Create a new empty assembly (becomes the current document) |
 | `open_assembly(path)` / `save_assembly(path)` | Open / save a native `.sldasm`; `open_assembly` also imports STEP, IGES and Parasolid assemblies, parts as components in place |
 | `insert_component(path, x_mm, y_mm, z_mm, fixed)` | Insert a part with its **origin** at (x, y, z); the first component is fixed by default |
-| `list_components` | Name, path, fixed, position, rotation and bounding box of every component |
+| `list_components` | Name, path, fixed, position, rotation and bounding box of every component (its own extent, also when turned) |
 | `set_component_transform(name, x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg)` | Move/rotate a component; the transform is read back and verified |
 | `add_mate(comp_a, face_a, comp_b, face_b, mate_type, distance_mm, flip)` | Mate two planar faces: `coincident`, `distance`, `parallel`, `perpendicular` — measured back from the geometry afterwards |
 | `check_interference` | Component pairs whose solids overlap, with the volume in mm³ (touching faces don't count) |
