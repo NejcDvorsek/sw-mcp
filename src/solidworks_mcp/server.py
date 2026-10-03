@@ -154,13 +154,15 @@ async def add_extruded_spline(points_mm: list, depth_mm: float, name: str = "Spl
 
 
 @mcp.tool()
-async def add_disc(diameter_mm: float, thickness_mm: float, name: str = "Disc") -> dict:
-    """Create a disc/puck/flange: a circle extruded along +Z, centred at the origin.
+async def add_disc(diameter_mm: float, thickness_mm: float, name: str = "Disc",
+                   x_mm: float = 0.0, y_mm: float = 0.0) -> dict:
+    """Create a disc/puck/flange: a circle extruded along +Z, centred at (x_mm, y_mm).
 
     Flat faces are +Z/-Z, so add_hole and add_circular_pattern compose with it
-    (round-flange bolt circles). Returns mass properties. Use new_part first.
+    (round-flange bolt circles). The centre defaults to the origin; off it, its
+    x and y are dimensions. Returns mass properties. Use new_part first.
     """
-    return await _call(_session.add_disc, diameter_mm, thickness_mm, name)
+    return await _call(_session.add_disc, diameter_mm, thickness_mm, name, x_mm, y_mm)
 
 
 @mcp.tool()
@@ -429,9 +431,10 @@ async def cut_slot(length_mm: float, width_mm: float, x_mm: float, y_mm: float,
 async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet") -> dict:
     """Round edges of the current part with one constant radius (mm).
 
-    edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis, or
-    explicit indices like "2,5" from list_edges. Returns the number of edges
-    filleted and the resulting mass properties.
+    edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis,
+    a face outline like "+z:outline" (the outer edges of the top face, not those
+    of holes in it), or explicit indices like "2,5" from list_edges. Returns the
+    number of edges filleted and the resulting mass properties.
     """
     return await _call(_session.add_fillet, radius_mm, edges, name)
 
@@ -440,9 +443,9 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet")
 async def add_chamfer(distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
     """Chamfer edges of the current part at 45° with the given distance (mm).
 
-    edges: "all" (default), "x"/"y"/"z", or explicit indices like "2,5" from
-    list_edges. Returns the number of edges chamfered and the resulting mass
-    properties.
+    edges: "all" (default), "x"/"y"/"z", a face outline like "+z:outline", or
+    explicit indices like "2,5" from list_edges. Returns the number of edges
+    chamfered and the resulting mass properties.
     """
     return await _call(_session.add_chamfer, distance_mm, edges, name)
 
@@ -608,12 +611,15 @@ async def get_bounding_box() -> dict:
 
 
 @mcp.tool()
-async def list_faces() -> dict:
+async def list_faces(component: str | None = None) -> dict:
     """List the part's faces (index, planar?, normal, area, centre) for inspection.
 
-    Indices are positional and shift as features are added; call again after edits.
+    A cylindrical face also gives its axis, radius and a point on the axis (for
+    a hole: its centre), so hole patterns can be read off. component: a
+    component of the current assembly, listed in its own frame (e.g. an
+    imported servo). Indices are positional and shift as features are added.
     """
-    return await _call(_session.list_faces)
+    return await _call(_session.list_faces, component)
 
 
 @mcp.tool()

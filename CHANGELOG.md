@@ -5,6 +5,15 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+- `add_disc` takes a centre (`x_mm`, `y_mm`), its position two dimensions;
+  until now a disc could only sit on the origin.
+- `edges="+z:outline"` for `add_fillet` and `add_chamfer`: the outer edges of a
+  face, without the edges of holes and pockets inside it.
+- `list_faces` gives a cylindrical face's axis, radius and a point on the axis
+  (a hole's centre), and lists a component's faces in its own frame with
+  `component`, so a hole circle on an imported part can be read off.
+
 ### Fixed
 - Every sketch was refused ("SolidWorks refused a horizontal relation") in a
   part that `open_part` returned while it was already open behind another

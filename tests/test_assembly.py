@@ -31,6 +31,28 @@ def two_blocks(assembly, blocks, b_at=(100.0, 0.0, 0.0)):
     return assembly
 
 
+def test_list_faces_reads_a_components_hole_in_its_own_frame(sw, tmp_path):
+    """For an imported servo: its horn's hole circle must be readable without
+    opening the part, and the same wherever the component sits."""
+    sw.new_part()
+    sw.add_box(40, 20, 10)
+    sw.add_hole(6, 10, 12)
+    path = sw.save_part(str(tmp_path / "holed.sldprt"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        sw.insert_component(path, 100, 50, 0)
+        sw.set_component_transform("holed", 100, 50, 0, rz_deg=90)
+
+        holes = [f["cylinder"] for f in sw.list_faces(component="holed")["faces"] if "cylinder" in f]
+
+        assert len(holes) == 1 and holes[0]["radius_mm"] == pytest.approx(3), holes
+        assert holes[0]["point_mm"] == pytest.approx([10, 12, 5], abs=1e-4), "not in the component's own frame"
+    finally:
+        sw.close_part()
+        sw._sw.CloseDoc("holed.sldprt")
+
+
 # --- documents ----------------------------------------------------------------
 
 

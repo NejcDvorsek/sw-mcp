@@ -33,7 +33,10 @@ short connect-time instructions first; this is the long version.
   centroid radius (Pappus); sweep = profile area x path length; a helical
   thread groove = area x 2 pi x centroid radius / pitch per mm of thread.
 - Look before you select: `list_faces` / `list_edges` give indices, normals,
-  areas and axes; `screenshot` shows the shape.
+  areas and axes; `screenshot` shows the shape. A cylindrical face comes with
+  its axis, radius and a point on the axis, so holes and hole circles can be
+  measured; `list_faces(component=...)` does that for a part in an assembly,
+  in the part's own frame.
 - **Undo a step** with `delete_feature(name)`: the feature goes together with
   its sketch. It refuses while other features are built on it (a fillet on its
   edges, a sketch on its face) and names them; `with_children=True` deletes
@@ -114,7 +117,9 @@ stray drag in SolidWorks can change the part.
 - **Side-view shapes** (wedges, windows, symmetric recesses):
   `cut_profile_through_plane` on the Front/Top/Right plane, through all or a
   depth centred on the plane.
-- **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, or `all`.
+- **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
+  face's outline (`+z:outline`: the outer edges of the top face, not the rims of
+  holes in it).
   Round vertical edges **before** cutting slots: a slot adds tangent edges that
   an axis selector would catch too.
 - **Ribs / gussets**: `add_rib` draws a straight rib in a plane parallel to the

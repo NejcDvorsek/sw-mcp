@@ -516,8 +516,9 @@ class SolidWorksSession:
         """Append-select body edges matching `selector`; return how many.
 
         selector: 'all' = every edge; 'x'|'y'|'z' = straight edges parallel to
-        that world axis (for an add_box block, 'z' is the depth edges); or explicit
-        indices as [2, 5] or '2,5' (into list_edges order).
+        that world axis (for an add_box block, 'z' is the depth edges); a face
+        outline like '+z:outline' (see _select_outline); or explicit indices as
+        [2, 5] or '2,5' (into list_edges order).
         """
         edges = body.GetEdges()
         if not edges:
@@ -536,16 +537,36 @@ class SolidWorksSession:
                     count += 1
             return count
 
-        sel = str(selector).lower()
+        sel = str(selector).lower().replace(" ", "")
+        outline = re.fullmatch(r"([+-][xyz]):outline", sel)
+        if outline:
+            return self._select_outline(body, outline.group(1))
         if sel != "all" and sel not in self._EDGE_AXES:
             raise SolidWorksError(
-                f"Unknown edge selector '{selector}'. Use 'all', 'x'/'y'/'z' or indices like '2,5'."
+                f"Unknown edge selector '{selector}'. Use 'all', 'x'/'y'/'z', a face outline like "
+                "'+z:outline', or indices like '2,5'."
             )
         target = self._EDGE_AXES.get(sel)
         for edge_dispatch in edges:
             if target is not None and not self._edge_parallel_to(edge_dispatch, target):
                 continue
             if binding.wrap(edge_dispatch, self._mod.IEntity).Select4(True, None):
+                count += 1
+        return count
+
+    def _select_outline(self, body, direction: str) -> int:
+        """Select the outer loop of the outermost planar face facing `direction`:
+        its outline, without the edges of holes and pockets inside it."""
+        face = self._planar_face_by_normal(body, self._parse_direction(direction), "outer")
+        if face is None:
+            raise SolidWorksError(f"No planar {direction} face to take the outline of.")
+        loops = [binding.wrap(loop, self._mod.ILoop2) for loop in binding.wrap(face, self._mod.IFace2).GetLoops() or ()]
+        outer = next((loop for loop in loops if loop.IsOuter()), None)
+        if outer is None:
+            raise SolidWorksError(f"The {direction} face has no outer loop.")
+        count = 0
+        for edge in outer.GetEdges() or ():
+            if binding.wrap(edge, self._mod.IEntity).Select4(True, None):
                 count += 1
         return count
 
@@ -1047,13 +1068,15 @@ class SolidWorksSession:
             sk.InsertSketch(True)  # close the sketch
         return self._extrude_sketch(depth_mm, name, sketch, "Is the spline closed and not self-intersecting?")
 
-    def add_disc(self, diameter_mm: float, thickness_mm: float, name: str = "Disc") -> dict:
-        """Create a disc / puck / flange: a circle extruded along +Z, centred at origin.
+    def add_disc(self, diameter_mm: float, thickness_mm: float, name: str = "Disc",
+                 x_mm: float = 0.0, y_mm: float = 0.0) -> dict:
+        """Create a disc / puck / flange: a circle extruded along +Z, centred at (x, y).
 
         Unlike add_cylinder (revolve, axis Y), the disc's flat faces are +Z/-Z, so
         add_hole and add_circular_pattern compose with it directly -- this is how
-        round-flange bolt circles are built. Centred at the origin (x, y in
-        [-r, r]). Returns mass properties (volume = pi * r^2 * thickness).
+        round-flange bolt circles are built. The centre defaults to the origin;
+        off it, its x and y are dimensions. Returns mass properties (volume =
+        pi * r^2 * thickness).
         """
         model = self._require_model()
         if diameter_mm <= 0 or thickness_mm <= 0:
@@ -1068,10 +1091,10 @@ class SolidWorksSession:
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)
         try:
-            circle = sk.CreateCircleByRadius(0.0, 0.0, 0.0, mm_to_m(diameter_mm / 2.0))
+            circle = sk.CreateCircleByRadius(mm_to_m(x_mm), mm_to_m(y_mm), 0.0, mm_to_m(diameter_mm / 2.0))
             if not circle:
                 raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
-            sketch = self._define_sketch(sk, circles=[circle])
+            sketch = self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)
@@ -2413,9 +2436,11 @@ class SolidWorksSession:
         """Round edges of the part's solid body with one constant radius.
 
         edges: 'all' (default); a world axis 'x'|'y'|'z' (straight edges parallel
-        to it, e.g. 'z' = the depth edges of an add_box block); or explicit indices
-        like '2,5' from list_edges. Returns how many edges were filleted and the
-        resulting mass properties (volume drops as convex edges are rounded off).
+        to it, e.g. 'z' = the depth edges of an add_box block); a face outline
+        like '+z:outline' (the outer edges of the top face, not those of holes in
+        it); or explicit indices like '2,5' from list_edges. Returns how many
+        edges were filleted and the resulting mass properties (volume drops as
+        convex edges are rounded off).
         """
         model = self._require_model()
         if radius_mm <= 0:
@@ -3226,37 +3251,56 @@ class SolidWorksSession:
                 return axis
         return None
 
-    def list_faces(self) -> dict:
-        """Inspect the solid body's faces: index, planar?, normal, area, centre.
+    def list_faces(self, component: str | None = None) -> dict:
+        """Inspect faces: index, planar?, normal, area, centre; a cylindrical face
+        also gives its axis, radius and a point on the axis (a hole's centre).
 
         Lets an agent see the geometry before choosing one. Indices are positional
-        in the body's face list and shift as features are added.
+        in the body's face list and shift as features are added. component names
+        a component of the current assembly; its faces are given in its own frame,
+        e.g. to read a hole circle off an imported part.
         """
-        self._require_model()
-        body = self._solid_body()
-        faces = body.GetFaces()
-        if not isinstance(faces, (list, tuple)):
-            faces = [faces]
-        out = []
-        for i, face_dispatch in enumerate(faces):
-            face = binding.wrap(face_dispatch, self._mod.IFace2)
-            surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
-            planar = bool(surface is not None and surface.IsPlane())
-            box = face.GetBox()
-            center = None
-            if box and len(box) >= 6:
-                center = [round(m_to_mm((box[j] + box[j + 3]) / 2), 3) for j in range(3)]
-            entry = {
-                "index": i,
-                "type": "planar" if planar else "curved",
-                "area_mm2": round(face.GetArea() * 1e6, 3),
-                "center_mm": center,
-            }
-            if planar:
-                nx, ny, nz = face.Normal
-                entry["normal"] = [round(nx, 4), round(ny, 4), round(nz, 4)]
-            out.append(entry)
+        if component is None:
+            self._require_model()
+            faces = self._body_faces(self._solid_body())
+        else:
+            faces = self._component_faces(self._component_by_name(self._require_assembly(), component))
+        out = [self._face_entry(i, face) for i, face in enumerate(faces)]
         return {"ok": True, "count": len(out), "faces": out}
+
+    def _face_entry(self, index: int, face_dispatch) -> dict:
+        face = binding.wrap(face_dispatch, self._mod.IFace2)
+        surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
+        planar = bool(surface is not None and surface.IsPlane())
+        box = face.GetBox()
+        center = None
+        if box and len(box) >= 6:
+            center = [round(m_to_mm((box[j] + box[j + 3]) / 2), 3) for j in range(3)]
+        entry = {
+            "index": index,
+            "type": "planar" if planar else "curved",
+            "area_mm2": round(face.GetArea() * 1e6, 3),
+            "center_mm": center,
+        }
+        if planar:
+            nx, ny, nz = face.Normal
+            entry["normal"] = [round(nx, 4), round(ny, 4), round(nz, 4)]
+        elif surface is not None and surface.IsCylinder() and center is not None:
+            entry["cylinder"] = self._cylinder_entry(surface, center)
+        return entry
+
+    @staticmethod
+    def _cylinder_entry(surface, center_mm) -> dict:
+        """Axis (either sense), radius, and the point on the axis nearest the
+        face's centre: for a hole, its centre halfway down."""
+        params = surface.CylinderParams  # axis origin xyz, axis direction xyz, radius (metres)
+        origin = [m_to_mm(c) for c in params[0:3]]
+        length = math.hypot(*params[3:6])
+        axis = [c / length for c in params[3:6]]
+        along = sum((c - o) * a for c, o, a in zip(center_mm, origin, axis))
+        point = [o + along * a for o, a in zip(origin, axis)]
+        return {"axis": [round(a, 6) + 0.0 for a in axis], "point_mm": [round(p, 4) + 0.0 for p in point],
+                "radius_mm": round(m_to_mm(params[6]), 4)}
 
     def list_edges(self) -> dict:
         """Inspect the solid body's edges: index, type; lines also give axis/length/midpoint."""

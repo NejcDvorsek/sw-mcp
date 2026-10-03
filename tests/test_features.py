@@ -41,6 +41,18 @@ def test_disc(part):
     assert abs(vol(part.add_disc(40, 10)) - math.pi * 20 ** 2 * 10) < 0.1
 
 
+def test_a_disc_off_the_origin_keeps_its_centre_as_dimensions(part):
+    # a round foot core at x = 69, y = 10: before, only a disc at the origin existed
+    disc = part.add_disc(20, 5, x_mm=69, y_mm=10)
+
+    assert abs(vol(disc) - math.pi * 10 ** 2 * 5) < 0.1
+    assert disc["mass_properties"]["bounding_box_mm"]["min_mm"][:2] == pytest.approx([59, 0], abs=1e-6)
+    moved = part.set_dimension(disc["dimensions"]["x"], 80)
+    assert moved["mass_properties"]["bounding_box_mm"]["min_mm"][0] == pytest.approx(70, abs=1e-6), (
+        "the disc did not follow its x dimension"
+    )
+
+
 def test_revolve_cylinder(part):
     # general revolve reproduces a cylinder: r=10, h=20
     got = vol(part.add_revolved_profile([[0, 0], [10, 0], [10, 20], [0, 20]]))
@@ -456,6 +468,35 @@ def test_a_pocket_with_a_bad_depth_leaves_no_sketch_behind(part):
         part.cut_profile([[5, 5], [15, 5], [15, 15], [5, 15]], -1)
 
     assert part.list_features()["features"] == history, "the refused pocket left its sketch in the tree"
+
+
+def test_fillet_the_outline_of_a_face_but_not_its_holes(part):
+    # the hole is far from the edges, so rounding the outline removes the same
+    # volume with or without it; rounding its rim too would remove more
+    part.add_box(40, 20, 10)
+    plain = part.add_fillet(1, edges="+z:outline")
+    assert plain["edges_filleted"] == 4
+    part.close_part()
+    part.new_part()
+    part.add_box(40, 20, 10)
+    part.add_hole(6, 10, 12)
+
+    holed = part.add_fillet(1, edges="+z:outline")
+
+    assert holed["edges_filleted"] == 4, "the hole's rim was taken for the outline too"
+    assert abs(vol(holed) - (vol(plain) - math.pi * 3 ** 2 * 10)) < 0.01, "the hole's rim got rounded"
+
+
+def test_a_hole_face_gives_its_axis_radius_and_centre(part):
+    part.add_box(40, 20, 10)
+    part.add_hole(6, 10, 12)
+
+    holes = [f["cylinder"] for f in part.list_faces()["faces"] if "cylinder" in f]
+
+    assert len(holes) == 1, holes
+    assert holes[0]["radius_mm"] == pytest.approx(3)
+    assert [abs(a) for a in holes[0]["axis"]] == pytest.approx([0, 0, 1])
+    assert holes[0]["point_mm"] == pytest.approx([10, 12, 5], abs=1e-4), "a hole circle must be readable off its faces"
 
 
 def test_an_edge_index_out_of_range_names_the_valid_ones(part):
