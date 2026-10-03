@@ -99,7 +99,7 @@ def test_a_copy_outside_the_part_fails_and_leaves_it_as_it_was(part):
     history = part.list_features()["features"]
 
     with pytest.raises(SolidWorksError, match="outside the part"):
-        part.add_mirror("right", features=["Hole"])
+        part.run_guarded(part.add_mirror, "right", features=["Hole"])  # as every MCP call runs
 
     assert part.list_features()["features"] == history, "the useless mirror stayed in the tree"
 
@@ -109,6 +109,6 @@ def test_a_body_copy_that_does_not_touch_fails_and_leaves_no_plane_behind(part):
     history = part.list_features()["features"]
 
     with pytest.raises(SolidWorksError, match="touch"):
-        part.add_mirror("right", offset_mm=-5)
+        part.run_guarded(part.add_mirror, "right", offset_mm=-5)  # as every MCP call runs
 
     assert part.list_features()["features"] == history, "the helper plane of the failed mirror stayed in the tree"

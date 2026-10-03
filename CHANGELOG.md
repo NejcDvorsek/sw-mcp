@@ -11,6 +11,9 @@ All notable changes to this project are documented here. This project follows
   document: it became the server's current part without becoming SolidWorks'
   active document. Tools now bring the current document to the front first,
   which also covers a window switched by hand in SolidWorks.
+- A failed tool call left its sketch in the tree, where it also counted in the
+  bounding box. Every call now runs guarded: when it fails, whatever it added
+  to the current part is removed again.
 
 ## [0.7.0] — 2026-10-02
 

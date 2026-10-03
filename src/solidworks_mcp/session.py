@@ -2162,7 +2162,6 @@ class SolidWorksSession:
         if font is not None:
             self._require_installed_font(font)
         before_volume = self.get_mass_properties()["mass_properties"]["volume_mm3"]
-        before_features = {f.Name for f in self._history()}
         sk, sketch = self._open_sketch_on_face(face, (x_mm, y_mm, z_mm))
         try:
             u, v = self._model_to_sketch_uv(sketch, mm_to_m(x_mm), mm_to_m(y_mm), mm_to_m(z_mm), face)
@@ -2203,9 +2202,7 @@ class SolidWorksSession:
             result = self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
         change = abs(result["mass_properties"]["volume_mm3"] - before_volume)
         if change < 1e-6:
-            left = self._remove_features_since(before_features)
-            raise SolidWorksError("The text changed nothing; is its point inside the face?"
-                                  + (f" Could not remove: {', '.join(left)}." if left else ""))
+            raise SolidWorksError("The text changed nothing; is its point inside the face?")  # run_guarded cleans up
         result["text_area_mm2"] = round(change / depth_mm, 4)
         return result
 
@@ -2771,6 +2768,36 @@ class SolidWorksSession:
         # new plane from the tree instead.
         return self._last_ref_plane(), True
 
+    def run_guarded(self, fn, *args, **kwargs):
+        """Run a tool; when it fails, delete what it added to the current part.
+
+        Every MCP tool call goes through here, so a refused or failed call leaves
+        the part as it was: no stray sketch, which would also count in the
+        bounding box. A tool that switched documents is not rolled back.
+        """
+        snapshot = self._history_snapshot()
+        try:
+            return fn(*args, **kwargs)
+        except SolidWorksError as exc:
+            left = self._roll_back(snapshot)
+            if left:
+                raise SolidWorksError(f"{exc} Could not remove what the call added: {', '.join(left)}.") from exc
+            raise
+        except Exception:
+            self._roll_back(snapshot)
+            raise
+
+    def _history_snapshot(self):
+        """(title, history names) of the current part, or None without one."""
+        if self._model is None or int(self._model.GetType()) != SW_DOC_PART:
+            return None
+        return self._model.GetTitle(), {f.Name for f in self._history()}
+
+    def _roll_back(self, snapshot) -> list:
+        if snapshot is None or self._model is None or self._model.GetTitle() != snapshot[0]:
+            return []
+        return self._remove_features_since(snapshot[1])
+
     def _remove_features_since(self, before: set) -> list:
         """Delete what the history gained since `before`, newest first; returns
         the names that could not be removed."""
@@ -2805,7 +2832,6 @@ class SolidWorksSession:
             raise SolidWorksError("features is empty: name the features to mirror, or leave it out to mirror the body.")
         model = self._require_model()
         seeds = [self._history_feature(n) for n in features or ()]
-        before = {f.Name for f in self._history()}
         mirror_plane, created = self._plane_at(key, offset_mm)
         model.ClearSelection2(True)
         if seeds:
@@ -2826,8 +2852,7 @@ class SolidWorksSession:
         model.ForceRebuild3(False)
         problem = self._mirror_problem(mirror, bool(seeds), f"{self._MIRROR_AXES[key]} = {offset_mm:g}")
         if problem:
-            left = self._remove_features_since(before)
-            raise SolidWorksError(problem + (f" Could not remove: {', '.join(left)}." if left else ""))
+            raise SolidWorksError(problem)  # run_guarded removes the mirror and its plane
         if created and mirror_plane.Select2(False, 0):
             model.BlankRefGeom()  # construction geometry; keep screenshots clean
         model.ClearSelection2(True)

@@ -29,7 +29,7 @@ Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
 - Look before selecting by index: list_faces / list_edges; screenshot to see the shape.
 - Undo a wrong step with delete_feature; list_features shows the history, also of a part opened from disk.
-- {ok: false, error} means the tool refused or SolidWorks failed; the error names the cause.
+- {ok: false, error} means the tool refused or SolidWorks failed; the error names the cause, and the part is left as it was.
 
 Pitfalls
 - Walls shared by successive polygon cuts must use identical points: sections a few micrometres apart leave sliver faces and the next cut fails.
@@ -81,11 +81,14 @@ else:
 
 
 async def _call(fn, *args, **kwargs) -> dict:
-    """Run a session method on the COM thread and normalise errors to a result dict."""
+    """Run a session method on the COM thread and normalise errors to a result dict.
+
+    It runs guarded: a call that fails leaves the current part as it was.
+    """
     try:
         if _worker is None:
             return fn(*args, **kwargs)
-        return await _worker.call(lambda: fn(*args, **kwargs))
+        return await _worker.call(lambda: _session.run_guarded(fn, *args, **kwargs))
     except SolidWorksError as exc:
         return {"ok": False, "error": str(exc)}
     except _COM_ERROR as exc:
