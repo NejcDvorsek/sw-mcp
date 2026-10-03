@@ -4390,6 +4390,56 @@ class SolidWorksSession:
         outward = [-n for n in normal] if face.FaceInSurfaceSense() else list(normal)
         return sum((p - q) * n for p, q, n in zip(point, nearest, outward)) < 0
 
+    def check_motion(self, dimension_name: str, values: list, distances: list | None = None) -> dict:
+        """Step a dimension through `values` and check the assembly at every
+        step: an angle mate's joint angle (degrees) or a distance mate's travel
+        (mm), as add_mate returns them.
+
+        Each step gives the overlapping component pairs with their volume and
+        the distance between each pair in `distances` ([["Rod", "Bolt"], ...]);
+        the summary gives whether every step is clash-free and each pair's
+        smallest distance with the value where it occurs. The dimension goes
+        back to its value afterwards.
+        """
+        if not values:
+            raise SolidWorksError("Give the values to step through, e.g. [30, 60, 90].")
+        pairs = [list(pair) for pair in distances or ()]
+        if any(len(pair) != 2 for pair in pairs):
+            raise SolidWorksError(f"distances takes component pairs [[a, b], ...] (got {distances}).")
+        asm = self._require_assembly()
+        model = self._model
+        for name in {name for pair in pairs for name in pair}:
+            self._component_by_name(asm, name)  # a wrong name fails before anything moves
+        dim = self._dimension(dimension_name)
+        unit, to_system, from_system = self._dimension_unit(dim)
+        original = dim.SystemValue
+        steps = []
+        try:
+            for value in values:
+                dim.SystemValue = to_system(value)
+                rebuilt = bool(model.ForceRebuild3(False))
+                applied = from_system(dim.SystemValue)
+                if abs(applied - value) > 1e-6:
+                    raise SolidWorksError(f"'{dimension_name}' did not take {value:g} {unit} (it reads "
+                                          f"{applied:g}): is it a driven dimension?")
+                steps.append({
+                    f"value_{unit}": value,
+                    "rebuild_ok": rebuilt,
+                    "interferences": self.check_interference()["interferences"],
+                    "distances": [self.measure_distance(a, b) for a, b in pairs],
+                })
+        finally:
+            dim.SystemValue = original
+            model.ForceRebuild3(False)
+        for step in steps:
+            step["distances"] = [{"between": d["between"], "distance_mm": d["distance_mm"]} for d in step["distances"]]
+        smallest = []
+        for i in range(len(pairs)):
+            closest = min(steps, key=lambda s: s["distances"][i]["distance_mm"])
+            smallest.append({**closest["distances"][i], f"at_{unit}": closest[f"value_{unit}"]})
+        return {"ok": True, "dimension": dimension_name, "steps": steps,
+                "clash_free": not any(step["interferences"] for step in steps), "smallest_distances": smallest}
+
     def get_assembly_bounding_box(self) -> dict:
         """Bounding box of the whole assembly (min/max/size in mm)."""
         self._require_assembly()

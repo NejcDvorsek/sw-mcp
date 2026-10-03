@@ -444,6 +444,13 @@ def test_an_angle_mate_takes_an_angle_strictly_between_0_and_180(s, angle):
         s.add_mate("Thigh-1", "-y", "Shin-1", "-y", mate_type="angle", angle_deg=angle)
 
 
+@pytest.mark.parametrize("values,distances,message", [([], None, "values to step through"),
+                                                      ([30, 60], [["Rod-1"]], r"pairs \[\[a, b\]")])
+def test_check_motion_needs_values_and_pairs(s, values, distances, message):
+    with pytest.raises(SolidWorksError, match=message):
+        s.check_motion("D1@Angle1", values, distances)
+
+
 class _FakeDimension:
     def __init__(self, param_type):
         self._type = param_type

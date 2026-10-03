@@ -24,6 +24,9 @@ All notable changes to this project are documented here. This project follows
   index, `"#5"`. A distance or angle mate returns its dimension, so a joint
   angle is one number for `set_dimension`. A refused mate is removed again,
   naming the mate it contradicts; `list_components` lists the mates.
+- `check_motion` steps a joint through its range and gives per step the
+  overlapping pairs and the distances between chosen pairs, with each pair's
+  smallest distance and the angle where it occurs.
 
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too

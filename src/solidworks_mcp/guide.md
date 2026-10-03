@@ -171,6 +171,15 @@ stray drag in SolidWorks can change the part.
   `measure_distance` gives the clearance between two components (0 when
   they touch or overlap), or from a component to a point such as a pivot,
   with the nearest point; `inside: true` means the point lies in the material.
+- **Joints**: a hinge is a `concentric` mate between the two holes (pick a
+  cylinder by its `list_faces(component=...)` index, `"#5"`), a `coincident`
+  mate between the faces that slide on each other, and an `angle` mate between
+  two side faces. The angle mate returns its `dimension`: `set_dimension`
+  turns the joint, and `check_motion(dimension, [30, 60, 90, 120, 150],
+  distances=[["Rod", "Bolt"]])` checks overlaps and clearances at every step
+  and puts the joint back. `flip` turns an angle mate the other way. A mate
+  that contradicts the others is refused and removed, naming the one it
+  fights; `list_components` lists the mates and their errors.
 - **A person's part**: `list_features` names their sketches and planes.
   `read_sketch` reads a sketch back in model coordinates, so you can check it
   against the points that must fit before building on it. `extrude_sketch` and

@@ -95,6 +95,21 @@ def test_an_angle_mate_sets_the_joint_angle_as_one_number(linkage):
     assert shin_size(linkage) == pytest.approx([width, depth, 5], abs=1e-3), "the shin did not follow the angle"
 
 
+def test_check_motion_steps_the_knee_and_finds_the_clash(linkage):
+    # at 150 the shin swings out over x 20..40 through the stop; at 90 it hangs
+    # along the y axis, x 0..10, 10 mm short of it
+    mate = knee(linkage, 90)
+    motion = linkage.check_motion(mate["dimension"], [30, 90, 150], distances=[["shin", "stop"]])
+
+    by_angle = {step["value_deg"]: step for step in motion["steps"]}
+    assert [i["components"] for i in by_angle[150]["interferences"]] == [["shin-1", "stop-1"]]
+    assert by_angle[30]["interferences"] == [] and by_angle[90]["interferences"] == []
+    assert by_angle[90]["distances"][0]["distance_mm"] == pytest.approx(10, abs=1e-3)
+    assert motion["clash_free"] is False
+    assert motion["smallest_distances"] == [{"between": ["shin-1", "stop-1"], "distance_mm": 0, "at_deg": 150}]
+    assert shin_size(linkage) == pytest.approx([10, 60, 5], abs=1e-3), "the knee was not put back at 90"
+
+
 def test_a_refused_mate_leaves_the_assembly_as_it_was(linkage):
     """SolidWorks adds an over-defining mate all the same, in error, and flags
     the mate it fights; left in place it would fight every next attempt."""

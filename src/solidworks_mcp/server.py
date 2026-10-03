@@ -25,6 +25,7 @@ Conventions
 - Faces are picked by direction: '+z', '-x', ... *_on_face tools take 3D points on the face and use the face facing that way through them (the top, a pocket floor, a step); '+z:outer' / '+z:inner' force the outermost / innermost one. Other tools use the outermost face.
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
 - In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror and cut_profile_through_plane.
+- A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
 
 Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
@@ -852,6 +853,20 @@ async def measure_distance(component_a: str, component_b: str | None = None,
     which. Sub-assemblies count with all their parts.
     """
     return await _call(_session.measure_distance, component_a, component_b, point_mm)
+
+
+@mcp.tool()
+async def check_motion(dimension_name: str, values: list, distances: list | None = None) -> dict:
+    """Step a joint through its range and check the assembly at every step.
+
+    dimension_name: an angle or distance mate's dimension (add_mate returns it);
+    values in degrees for an angle, mm for a distance, e.g. [30, 60, 90, 120,
+    150]. Each step gives the overlapping pairs with their volume and the
+    distance between each pair in distances ([["Rod", "Bolt"], ...]); the
+    summary gives clash_free and each pair's smallest distance with the value
+    where it occurs. The dimension goes back to its value afterwards.
+    """
+    return await _call(_session.check_motion, dimension_name, values, distances)
 
 
 @mcp.tool()
