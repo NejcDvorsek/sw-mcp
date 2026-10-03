@@ -776,6 +776,8 @@ class SolidWorksSession:
                 raise SolidWorksError(
                     f"Edge {i}-{j} is {length:g} mm long, but the corner radii at its ends need "
                     f"{need:g} mm of it. Use smaller radii."
+                    + (" Arcs that would meet merge into one, which the corners cannot keep: for a "
+                       "circle use add_disc, for round ends add_extruded_slot." if need < length + 1e-6 else "")
                 )
 
     @staticmethod

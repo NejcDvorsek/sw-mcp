@@ -100,6 +100,18 @@ def test_corner_radii_must_leave_some_straight_edge():
         check(rectangle, [(10, [0, 1, 2, 3])])  # two R10 arcs eat the whole 20 mm side
 
 
+def test_radii_whose_arcs_would_meet_point_to_the_disc_and_slot_tools():
+    """R10 on a 20 mm square was refused without a way out; SolidWorks merges
+    arcs that meet, which the corners cannot keep, but a disc or a slot is
+    exactly that shape."""
+    check = SolidWorksSession._check_corner_radii
+    rectangle = [(0, 0), (40, 0), (40, 20), (0, 20)]
+    with pytest.raises(SolidWorksError, match="add_disc, for round ends add_extruded_slot"):
+        check(rectangle, [(10, [0, 1, 2, 3])])
+    with pytest.raises(SolidWorksError, match=r"Use smaller radii\.$"):
+        check(rectangle, [(12, [0, 1, 2, 3])])  # past meeting: just too big
+
+
 def test_corner_radius_setback_follows_the_corner_angle():
     # a 60 degree corner sets the arc back r / tan(30 deg) = 1.732 r along each edge
     triangle = [(0, 0), (10, 0), (5, 5 * 3 ** 0.5)]

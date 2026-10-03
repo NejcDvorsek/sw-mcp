@@ -120,8 +120,10 @@ stray drag in SolidWorks can change the part.
   axis) or `add_swept_profile`: one radius for every corner, or one per vertex
   (0 = sharp). Hand calculation: a right-angled corner of radius r loses
   r^2 (1 - pi/4) of area, a concave one gains it; in a revolve that area sits
-  0.2234 r from the corner along both edges (Pappus). A radius too big for its edges is refused before anything is
-  sketched, with the edge that is too short. Profiles over 24 points cannot be
+  0.2234 r from the corner along both edges (Pappus). A radius too big for its
+  edges is refused before anything is sketched, with the edge that is too
+  short; so are arcs that would meet, as SolidWorks merges them: a circle is
+  `add_disc`, round ends are `add_extruded_slot`. Profiles over 24 points cannot be
   rounded (they are fixed, not dimensioned). For a plain rounded block,
   `add_box` plus `add_fillet(edges="z")` works as well.
 - **Side-view shapes** (wedges, windows, symmetric recesses):

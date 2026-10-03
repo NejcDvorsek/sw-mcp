@@ -34,6 +34,11 @@ All notable changes to this project are documented here. This project follows
   the profile: extrude a front view, cut a side view this way, and the part is
   the shape both views agree on.
 
+### Changed
+- Corner radii whose arcs would meet (R10 on a 20 mm edge) are still refused,
+  as SolidWorks merges such arcs, but the error now points at `add_disc` for a
+  circle and `add_extruded_slot` for round ends.
+
 ### Fixed
 - The bounding box of a turned component was SolidWorks' turned outer box, too
   big for a round or slanted part (a 20 mm disc turned 45 degrees came out
