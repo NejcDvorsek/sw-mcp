@@ -201,6 +201,8 @@ stray drag in SolidWorks can change the part.
   `measure_distance` gives the clearance between two components (0 when
   they touch or overlap), or from a component to a point such as a pivot,
   with the nearest point; `inside: true` means the point lies in the material.
+  `axis_mm=[[x, y, z], [dx, dy, dz]]` measures to an endless line instead,
+  such as the axis of a bolt that is not modelled.
 - **Joints**: a hinge is a `concentric` mate between the two holes (pick a
   cylinder by its `list_faces(component=...)` index, `"#5"`), a `coincident`
   mate between the faces that slide on each other, and an `angle` mate between

@@ -933,15 +933,17 @@ async def check_interference() -> dict:
 
 @mcp.tool()
 async def measure_distance(component_a: str, component_b: str | None = None,
-                           point_mm: list | None = None) -> dict:
-    """The smallest distance (mm) from a component to another one, or to a point.
+                           point_mm: list | None = None, axis_mm: list | None = None) -> dict:
+    """The smallest distance (mm) from a component to another one, a point or an axis.
 
-    Give component_b, or point_mm = [x, y, z] in assembly mm: then the nearest
-    point on the component comes back too, and inside: true when the point lies
-    in its material. 0 means they touch or overlap; check_interference tells
-    which. Sub-assemblies count with all their parts.
+    Give component_b; or point_mm = [x, y, z] in assembly mm, and the nearest
+    point on the component comes back too, with inside: true when the point lies
+    in its material; or axis_mm = [[x, y, z], [dx, dy, dz]], the endless line
+    through that point along that direction, such as a bolt's axis. 0 means they
+    touch or overlap; check_interference tells which. Sub-assemblies count with
+    all their parts.
     """
-    return await _call(_session.measure_distance, component_a, component_b, point_mm)
+    return await _call(_session.measure_distance, component_a, component_b, point_mm, axis_mm)
 
 
 @mcp.tool()

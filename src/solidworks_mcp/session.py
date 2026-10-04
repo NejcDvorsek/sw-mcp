@@ -4866,22 +4866,80 @@ class SolidWorksSession:
         return {"ok": True, "count": len(result), "interferences": result}
 
     def measure_distance(self, component_a: str, component_b: str | None = None,
-                         point_mm: list | None = None) -> dict:
+                         point_mm: list | None = None, axis_mm: list | None = None) -> dict:
         """The smallest distance (mm) from a component of the current assembly to
-        another one, or to a point (assembly mm, with the nearest point on the
-        component). 0 where they touch or overlap; check_interference tells
-        which. A point in the material comes back with inside: true and its
-        distance to the surface.
+        another one, to a point (assembly mm, with the nearest point on the
+        component), or to an axis: the endless line axis_mm = [[x, y, z], [dx,
+        dy, dz]] through a point along a direction, such as a bolt's axis. 0
+        where they touch or overlap; check_interference tells which. A point in
+        the material comes back with inside: true and its distance to the surface.
         """
-        if (component_b is None) == (point_mm is None):
-            raise SolidWorksError("Give component_b or point_mm: one of the two.")
+        if sum(target is not None for target in (component_b, point_mm, axis_mm)) != 1:
+            raise SolidWorksError("Give one of component_b, point_mm or axis_mm.")
         if point_mm is not None and len(point_mm) != 3:
             raise SolidWorksError(f"point_mm needs [x, y, z] (got {point_mm}).")
+        line = None if axis_mm is None else self._axis_line(axis_mm)
         asm = self._require_assembly()
         comp = self._component_by_name(asm, component_a)
         if component_b is not None:
             return self._distance_between(comp, self._component_by_name(asm, component_b))
+        if line is not None:
+            return self._distance_to_line(comp, *line)
         return self._distance_to_point(comp, [float(c) for c in point_mm])
+
+    @staticmethod
+    def _axis_line(axis_mm) -> tuple:
+        """[[x, y, z], [dx, dy, dz]] -> (point, unit direction); pure, unit-tested."""
+        try:
+            point, direction = [[float(c) for c in vector] for vector in axis_mm]
+        except (TypeError, ValueError):
+            raise SolidWorksError(f"axis_mm needs [[x, y, z], [dx, dy, dz]] (got {axis_mm}).") from None
+        length = math.hypot(*direction)
+        if len(point) != 3 or len(direction) != 3 or length < 1e-9:
+            raise SolidWorksError(f"axis_mm needs a point and a direction that is not zero (got {axis_mm}).")
+        return point, [d / length for d in direction]
+
+    def _distance_to_line(self, comp, point, direction) -> dict:
+        """Measured against a temporary 3D sketch line that reaches well past the
+        component either way, deleted again afterwards."""
+        model = self._model
+        box = self._component_box(comp)
+        if box is None:
+            raise SolidWorksError(f"Component '{comp.Name2}' has no solid body to measure to.")
+        centre = [(lo + hi) / 2 for lo, hi in zip(box["min_mm"], box["max_mm"])]
+        reach = math.dist(box["min_mm"], box["max_mm"]) + math.dist(centre, point) + 10.0
+        ends = [[mm_to_m(p + sign * reach * d) for p, d in zip(point, direction)] for sign in (-1.0, 1.0)]
+        before = {f.Name for f in self._iter_features()}
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sk.Insert3DSketch(True)
+        try:
+            sk.AddToDB = True
+            line = sk.CreateLine(*ends[0], *ends[1])
+            sk.AddToDB = False
+        finally:
+            sk.Insert3DSketch(True)
+        helpers = [f for f in self._iter_features() if f.Name not in before]
+        try:
+            if line is None:
+                raise SolidWorksError("Could not draw the axis line to measure to.")
+            selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+            model.ClearSelection2(True)
+            if not (comp.Select4(False, selmgr.CreateSelectData(), False)
+                    and binding.wrap(line, self._mod.ISketchSegment).Select4(True, selmgr.CreateSelectData())):
+                raise SolidWorksError(f"Could not select '{comp.Name2}' and the axis line.")
+            measure = binding.wrap(binding.wrap(model.Extension, self._mod.IModelDocExtension).CreateMeasure(),
+                                   self._mod.IMeasure)
+            if measure is None or not measure.Calculate(None) or not (measure.IsIntersect or measure.Distance >= 0):
+                raise SolidWorksError(f"SolidWorks could not measure from '{comp.Name2}' to the axis.")
+            distance = 0.0 if measure.IsIntersect else measure.Distance
+        finally:
+            extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+            for helper in helpers:
+                model.ClearSelection2(True)
+                if helper.Select2(False, 0):
+                    extension.DeleteSelection2(0)
+            model.ClearSelection2(True)
+        return {"ok": True, "from": comp.Name2, "axis_mm": [point, direction], "distance_mm": round(m_to_mm(distance), 4)}
 
     def _distance_between(self, first, second) -> dict:
         model = self._require_model()

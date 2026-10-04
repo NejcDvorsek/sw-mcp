@@ -20,6 +20,8 @@ All notable changes to this project are documented here. This project follows
   polygon drawn on any plane, such as that one.
 - `rotate_deg` and `about_mm` on `add_extruded_profile` and `cut_profile` turn
   the profile about a pivot first: a crank at 150 degrees, notches at +/-60.
+- `measure_distance(axis_mm=[[x, y, z], [dx, dy, dz]])`: the distance from a
+  component to an endless line, such as a bolt's axis.
 
 ## [0.9.0] — 2026-10-03
 

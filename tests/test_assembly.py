@@ -366,3 +366,15 @@ def test_face_selector_reaches_the_cavity(part):
     assert closed - drilled["mass_properties"]["volume_mm3"] == pytest.approx(math.pi * 2 ** 2 * 2, abs=0.01)
     inner = part.add_hole_on_face(4, "+z:inner", 10, 10, 2)
     assert closed - inner["mass_properties"]["volume_mm3"] == pytest.approx(2 * math.pi * 2 ** 2 * 2, abs=0.01)
+
+
+@pytest.mark.parametrize("axis,expected", [([[60, 0, 5], [0, 1, 0]], 20), ([[20, 10, 0], [0, 0, 1]], 0)],
+                         ids=["beside", "through"])
+def test_measure_distance_to_an_axis(assembly, blocks, axis, expected):
+    # block_a spans x 0..40: a line along y at x = 60 runs 20 mm off; one along z
+    # through its middle runs through it
+    two_blocks(assembly, blocks, b_at=(100.0, 0.0, 0.0))
+    measured = assembly.measure_distance("block_a", axis_mm=axis)
+    assert measured["distance_mm"] == pytest.approx(expected, abs=1e-4)
+    helpers = [f.Name for f in assembly._iter_features() if f.GetTypeName2() == "3DProfileFeature"]
+    assert helpers == [], f"the helper line was left in the tree: {helpers}"

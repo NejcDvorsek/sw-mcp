@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 465 tests; each feature's integration test
+- **Tested against real SolidWorks.** 500 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -257,7 +257,7 @@ The server speaks MCP over **stdio**.
 | `add_mate(comp_a, face_a, comp_b, face_b, mate_type, distance_mm, angle_deg, flip)` | Mate two faces (by direction, or `#index` from `list_faces`): `coincident`, `distance`, `parallel`, `perpendicular`, `angle`, or `concentric` between cylinders — measured back afterwards; a refused mate is removed. A distance or angle mate returns its dimension: a joint angle as one number |
 | `check_motion(dimension_name, values, distances)` | Step a joint through its range: overlapping pairs and chosen distances per step, the smallest distance and where it occurs |
 | `check_interference` | Component pairs whose solids overlap, with the volume in mm³ (touching faces don't count) |
-| `measure_distance(component_a, component_b, point_mm)` | Smallest distance between two components, or to a point (with the nearest point, and whether the point is in the material) |
+| `measure_distance(component_a, component_b, point_mm, axis_mm)` | Smallest distance between two components, to a point (with the nearest point, and whether the point is in the material), or to an axis |
 | `get_assembly_bounding_box` | Tight bounding box of the whole assembly (min/max/size, mm) |
 
 `export` and `screenshot` work on assemblies too.

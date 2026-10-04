@@ -426,10 +426,17 @@ def test_a_suppressed_component_has_no_box(s):
     assert s._component_box(_FakePart(0)) is None
 
 
-@pytest.mark.parametrize("target", [{}, {"component_b": "B-1", "point_mm": [0, 0, 0]}])
+@pytest.mark.parametrize("target", [{}, {"component_b": "B-1", "point_mm": [0, 0, 0]},
+                                    {"point_mm": [0, 0, 0], "axis_mm": [[0, 0, 0], [0, 0, 1]]}])
 def test_measure_distance_needs_exactly_one_target(s, target):
-    with pytest.raises(SolidWorksError, match="one of the two"):
+    with pytest.raises(SolidWorksError, match="Give one of component_b, point_mm or axis_mm"):
         s.measure_distance("A-1", **target)
+
+
+@pytest.mark.parametrize("axis", [[[0, 0, 0], [0, 0, 0]], [[0, 0], [0, 0, 1]], "z"])
+def test_an_axis_is_a_point_and_a_direction(s, axis):
+    with pytest.raises(SolidWorksError, match="axis_mm needs"):
+        s.measure_distance("A-1", axis_mm=axis)
 
 
 def test_measure_distance_point_needs_three_coordinates(s):
