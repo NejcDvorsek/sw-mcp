@@ -683,3 +683,17 @@ def test_points_turn_counterclockwise_about_a_pivot():
     assert SolidWorksSession._turned_points([[1, 2]], 0, None) == [[1, 2]]  # no turn, untouched
     with pytest.raises(SolidWorksError, match="about"):
         SolidWorksSession._turned_points([[1, 2]], 45, [5])
+
+
+# --- drafts, round loft sections, bodies -------------------------------------------
+
+
+@pytest.mark.parametrize("draft", [90, -90, 120])
+def test_a_draft_stays_below_ninety_degrees(draft):
+    with pytest.raises(SolidWorksError, match="between -90 and 90"):
+        SolidWorksSession._check_draft(draft)
+
+
+def test_combine_bodies_knows_add_subtract_and_common(s):
+    with pytest.raises(SolidWorksError, match="operation must be one of"):
+        s.combine_bodies("glue", "Body1")

@@ -35,7 +35,7 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. 70 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. 73 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
@@ -199,9 +199,12 @@ The server speaks MCP over **stdio**.
 | `add_swept_profile(profile_mm, path_mm, bend_radius_mm, name, corner_radii_mm)` | Sweep any closed cross-section along a 2D path (rails, gaskets, trim, channels); `corner_radii_mm` rounds the cross-section |
 | `add_lofted_solid(profiles_mm, heights_mm, name)` | Loft/blend 2+ polygon profiles on stacked parallel planes (transitions, adapters) |
 | `add_rib(start_mm, end_mm, toward_mm, thickness_mm, z_mm, name)` | Straight rib / gusset in a plane parallel to Front at `z_mm`, grown toward `toward_mm` until it meets the part (L-bracket gussets) |
-| `add_extruded_profile(points_mm, depth_mm, name, corner_radii_mm, rotate_deg, about_mm)` | Extrude any closed polygon `[[x,y],…]` (brackets, sections); `corner_radii_mm` rounds its corners with real sketch fillets, each radius a dimension; `rotate_deg` turns it about a pivot |
+| `add_extruded_profile(points_mm, depth_mm, name, corner_radii_mm, rotate_deg, about_mm, draft_deg, merge)` | Extrude any closed polygon `[[x,y],…]` (brackets, sections); `corner_radii_mm` rounds its corners with real sketch fillets, each radius a dimension; `rotate_deg` turns it about a pivot; `draft_deg` tapers its walls; `merge=False` keeps a separate body |
 | `add_plane(base, offset_mm, angle_deg, about, name)` | A reference plane offset from a plane, or turned about a model axis; its offset or angle a dimension; gives its origin and axes |
-| `add_extruded_profile_on_plane(points_mm, plane, depth_mm, reverse, name, corner_radii_mm)` | Extrude a polygon drawn on any plane (3D points on it), merged with the part |
+| `add_extruded_profile_on_plane(points_mm, plane, depth_mm, reverse, name, corner_radii_mm, draft_deg, merge)` | Extrude a polygon drawn on any plane (3D points on it), merged with the part |
+| `list_bodies()` | The part's solid bodies: name, volume, bounding box |
+| `combine_bodies(operation, main, tools, name)` | Add, subtract or intersect bodies of the part (`add` / `subtract` / `common`) |
+| `split_body(plane, name)` | Split the part into two bodies along a plane |
 | `add_extruded_spline(points_mm, depth_mm, name)` | Extrude a smooth closed spline through points (free-form/organic outlines) |
 | `add_hole(diameter_mm, x_mm, y_mm, name)` | Cut a circular through-hole at (x, y) through the depth axis |
 | `add_counterbore_hole(clearance_diameter_mm, cbore_diameter_mm, cbore_depth_mm, x_mm, y_mm, name)` | Counterbored screw hole (flush cap-head / heat-set insert) on +Z |

@@ -660,25 +660,30 @@ class SolidWorksSession:
         return result
 
     def _extrude_sketch(self, depth_mm: float, name: str, sketch: dict, hint: str = "",
-                        role: str = "depth", reverse: bool = False) -> dict:
+                        role: str = "depth", reverse: bool = False, draft_deg: float = 0.0,
+                        merge: bool = True) -> dict:
         """Extrude the sketch just closed (it stays selected) depth_mm along its
         normal (reverse: the other way), merged with the body; finish the
         feature and name its depth.
 
         Shared by every boss. `sketch` is the _define_sketch result, `role` the
         depth's name among the dimensions, `hint` what to check when it fails.
+        draft_deg tapers the walls inwards as they rise (negative: outwards) and
+        is named 'draft'; merge=False keeps the result a body of its own, named
+        in the result's 'body'.
         """
+        bodies_before = {body.Name for body in self._part_bodies()}
         feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
         extrude = feat_mgr.FeatureExtrusion3(
             True, False, reverse,      # Sd (single dir), Flip, Dir
             SW_END_COND_BLIND, 0,      # T1, T2 (end conditions)
             mm_to_m(depth_mm), 0.0,    # D1 (depth), D2
-            False, False,              # Dchk1, Dchk2
-            False, False,              # Ddir1, Ddir2
-            0.0, 0.0,                  # Dang1, Dang2 (draft, radians)
+            bool(draft_deg), False,    # Dchk1 (draft), Dchk2
+            draft_deg < 0, False,      # Ddir1 (outward), Ddir2
+            math.radians(abs(draft_deg)), 0.0,  # Dang1, Dang2 (draft, radians)
             False, False,              # OffsetReverse1, OffsetReverse2
             False, False,              # TranslateSurface1, TranslateSurface2
-            True,                      # Merge
+            bool(merge),               # Merge
             True,                      # UseFeatScope
             True,                      # UseAutoSelect
             SW_START_SKETCH_PLANE,     # T0 (start condition)
@@ -689,6 +694,12 @@ class SolidWorksSession:
             raise SolidWorksError(f"FeatureExtrusion3 failed (None). {hint}".strip())
         result = self._finish_feature(extrude, name, **sketch)
         result["dimensions"][role] = f"D1@{result['feature']}"
+        if draft_deg:
+            feature = binding.wrap(extrude, self._mod.IFeature)
+            result["dimensions"]["draft"] = next(d["name"] for d in self._dimension_entries(feature)
+                                                 if d["unit"] == "deg")
+        if not merge:
+            [result["body"]] = [body.Name for body in self._part_bodies() if body.Name not in bodies_before]
         return result
 
     def add_box(self, width_mm: float, height_mm: float, depth_mm: float,
@@ -748,6 +759,11 @@ class SolidWorksSession:
                 f"A profile needs at least 3 distinct points (got {len(cleaned)})."
             )
         return cleaned
+
+    @staticmethod
+    def _check_draft(draft_deg) -> None:
+        if not -90.0 < draft_deg < 90.0:
+            raise SolidWorksError(f"draft_deg must be between -90 and 90 (got {draft_deg}).")
 
     @staticmethod
     def _turned_points(points_mm, rotate_deg, about_mm) -> list:
@@ -1084,7 +1100,7 @@ class SolidWorksSession:
 
     def add_extruded_profile(self, points_mm: list, depth_mm: float,
                              name: str = "Extrude", corner_radii_mm=None, rotate_deg: float = 0.0,
-                             about_mm: list | None = None) -> dict:
+                             about_mm: list | None = None, draft_deg: float = 0.0, merge: bool = True) -> dict:
         """Extrude a closed polygon profile into a solid on the first plane.
 
         points_mm is a list of [x, y] vertices (mm) in the first-plane coordinate
@@ -1094,15 +1110,18 @@ class SolidWorksSession:
         corners with real sketch fillets: one radius for all, or one per vertex
         (0 = sharp). rotate_deg turns the profile counterclockwise about about_mm
         ([x, y], the origin by default) before it is drawn, for parts at an angle
-        such as a crank at 150 degrees. Returns mass properties (volume = polygon
-        area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
-        concave one gains it).
+        such as a crank at 150 degrees. draft_deg tapers the walls inwards as
+        they rise (negative: outwards), a dimension 'draft'; merge=False keeps the
+        result a separate body (see list_bodies, combine_bodies). Returns mass
+        properties (volume = polygon area * depth; a right-angled corner of
+        radius r loses r^2 (1 - pi/4), a concave one gains it).
         """
         model = self._require_model()
         if depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        self._check_draft(draft_deg)
         points_mm = self._turned_points(points_mm, rotate_deg, about_mm)
 
         plane = self._first_ref_plane()
@@ -1113,7 +1132,8 @@ class SolidWorksSession:
 
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sketch = self._sketch_closed_polygon(sk, points_mm, corner_radii_mm)
-        return self._extrude_sketch(depth_mm, name, sketch, "Is the profile closed and not self-intersecting?")
+        return self._extrude_sketch(depth_mm, name, sketch, "Is the profile closed and not self-intersecting?",
+                                    draft_deg=draft_deg, merge=merge)
 
     def add_extruded_spline(self, points_mm: list, depth_mm: float,
                             name: str = "Spline") -> dict:
@@ -2560,20 +2580,21 @@ class SolidWorksSession:
 
     def add_extruded_profile_on_plane(self, points_mm: list, plane: str, depth_mm: float,
                                       reverse: bool = False, name: str = "Extrude",
-                                      corner_radii_mm=None) -> dict:
+                                      corner_radii_mm=None, draft_deg: float = 0.0, merge: bool = True) -> dict:
         """Extrude a polygon sketched on a reference plane, merged with the body.
 
         plane: 'front', 'top', 'right' or a plane by name, such as one add_plane
         made at an angle. points_mm are 3D [x, y, z] vertices ON that plane
         (add_plane gives its origin and axes: origin + u x_axis + v y_axis).
         depth_mm along the plane's normal, or the other way with reverse=True.
-        corner_radii_mm rounds the corners as for add_extruded_profile. Returns
-        mass properties.
+        corner_radii_mm, draft_deg and merge work as for add_extruded_profile.
+        Returns mass properties.
         """
         if depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        self._check_draft(draft_deg)
         corners = self._profile_corners(points_mm, corner_radii_mm)
         model = self._require_model()
         ref, label = self._named_plane(plane)
@@ -2588,7 +2609,8 @@ class SolidWorksSession:
         finally:
             model.ClearSelection2(True)
             sk.InsertSketch(True)  # close the sketch, also when a point is rejected
-        return self._extrude_sketch(depth_mm, name, defined, f"Is the profile on the {label} closed?", reverse=reverse)
+        return self._extrude_sketch(depth_mm, name, defined, f"Is the profile on the {label} closed?", reverse=reverse,
+                                    draft_deg=draft_deg, merge=merge)
 
     def _define_slot(self, sk) -> dict:
         """Define an open straight-slot sketch by its end-arc centres and width.
@@ -3874,6 +3896,91 @@ class SolidWorksSession:
                     entry["axis"] = self._axis_of(dx, dy, dz, length)
             out.append(entry)
         return {"ok": True, "count": len(out), "edges": out}
+
+    # --- bodies: separate, combined, split -------------------------------------------
+
+    _BODY_OPERATIONS = {"add": 15903, "subtract": 15902, "common": 15901}  # swBodyOperationType_e
+
+    def _part_bodies(self) -> list:
+        """The current part's solid bodies (IBody2), in SolidWorks' order."""
+        bodies = binding.wrap(self._model, self._mod.IPartDoc).GetBodies2(SW_BODY_SOLID, False) or ()
+        return [binding.wrap(body, self._mod.IBody2) for body in bodies]
+
+    def list_bodies(self) -> dict:
+        """The part's solid bodies: name, volume and bounding box. A part holds
+        several after merge=False or split_body; combine_bodies joins them."""
+        self._require_part()
+        out = []
+        for body in self._part_bodies():
+            out.append({"name": body.Name, "volume_mm3": round(body.GetMassProperties(1.0)[3] * 1e9, 4),
+                        "bounding_box_mm": self._body_box(body)})
+        return {"ok": True, "count": len(out), "bodies": out}
+
+    def _body_box(self, body) -> dict:
+        """A body's tight box in part coordinates (mm), from its extreme points."""
+        low = [m_to_mm(self._extreme_point(body, [-1.0 if i == axis else 0.0 for i in range(3)])[axis])
+               for axis in range(3)]
+        high = [m_to_mm(self._extreme_point(body, [1.0 if i == axis else 0.0 for i in range(3)])[axis])
+                for axis in range(3)]
+        return self._joined_box([{"min_mm": [round(v, 4) for v in low], "max_mm": [round(v, 4) for v in high]}])
+
+    def combine_bodies(self, operation: str, main: str, tools: list | None = None, name: str = "Combine") -> dict:
+        """Combine solid bodies of the part into `main` (a list_bodies name):
+        'add' joins the tools to it, 'subtract' cuts them out of it, 'common'
+        keeps only what it shares with them. tools: body names, every other body
+        by default."""
+        key = str(operation).lower()
+        if key not in self._BODY_OPERATIONS:
+            raise SolidWorksError(f"operation must be one of {sorted(self._BODY_OPERATIONS)} (got '{operation}').")
+        model = self._require_model()
+        self._require_part()
+        bodies = {body.Name: body for body in self._part_bodies()}
+        if main not in bodies:
+            raise SolidWorksError(f"No body '{main}' (there are: {', '.join(bodies) or 'none'}).")
+        names = list(tools) if tools else [n for n in bodies if n != main]
+        unknown = [n for n in names if n not in bodies or n == main]
+        if unknown or not names:
+            raise SolidWorksError(f"Give other bodies of the part to combine with '{main}' "
+                                  f"(there are: {', '.join(bodies)}; got {names}).")
+        model.ClearSelection2(True)
+        # the list holds the main body too: add and common fail without it (verified)
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        combined = feat_mgr.InsertCombineFeature(
+            self._BODY_OPERATIONS[key], bodies[main],
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH,
+                                    [bodies[n]._oleobj_ for n in [main, *names]]))
+        if combined is None:
+            raise SolidWorksError(f"SolidWorks could not {key} {', '.join(names)} and '{main}': do they overlap?")
+        result = self._finish_feature(combined, name, combined=[main, *names])
+        result["bodies"] = [body.Name for body in self._part_bodies()]
+        return result
+
+    def split_body(self, plane: str, name: str = "Split") -> dict:
+        """Split the part's body in two along a plane (front/top/right or a plane
+        by name, such as one add_plane made): two bodies, named in the result,
+        to combine differently or check apart."""
+        model = self._require_model()
+        self._require_part()
+        ref, label = self._named_plane(plane)
+        model.ClearSelection2(True)
+        if not ref.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the {label}.")
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        pieces = feat_mgr.PreSplitBody() or ()
+        if len(pieces) < 2:
+            model.ClearSelection2(True)
+            raise SolidWorksError(f"The {label} does not cut through the part.")
+        # one empty origin and save path per piece: keep them all in this part (verified)
+        split = feat_mgr.PostSplitBody(
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [getattr(p, "_oleobj_", p) for p in pieces]),
+            False,
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [None] * len(pieces)),
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_BSTR, [""] * len(pieces)))
+        if split is None:
+            raise SolidWorksError(f"SolidWorks could not split the part along the {label}.")
+        result = self._finish_feature(split, name)
+        result["bodies"] = [body.Name for body in self._part_bodies()]
+        return result
 
     # --- 3D printing --------------------------------------------------------------
 

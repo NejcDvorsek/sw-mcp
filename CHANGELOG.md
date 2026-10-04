@@ -22,6 +22,13 @@ All notable changes to this project are documented here. This project follows
   the profile about a pivot first: a crank at 150 degrees, notches at +/-60.
 - `measure_distance(axis_mm=[[x, y, z], [dx, dy, dz]])`: the distance from a
   component to an endless line, such as a bolt's axis.
+- `draft_deg` on `add_extruded_profile` and `add_extruded_profile_on_plane`:
+  the walls lean inwards as they rise (negative: outwards); the angle is a
+  dimension, `draft`.
+- Several bodies in one part: `merge=False` on `add_extruded_profile` and
+  `add_extruded_profile_on_plane` keeps a body of its own; `list_bodies` lists
+  them; `combine_bodies` adds, subtracts or intersects them; `split_body`
+  splits the part along a plane.
 
 ## [0.9.0] — 2026-10-03
 

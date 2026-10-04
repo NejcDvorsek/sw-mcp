@@ -160,3 +160,19 @@ def test_a_profile_turns_about_a_pivot(part):
     assert vol(cut) == pytest.approx(40 * 40 * 10 - 30 * 10 * 10)
     x, y, _ = cut["mass_properties"]["center_of_mass_mm"]
     assert x == pytest.approx(20, abs=1e-3) and y > 20, f"the slot was not turned: centre of mass at {x}, {y}"
+
+
+# --- drafts, round lofts, smooth pipes ---------------------------------------------
+
+
+@pytest.mark.parametrize("draft", [5, -5], ids=["inwards", "outwards"])
+def test_a_draft_tapers_the_walls(part, draft):
+    """A 20 x 10 rectangle 10 deep: every wall leans in (or out) by tan(draft)
+    per mm of height, so the area at height z is (20 - 2zt)(10 - 2zt)."""
+    t = math.tan(math.radians(draft))
+    expected = 20 * 10 * 10 - (20 + 10) * t * 10 ** 2 + 4 / 3 * t ** 2 * 10 ** 3
+    tapered = part.add_extruded_profile([[0, 0], [20, 0], [20, 10], [0, 10]], 10, draft_deg=draft)
+    assert vol(tapered) == pytest.approx(expected, rel=1e-9)
+    straighter = part.set_dimension(tapered["dimensions"]["draft"], 2)
+    t2 = math.tan(math.radians(2 if draft > 0 else -2))
+    assert vol(straighter) == pytest.approx(20 * 10 * 10 - 30 * t2 * 100 + 4 / 3 * t2 ** 2 * 1000, rel=1e-9)

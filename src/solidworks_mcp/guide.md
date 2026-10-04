@@ -142,6 +142,17 @@ stray drag in SolidWorks can change the part.
 - **Parts at an angle on the Front plane**: draw the profile straight and give
   `rotate_deg` and `about_mm` (the pivot) to `add_extruded_profile` or
   `cut_profile`; the turned points are dimensioned like any profile.
+- **Tapered walls**: `draft_deg` on `add_extruded_profile` (and
+  `add_extruded_profile_on_plane`) leans every wall inwards as it rises
+  (negative: outwards); the angle is a dimension, `draft`. Hand calculation
+  for a w x h rectangle extruded d with t = tan(draft): w h d - (w + h) t d^2
+  + 4/3 t^2 d^3.
+- **Several bodies**: `merge=False` keeps a new extrusion a body of its own;
+  `list_bodies` names them, with volume and box. `combine_bodies("subtract",
+  main, [tool])` cuts one out of another, `add` joins them and `common` keeps
+  their overlap; `split_body(plane)` splits the part along a plane, such as
+  one from `add_plane`. Faces, edges, fillets and the printability check see
+  the first body only: combine the bodies before you work on their faces.
 - **A shape from two views**: extrude the front view, then cut the side view
   with `cut_profile_through_plane(..., keep_inside=True)`: everything outside
   the side outline goes, and what is left matches both views.

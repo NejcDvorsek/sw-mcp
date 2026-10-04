@@ -131,7 +131,7 @@ async def add_box(width_mm: float, height_mm: float, depth_mm: float,
 @mcp.tool()
 async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Extrude",
                                corner_radii_mm: float | list | None = None, rotate_deg: float = 0.0,
-                               about_mm: list | None = None) -> dict:
+                               about_mm: list | None = None, draft_deg: float = 0.0, merge: bool = True) -> dict:
     """Extrude a closed polygon into a solid: points_mm = [[x,y], ...] in mm.
 
     The polygon (first-plane coordinates, same as add_box) is auto-closed and
@@ -140,12 +140,15 @@ async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Ex
     radius for all, or one per vertex (0 = sharp); equal radii share one
     dimension ('radius', else 'r<i>'). rotate_deg turns the profile
     counterclockwise about about_mm ([x, y], the origin by default) first: draw
-    a crank or a lug straight, then set it at its angle. Returns mass properties
-    (volume = polygon area * depth; a right-angled corner of radius r loses
-    r^2 (1 - pi/4), a concave one gains it).
+    a crank or a lug straight, then set it at its angle. draft_deg tapers the
+    walls inwards as they rise (negative: outwards), a dimension 'draft' (a
+    moulded boss, a printable taper). merge=False keeps the result a separate
+    body: list_bodies, combine_bodies. Returns mass properties (volume = polygon
+    area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
+    concave one gains it).
     """
     return await _call(_session.add_extruded_profile, points_mm, depth_mm, name, corner_radii_mm, rotate_deg,
-                       about_mm)
+                       about_mm, draft_deg, merge)
 
 
 @mcp.tool()
@@ -293,16 +296,48 @@ async def add_plane(base: str = "front", offset_mm: float = 0.0, angle_deg: floa
 @mcp.tool()
 async def add_extruded_profile_on_plane(points_mm: list, plane: str, depth_mm: float, reverse: bool = False,
                                         name: str = "Extrude",
-                                        corner_radii_mm: float | list | None = None) -> dict:
+                                        corner_radii_mm: float | list | None = None, draft_deg: float = 0.0,
+                                        merge: bool = True) -> dict:
     """Extrude a polygon drawn on a reference plane, such as one add_plane made at an angle.
 
     points_mm = 3D [x, y, z] points ON the plane (origin + u x_axis + v y_axis
     from add_plane). depth_mm along the plane's normal, or the other way with
-    reverse=True; merged with the part. corner_radii_mm rounds the corners as
-    for add_extruded_profile. Returns mass properties.
+    reverse=True; merged with the part. corner_radii_mm, draft_deg and merge
+    work as for add_extruded_profile. Returns mass properties.
     """
     return await _call(_session.add_extruded_profile_on_plane, points_mm, plane, depth_mm, reverse, name,
-                       corner_radii_mm)
+                       corner_radii_mm, draft_deg, merge)
+
+
+@mcp.tool()
+async def list_bodies() -> dict:
+    """List the part's solid bodies: name, volume and bounding box.
+
+    A part holds several after merge=False or split_body; combine_bodies joins
+    them again.
+    """
+    return await _call(_session.list_bodies)
+
+
+@mcp.tool()
+async def combine_bodies(operation: str, main: str, tools: list | None = None, name: str = "Combine") -> dict:
+    """Combine solid bodies of the part into `main` (a list_bodies name).
+
+    operation 'add' joins the tools to main, 'subtract' cuts them out of it,
+    'common' keeps only what main shares with them. tools: body names, every
+    other body by default. Returns mass properties and the bodies left.
+    """
+    return await _call(_session.combine_bodies, operation, main, tools, name)
+
+
+@mcp.tool()
+async def split_body(plane: str, name: str = "Split") -> dict:
+    """Split the part's body in two along a plane (front/top/right or a plane by name).
+
+    The two bodies come back by name: combine them differently, or check each
+    with list_bodies. Use add_plane first for a cut anywhere else.
+    """
+    return await _call(_session.split_body, plane, name)
 
 
 @mcp.tool()
