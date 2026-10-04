@@ -139,6 +139,9 @@ stray drag in SolidWorks can change the part.
   (u, v) on the plane is origin + u x_axis + v y_axis, which is what
   `add_extruded_profile_on_plane` and `cut_profile_through_plane` take. The
   angle or offset is a dimension, and what is built on the plane follows it.
+- **Parts at an angle on the Front plane**: draw the profile straight and give
+  `rotate_deg` and `about_mm` (the pivot) to `add_extruded_profile` or
+  `cut_profile`; the turned points are dimensioned like any profile.
 - **A shape from two views**: extrude the front view, then cut the side view
   with `cut_profile_through_plane(..., keep_inside=True)`: everything outside
   the side outline goes, and what is left matches both views.

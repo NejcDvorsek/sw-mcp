@@ -670,3 +670,9 @@ def test_add_plane_checks_its_input(s, arguments, message):
         s.add_plane(**arguments)
 
 
+def test_points_turn_counterclockwise_about_a_pivot():
+    turned = SolidWorksSession._turned_points([[30, 20], [20, 30]], 90, [20, 20])
+    assert sum(turned, []) == pytest.approx([20, 30, 10, 20])
+    assert SolidWorksSession._turned_points([[1, 2]], 0, None) == [[1, 2]]  # no turn, untouched
+    with pytest.raises(SolidWorksError, match="about"):
+        SolidWorksSession._turned_points([[1, 2]], 45, [5])

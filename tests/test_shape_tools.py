@@ -152,3 +152,11 @@ def test_a_turned_plane_holds_a_turned_block(part):
     assert box(upright)["size_mm"][0] == pytest.approx(4, abs=1e-4), "the block did not turn with its plane"
 
 
+def test_a_profile_turns_about_a_pivot(part):
+    # a 30 x 10 slot from the left edge, turned 90 degrees about the centre,
+    # opens on the bottom edge instead: x 15..25, y 0..30
+    part.add_box(40, 40, 10)
+    cut = part.cut_profile([[0, 15], [30, 15], [30, 25], [0, 25]], rotate_deg=90, about_mm=[20, 20])
+    assert vol(cut) == pytest.approx(40 * 40 * 10 - 30 * 10 * 10)
+    x, y, _ = cut["mass_properties"]["center_of_mass_mm"]
+    assert x == pytest.approx(20, abs=1e-3) and y > 20, f"the slot was not turned: centre of mass at {x}, {y}"

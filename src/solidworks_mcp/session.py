@@ -750,6 +750,20 @@ class SolidWorksSession:
         return cleaned
 
     @staticmethod
+    def _turned_points(points_mm, rotate_deg, about_mm) -> list:
+        """[x, y] points turned rotate_deg counterclockwise about about_mm (the
+        origin when None); pure, unit-tested."""
+        if not rotate_deg:
+            return points_mm
+        try:
+            cx, cy = (0.0, 0.0) if about_mm is None else (float(about_mm[0]), float(about_mm[1]))
+            pts = [(float(p[0]), float(p[1])) for p in points_mm]
+        except (TypeError, ValueError, IndexError):
+            raise SolidWorksError(f"rotate_deg turns [x, y] points about [x, y] (got about_mm={about_mm}).") from None
+        c, s = math.cos(math.radians(rotate_deg)), math.sin(math.radians(rotate_deg))
+        return [[cx + c * (x - cx) - s * (y - cy), cy + s * (x - cx) + c * (y - cy)] for x, y in pts]
+
+    @staticmethod
     def _corner_groups(corner_radii_mm, count: int) -> list:
         """[(radius_mm, [corner indices]), ...] in corner order; pure (no COM), unit-tested.
 
@@ -1069,7 +1083,8 @@ class SolidWorksSession:
         return face
 
     def add_extruded_profile(self, points_mm: list, depth_mm: float,
-                             name: str = "Extrude", corner_radii_mm=None) -> dict:
+                             name: str = "Extrude", corner_radii_mm=None, rotate_deg: float = 0.0,
+                             about_mm: list | None = None) -> dict:
         """Extrude a closed polygon profile into a solid on the first plane.
 
         points_mm is a list of [x, y] vertices (mm) in the first-plane coordinate
@@ -1077,14 +1092,18 @@ class SolidWorksSession:
         depth_mm along the plane normal. Unlocks arbitrary prismatic shapes
         (L-brackets, T-sections, polygons, ...). corner_radii_mm rounds the
         corners with real sketch fillets: one radius for all, or one per vertex
-        (0 = sharp). Returns mass properties (volume = polygon area * depth; a
-        right-angled corner of radius r loses r^2 (1 - pi/4), a concave one gains it).
+        (0 = sharp). rotate_deg turns the profile counterclockwise about about_mm
+        ([x, y], the origin by default) before it is drawn, for parts at an angle
+        such as a crank at 150 degrees. Returns mass properties (volume = polygon
+        area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
+        concave one gains it).
         """
         model = self._require_model()
         if depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        points_mm = self._turned_points(points_mm, rotate_deg, about_mm)
 
         plane = self._first_ref_plane()
         if plane is None:
@@ -2334,17 +2353,20 @@ class SolidWorksSession:
         return result
 
     def cut_profile(self, points_mm: list, depth_mm: float | None = None,
-                    name: str = "Cut", corner_radii_mm=None) -> dict:
+                    name: str = "Cut", corner_radii_mm=None, rotate_deg: float = 0.0,
+                    about_mm: list | None = None) -> dict:
         """Cut a polygonal pocket/slot from the +Z face, blind or through.
 
         points_mm is a list of [x, y] vertices (mm) in add_box coordinates. The
         polygon is auto-closed and cut into the part: blind by depth_mm, or all
         the way through when depth_mm is None. corner_radii_mm rounds the
-        corners as for add_extruded_profile. Returns mass properties.
+        corners as for add_extruded_profile; rotate_deg turns the profile about
+        about_mm first, as there. Returns mass properties.
         """
         model = self._require_model()
         if not points_mm:
             raise SolidWorksError("No profile points given.")
+        points_mm = self._turned_points(points_mm, rotate_deg, about_mm)
         if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
 

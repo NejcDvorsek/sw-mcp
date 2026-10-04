@@ -18,6 +18,8 @@ All notable changes to this project are documented here. This project follows
   model axis by the right-hand rule, its offset or angle a dimension; it gives
   the plane's origin and axes. `add_extruded_profile_on_plane` extrudes a
   polygon drawn on any plane, such as that one.
+- `rotate_deg` and `about_mm` on `add_extruded_profile` and `cut_profile` turn
+  the profile about a pivot first: a crank at 150 degrees, notches at +/-60.
 
 ## [0.9.0] — 2026-10-03
 

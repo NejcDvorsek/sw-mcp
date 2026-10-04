@@ -130,18 +130,22 @@ async def add_box(width_mm: float, height_mm: float, depth_mm: float,
 
 @mcp.tool()
 async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Extrude",
-                               corner_radii_mm: float | list | None = None) -> dict:
+                               corner_radii_mm: float | list | None = None, rotate_deg: float = 0.0,
+                               about_mm: list | None = None) -> dict:
     """Extrude a closed polygon into a solid: points_mm = [[x,y], ...] in mm.
 
     The polygon (first-plane coordinates, same as add_box) is auto-closed and
     extruded by depth_mm. Unlocks arbitrary prismatic shapes (brackets, profiles,
     polygons). corner_radii_mm rounds the corners with real sketch fillets: one
     radius for all, or one per vertex (0 = sharp); equal radii share one
-    dimension ('radius', else 'r<i>'). Returns mass properties (volume = polygon
-    area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
-    concave one gains it).
+    dimension ('radius', else 'r<i>'). rotate_deg turns the profile
+    counterclockwise about about_mm ([x, y], the origin by default) first: draw
+    a crank or a lug straight, then set it at its angle. Returns mass properties
+    (volume = polygon area * depth; a right-angled corner of radius r loses
+    r^2 (1 - pi/4), a concave one gains it).
     """
-    return await _call(_session.add_extruded_profile, points_mm, depth_mm, name, corner_radii_mm)
+    return await _call(_session.add_extruded_profile, points_mm, depth_mm, name, corner_radii_mm, rotate_deg,
+                       about_mm)
 
 
 @mcp.tool()
@@ -430,14 +434,16 @@ async def add_text_on_face(text: str, face: str, x_mm: float, y_mm: float, z_mm:
 
 @mcp.tool()
 async def cut_profile(points_mm: list, depth_mm: float | None = None, name: str = "Cut",
-                      corner_radii_mm: float | list | None = None) -> dict:
+                      corner_radii_mm: float | list | None = None, rotate_deg: float = 0.0,
+                      about_mm: list | None = None) -> dict:
     """Cut a polygonal pocket/slot from the +Z face: points_mm = [[x,y], ...] in mm.
 
     Auto-closed polygon, cut blind by depth_mm or all the way through when depth_mm
     is omitted. For pockets, slots, cutouts. corner_radii_mm rounds the corners
-    as for add_extruded_profile. Returns mass properties.
+    and rotate_deg turns the profile about about_mm, as for add_extruded_profile
+    (notches at +/-60 degrees around a pivot). Returns mass properties.
     """
-    return await _call(_session.cut_profile, points_mm, depth_mm, name, corner_radii_mm)
+    return await _call(_session.cut_profile, points_mm, depth_mm, name, corner_radii_mm, rotate_deg, about_mm)
 
 
 @mcp.tool()
