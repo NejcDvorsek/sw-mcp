@@ -40,6 +40,12 @@ All notable changes to this project are documented here. This project follows
 - `add_full_round`: rounds a rib's top off between its two closest opposite
   sides, as on a moulded part.
 - `list_edges` gives each edge's ends (`ends_mm`).
+- `add_sketch`: a sketch of lines, arcs (through a point, or flowing on from
+  the segment before) and splines on any plane, fully defined. Segments that
+  meet smoothly get tangent relations and the rest is dimensioned from the
+  origin, so a changed dimension keeps the shape's flow. `extrude_sketch` and
+  `cut_sketch` build on it. A radius of half an edge, which polygon corners
+  refuse, is a pair of tangent arcs here.
 
 ### Fixed
 - `add_lofted_solid` starts every profile at its first vertex. SolidWorks

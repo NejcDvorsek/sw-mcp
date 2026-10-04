@@ -19,9 +19,11 @@ import win32com.client
 from . import binding
 from .constants import (
     SW_CONSTRAINT_COINCIDENT,
+    SW_CONSTRAINT_COLINEAR,
     SW_CONSTRAINT_FIXED,
     SW_CONSTRAINT_HORIZONTAL,
     SW_CONSTRAINT_HORIZONTAL_POINTS,
+    SW_CONSTRAINT_TANGENT,
     SW_CONSTRAINT_VERTICAL,
     SW_CONSTRAINT_VERTICAL_POINTS,
     SW_FULLY_CONSTRAINED,
@@ -262,6 +264,40 @@ class SketchDefiner:
         finally:
             self._resume(paused)
 
+    _CHAIN_RELATIONS = {"tangent": SW_CONSTRAINT_TANGENT, "collinear": SW_CONSTRAINT_COLINEAR,
+                        "horizontal": SW_CONSTRAINT_HORIZONTAL, "vertical": SW_CONSTRAINT_VERTICAL,
+                        "at_origin": SW_CONSTRAINT_COINCIDENT, "origin_x": SW_CONSTRAINT_VERTICAL_POINTS,
+                        "origin_y": SW_CONSTRAINT_HORIZONTAL_POINTS}
+
+    def define_chain(self, plan, segments, points) -> dict:
+        """Carry out a free_sketch plan. segments: the drawn segments, one per
+        chain entity; points: chain point -> its sketch points (more than one
+        where SolidWorks kept twins apart, which get tied). Returns {role: name}."""
+        segments = [binding.wrap(segment, self._mod.ISketchSegment) for segment in segments]
+        paused = self._pause()
+        try:
+            for twins in points.values():
+                for twin in twins[1:]:
+                    self._relate(SW_CONSTRAINT_COINCIDENT, "coincident", twin, twins[0])
+            for kind, *on in plan.relations:
+                if kind in ("tangent", "collinear", "horizontal", "vertical"):
+                    entities = [segments[i] for i in on]
+                else:
+                    entities = [points[on[0]][0], self._origin]
+                self._relate(self._CHAIN_RELATIONS[kind], kind, *entities)
+            dims = {}
+            for dimension in plan.dimensions:
+                kind, index, _ = dimension
+                role = plan.role(dimension)
+                if kind == "radius":
+                    dims[role] = self._radius(segments[index], role)
+                else:
+                    add = self._model.AddHorizontalDimension2 if kind == "x" else self._model.AddVerticalDimension2
+                    dims[role] = self._dimension(add, points[index][0], role)
+            return dims
+        finally:
+            self._resume(paused)
+
     def place_point(self, point, target_mm, names=None) -> dict:
         """Constrain a lone sketch point AT target_mm (sketch coordinates relative
         to the origin), not where it happens to sit: its dimensions get the target
@@ -346,6 +382,17 @@ class SketchDefiner:
         if value_mm is not None:
             dim = binding.wrap(binding.wrap(display, self._mod.IDisplayDimension).GetDimension2(0), self._mod.IDimension)
             dim.SystemValue = mm_to_m(value_mm)
+        return self._named(display, role)
+
+    def _radius(self, segment, role: str) -> str:
+        if not segment.Select4(False, None):
+            raise SolidWorksError(f"Could not select the arc for dimension '{role}'.")
+        arc = binding.wrap(segment, self._mod.ISketchArc)
+        centre = binding.wrap(arc.GetCenterPoint2(), self._mod.ISketchPoint)
+        offset = arc.GetRadius() + _TEXT_OFFSET_M
+        display = self._model.AddRadialDimension2(centre.X + offset, centre.Y + offset, 0.0)
+        if display is None:
+            raise SolidWorksError(f"SolidWorks refused the dimension '{role}'.")
         return self._named(display, role)
 
     def _diameter(self, circle, role: str) -> str:

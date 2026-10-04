@@ -26,6 +26,7 @@ Conventions
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
 - Other orientations: add_plane (an offset, or turned about x/y/z) and build on it with add_extruded_profile_on_plane or cut_profile_through_plane.
 - In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror and cut_profile_through_plane.
+- Flowing outlines (an S-bend, a hub running into a beam): add_sketch with lines, tangent arcs and splines, then extrude_sketch / cut_sketch.
 - A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
 
 Work in small verified steps
@@ -550,6 +551,26 @@ async def extrude_sketch(sketch: str, depth_mm: float, reverse: bool = False, na
     properties.
     """
     return await _call(_session.extrude_sketch, sketch, depth_mm, reverse, name)
+
+
+@mcp.tool()
+async def add_sketch(plane: str, start_mm: list, segments: list, name: str | None = None) -> dict:
+    """Draw a sketch of lines, arcs and splines on a plane, fully defined, to extrude or cut.
+
+    plane: "front", "top", "right" or a plane by name (add_plane). Points are
+    [u, v] in the plane's own axes, which the result gives (origin_mm + u
+    x_axis + v y_axis): front is (x, y), top (x, -z), right (-z, y).
+    The outline starts at start_mm; each segment runs on from where the last
+    ended: {"line": [u, v]}; {"arc": [u, v], "through": [u, v]} (an arc through
+    a middle point); {"arc": [u, v], "tangent": true} (an arc flowing on from
+    the segment before); {"spline": [[u, v], ..., [u, v]]} (through the points,
+    ending at the last). "tangent": true on a line checks that it flows on.
+    End on start_mm to close the outline. Segments that meet smoothly get a
+    tangent relation, the rest is dimensioned from the origin: x<i>/y<i> for
+    the i-th point given (points_mm lists them; start_mm is 0), r<k> for the
+    radius of segment k. Then extrude_sketch / cut_sketch the returned sketch.
+    """
+    return await _call(_session.add_sketch, plane, start_mm, segments, name)
 
 
 @mcp.tool()

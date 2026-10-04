@@ -19,7 +19,7 @@ import pythoncom
 import win32com.client
 import win32gui
 
-from . import __version__, binding
+from . import __version__, binding, free_sketch
 from .constants import (
     DRAWING_FORMATS,
     EXPORT_FORMATS,
@@ -867,7 +867,8 @@ class SolidWorksSession:
                     f"Edge {i}-{j} is {length:g} mm long, but the corner radii at its ends need "
                     f"{need:g} mm of it. Use smaller radii."
                     + (" Arcs that would meet merge into one, which the corners cannot keep: for a "
-                       "circle use add_disc, for round ends add_extruded_slot." if need < length + 1e-6 else "")
+                       "circle use add_disc, for round ends add_extruded_slot, for any outline add_sketch with "
+                       "tangent arcs." if need < length + 1e-6 else "")
                 )
 
     @staticmethod
@@ -3441,6 +3442,102 @@ class SolidWorksSession:
             model.BlankRefGeom()  # construction geometry; keep screenshots clean
         model.ClearSelection2(True)
         return made
+
+    def add_sketch(self, plane: str, start_mm: list, segments: list, name: str | None = None) -> dict:
+        """Draw a chain of lines, arcs and splines on a plane, fully defined (see
+        free_sketch): smooth joints get tangent relations, the rest dimensions
+        from the origin. Returns the sketch's name for extrude_sketch / cut_sketch,
+        its dimensions, the points given (x<i>/y<i> number them) and the plane's
+        frame: [u, v] lies at origin_mm + u x_axis + v y_axis."""
+        model = self._require_model()
+        self._require_part()
+        chain = free_sketch.build_chain(start_mm, segments)
+        plan = free_sketch.plan_chain(chain)
+        if not plan.fully_defined:
+            raise SolidWorksError("Could not work out the relations and dimensions for this sketch.")
+        ref, label = self._named_plane(plane)
+        frame = self._plane_frame(ref)
+        model.ClearSelection2(True)
+        if not ref.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the {label}.")
+        before = self._profile_feature_names()
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sk.InsertSketch(True)
+        try:
+            drawn = self._draw_chain(sk, chain)
+            sketch, definer = self._open_sketch_definer(sk)
+            dimensions = definer.define_chain(plan, drawn, self._chain_sketch_points(drawn, chain))
+            fully_defined = definer.fully_defined()
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)
+        new_names = self._profile_feature_names() - before
+        if len(new_names) != 1:
+            raise SolidWorksError(f"Could not identify the sketch just drawn (found {len(new_names)} new sketches).")
+        sketch_name = new_names.pop()
+        if name:
+            feature = self._history_feature(sketch_name)
+            feature.Name = name
+            sketch_name = feature.Name
+            dimensions = {role: f"{dim.split('@')[0]}@{sketch_name}" for role, dim in dimensions.items()}
+        if not fully_defined:
+            raise SolidWorksError(f"{sketch_name} came out under- or over-defined; this is a bug, please report it.")
+        return {"ok": True, "sketch": sketch_name, "closed": chain.closed,
+                "points_mm": [[round(c, 6) for c in chain.points[i]] for i in chain.user_points],
+                "dimensions": dimensions, "fully_defined": True,
+                "origin_mm": frame["origin_mm"], "x_axis": frame["x_axis"], "y_axis": frame["y_axis"]}
+
+    @staticmethod
+    def _draw_chain(sk, chain) -> list:
+        """Draw the chain's segments in the open sketch, with AddToDB so that no
+        automatic relation moves them; consecutive segments share their points."""
+        drawn = []
+        sk.AddToDB = True
+        try:
+            for k, entity in enumerate(chain.entities):
+                if entity[0] == "line":
+                    (u1, v1), (u2, v2) = chain.points[entity[1]], chain.points[entity[2]]
+                    segment = sk.CreateLine(mm_to_m(u1), mm_to_m(v1), 0.0, mm_to_m(u2), mm_to_m(v2), 0.0)
+                elif entity[0] == "arc":
+                    (su, sv), (eu, ev), (cu, cv) = (chain.points[i] for i in entity[1:4])
+                    segment = sk.CreateArc(mm_to_m(cu), mm_to_m(cv), 0.0, mm_to_m(su), mm_to_m(sv), 0.0,
+                                           mm_to_m(eu), mm_to_m(ev), 0.0, entity[4])
+                else:
+                    coords = [mm_to_m(c) for i in entity[1] for c in (*chain.points[i], 0.0)]
+                    segment = sk.CreateSpline2(win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, coords),
+                                               False)
+                if not segment:
+                    raise SolidWorksError(f"SolidWorks could not draw segment {k} ({entity[0]}).")
+                drawn.append(segment)
+        finally:
+            sk.AddToDB = False
+        return drawn
+
+    def _chain_sketch_points(self, drawn, chain) -> dict:
+        """chain point -> the sketch points SolidWorks made there, matched by position."""
+        found = {}
+        for entity, segment in zip(chain.entities, drawn):
+            if entity[0] == "line":
+                line = binding.wrap(segment, self._mod.ISketchLine)
+                candidates = [line.GetStartPoint2(), line.GetEndPoint2()]
+            elif entity[0] == "arc":
+                arc = binding.wrap(segment, self._mod.ISketchArc)
+                candidates = [arc.GetStartPoint2(), arc.GetEndPoint2(), arc.GetCenterPoint2()]
+            else:
+                candidates = list(binding.wrap(segment, self._mod.ISketchSpline).GetPoints2() or ())
+            for candidate in candidates:
+                point = binding.wrap(candidate, self._mod.ISketchPoint)
+                at = (m_to_mm(point.X), m_to_mm(point.Y))
+                index = next((i for i, p in enumerate(chain.points) if math.dist(p, at) <= 1e-6), None)
+                if index is None:
+                    raise SolidWorksError(f"SolidWorks drew a point at ({at[0]:g}, {at[1]:g}) that the sketch does not have.")
+                twins = found.setdefault(index, [])
+                if all(tuple(t.GetID()) != tuple(point.GetID()) for t in twins):
+                    twins.append(point)
+        missing = [chain.points[i] for i in range(len(chain.points)) if i not in found]
+        if missing:
+            raise SolidWorksError(f"SolidWorks did not draw the points {missing}.")
+        return found
 
     def _plane_frame(self, plane) -> dict:
         """How a sketch on `plane` lies in the model: origin (mm), normal and the

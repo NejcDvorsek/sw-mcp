@@ -106,7 +106,7 @@ def test_radii_whose_arcs_would_meet_point_to_the_disc_and_slot_tools():
     exactly that shape."""
     check = SolidWorksSession._check_corner_radii
     rectangle = [(0, 0), (40, 0), (40, 20), (0, 20)]
-    with pytest.raises(SolidWorksError, match="add_disc, for round ends add_extruded_slot"):
+    with pytest.raises(SolidWorksError, match="add_disc, for round ends add_extruded_slot, for any outline add_sketch"):
         check(rectangle, [(10, [0, 1, 2, 3])])
     with pytest.raises(SolidWorksError, match=r"Use smaller radii\.$"):
         check(rectangle, [(12, [0, 1, 2, 3])])  # past meeting: just too big

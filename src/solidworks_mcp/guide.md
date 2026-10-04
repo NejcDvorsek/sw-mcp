@@ -126,9 +126,22 @@ stray drag in SolidWorks can change the part.
   0.2234 r from the corner along both edges (Pappus). A radius too big for its
   edges is refused before anything is sketched, with the edge that is too
   short; so are arcs that would meet, as SolidWorks merges them: a circle is
-  `add_disc`, round ends are `add_extruded_slot`. Profiles over 24 points cannot be
+  `add_disc`, round ends are `add_extruded_slot`, and any other outline is
+  `add_sketch` with tangent arcs. Profiles over 24 points cannot be
   rounded (they are fixed, not dimensioned). For a plain rounded block,
   `add_box` plus `add_fillet(edges="z")` works as well.
+- **Flowing outlines** (an S-bend in a leg, a hub running into a beam):
+  `add_sketch(plane, start_mm, segments)` draws a chain on any plane:
+  `{"line": [u, v]}`, `{"arc": [u, v], "through": [u, v]}`, `{"arc": [u, v],
+  "tangent": true}` (flowing on from the segment before) and `{"spline": [[u,
+  v], ...]}`; end on the start to close it. Points are [u, v] in the plane's
+  axes, which the result gives: front (x, y), top (x, -z), right (-z, y).
+  Where segments flow into each other the sketch gets tangent relations, and
+  the rest is dimensioned from the origin (`x<i>`/`y<i>` for the i-th point,
+  `r<k>` for the radius of a free arc), so a changed dimension keeps the
+  flow. Then `extrude_sketch` or `cut_sketch` the returned sketch. A tangent
+  arc turns towards its end point: from (30, 0) heading +x, an arc to (50, 20)
+  is a quarter circle round (30, 20).
 - **Side-view shapes** (wedges, windows, symmetric recesses):
   `cut_profile_through_plane` on the Front/Top/Right plane or another plane by
   name, through all or a depth centred on the plane.

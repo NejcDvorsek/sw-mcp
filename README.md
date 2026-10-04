@@ -35,12 +35,12 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. 74 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 75 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 536 tests; each feature's integration test
+- **Tested against real SolidWorks.** 563 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -232,6 +232,7 @@ The server speaks MCP over **stdio**.
 | `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
 | `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `read_sketch(name)` | A sketch read back in model coordinates: lines, arcs, circles, splines, its dimensions, fully defined or not |
+| `add_sketch(plane, start_mm, segments, name)` | Sketch an outline of lines, arcs and splines on any plane, fully defined: tangent where it flows, dimensioned from the origin |
 | `extrude_sketch(sketch, depth_mm, reverse, name)` / `cut_sketch(sketch, depth_mm, reverse, name)` | Build on an existing sketch by name (one a person drew): extrude it, or cut it blind or through all |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
 | `list_features()` | The part's history in tree order (name, type, suppressed); flags features that fail to rebuild and sketches that are not fully defined |

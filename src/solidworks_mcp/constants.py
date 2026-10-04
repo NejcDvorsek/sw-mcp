@@ -122,6 +122,8 @@ SW_CONSTRAINT_FIXED = 17
 SW_CONSTRAINT_HORIZONTAL_POINTS = 25   # two points on one horizontal line
 SW_CONSTRAINT_VERTICAL_POINTS = 26     # two points on one vertical line
 SW_CONSTRAINT_RADIUS = 3               # the relation behind a radius dimension
+SW_CONSTRAINT_TANGENT = 6
+SW_CONSTRAINT_COLINEAR = 27
 SW_RELATIONS_ALL = 0                   # swSketchRelationFilterType_e, for GetRelations
 
 # swTextJustification_e (IModelDoc2.InsertSketchText): the point is the text's
