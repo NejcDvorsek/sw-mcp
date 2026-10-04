@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `add_revolved_profile(axis_mm=[[x1, y1], [x2, y2]])` turns a profile on the
+  Front plane about any line in it, not only the Y axis: a hub turned about its
+  own centre. The axis ends are dimensions.
+
 ## [0.9.0] — 2026-10-03
 
 ### Added

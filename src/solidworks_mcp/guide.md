@@ -12,7 +12,10 @@ short connect-time instructions first; this is the long version.
   `cut_profile` and the lofts all use this frame.
   - `add_box` spans x 0..width, y 0..height, z 0..depth (corner at the origin).
   - `add_disc` is centred on the origin, `add_cylinder` and
-    `add_revolved_profile` revolve about the **Y** axis.
+    `add_revolved_profile` revolve about the **Y** axis; give
+    `add_revolved_profile` an `axis_mm` (two points) to turn [x, y] points about
+    any line on the Front plane instead (Pappus still holds: area x 2 pi x
+    the centroid's distance from that line).
   - Sweeps: the path lies on the Front plane. For `add_swept_profile` it **must
     start at the origin heading +X**, and the profile is drawn on the Right
     plane (u along +Y, v along +Z).

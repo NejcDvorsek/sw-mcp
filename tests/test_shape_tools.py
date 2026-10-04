@@ -77,3 +77,26 @@ def test_keep_inside_turns_a_side_view_into_the_shape(part):
     wedge = part.cut_profile_through_plane([[0, 0, 0], [0, 20, 0], [0, 0, 6]], "right", keep_inside=True)
     assert vol(wedge) == pytest.approx(40 * 20 * 6 / 2, abs=1e-3), "the triangle was cut away, not kept"
     assert wedge["mass_properties"]["bounding_box_mm"]["max_mm"][2] == pytest.approx(6, abs=1e-4)
+
+
+# --- revolving about any axis; rounding one feature's edges ---------------------
+
+
+def test_a_revolve_about_a_slanted_axis_follows_pappus(part):
+    """A right triangle with one leg on the axis y = x turns into a cone of
+    radius and height sqrt(200): pi r^2 h / 3."""
+    cone = part.add_revolved_profile([[0, 0], [10, 10], [20, 0]], axis_mm=[[0, 0], [10, 10]])
+    side = math.sqrt(200)
+    assert vol(cone) == pytest.approx(math.pi * side ** 2 * side / 3, rel=1e-6)
+    assert cone["fully_defined"] is True
+
+
+def test_the_axis_of_a_revolve_is_a_dimension(part):
+    # a ring about the vertical line x = 50: the square x 60..70 turns at radius 15
+    ring = part.add_revolved_profile([[60, 0], [70, 0], [70, 10], [60, 10]], axis_mm=[[50, 0], [50, 10]])
+    assert vol(ring) == pytest.approx(100 * 2 * math.pi * 15, rel=1e-6)
+    [axis_x] = [d["name"] for d in part.list_dimensions()["dimensions"] if d["value"] == pytest.approx(50)]
+    moved = part.set_dimension(axis_x, 45)  # the axis moves away: radius 20
+    assert vol(moved) == pytest.approx(100 * 2 * math.pi * 20, rel=1e-6)
+
+

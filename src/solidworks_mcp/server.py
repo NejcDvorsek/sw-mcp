@@ -190,17 +190,20 @@ async def add_cone(bottom_diameter_mm: float, top_diameter_mm: float,
 
 @mcp.tool()
 async def add_revolved_profile(profile_mm: list, angle_deg: float = 360.0,
-                               name: str = "Revolve", corner_radii_mm: float | list | None = None) -> dict:
-    """Revolve a closed (radius, height) profile about the axis at radius 0.
+                               name: str = "Revolve", corner_radii_mm: float | list | None = None,
+                               axis_mm: list | None = None) -> dict:
+    """Revolve a closed profile on the Front plane about an axis in it.
 
-    profile_mm = [[r, z], …] in mm: r = distance from the axis, z = position along
-    it. Auto-closed and spun angle_deg (default 360°). Points at r=0 give a solid
-    (turned shafts, vases); a profile offset from the axis gives a ring/torus. The
-    profile may not cross the axis. corner_radii_mm rounds corners as for
-    add_extruded_profile (not those on the axis). Returns mass properties. Use
-    new_part first.
+    Without axis_mm: profile_mm = [[r, z], …] in mm, r = distance from the Y axis,
+    z = position along it. With axis_mm = [[x1, y1], [x2, y2]]: profile_mm gives
+    [x, y] points and the axis is the line through those two points, anywhere and
+    at any angle (a hub turned about its own centre). Auto-closed and spun
+    angle_deg (default 360°). Points on the axis give a solid (shafts, vases); a
+    profile away from it gives a ring. The profile may not cross the axis.
+    corner_radii_mm rounds corners as for add_extruded_profile (not those on the
+    axis). Returns mass properties. Use new_part first.
     """
-    return await _call(_session.add_revolved_profile, profile_mm, angle_deg, name, corner_radii_mm)
+    return await _call(_session.add_revolved_profile, profile_mm, angle_deg, name, corner_radii_mm, axis_mm)
 
 
 @mcp.tool()

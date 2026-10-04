@@ -1240,31 +1240,52 @@ class SolidWorksSession:
         return self._finish_feature(revolve, name, **sketch)
 
     def add_revolved_profile(self, profile_mm: list, angle_deg: float = 360.0,
-                             name: str = "Revolve", corner_radii_mm=None) -> dict:
-        """Revolve a closed (radius, height) profile about the axis at radius 0.
+                             name: str = "Revolve", corner_radii_mm=None, axis_mm=None) -> dict:
+        """Revolve a closed profile on the Front plane about an axis in it.
 
-        profile_mm = [[r, z], ...] in mm: r is the distance from the revolve axis,
-        z the position along it. The polygon is auto-closed and spun `angle_deg`
-        (default 360) about r=0. Points touching the axis (r=0) give a solid like
-        add_cone; a profile offset from the axis gives a ring/torus cross-section.
-        The profile may not cross the axis (no negative r). corner_radii_mm
-        rounds corners as for add_extruded_profile (rounded edges of a turned
-        part); corners on the axis cannot be rounded. Returns mass properties.
+        Without axis_mm: profile_mm = [[r, z], ...] in mm, r the distance from
+        the revolve axis (the Y axis), z the position along it. With axis_mm =
+        [[x1, y1], [x2, y2]]: profile_mm gives [x, y] points on the Front plane
+        and the axis is the line through the two points, at any place and angle
+        (a hub turned about its own centre); its ends are dimensions too. The
+        polygon is auto-closed and spun `angle_deg` (default 360). Points on the
+        axis give a solid like add_cone; a profile away from it gives a ring.
+        The profile may not cross the axis. corner_radii_mm rounds corners as for
+        add_extruded_profile; corners on the axis cannot be rounded. Returns mass
+        properties.
         """
-        model = self._require_model()
         pts = self._clean_polygon(profile_mm)
-        if any(r < -1e-9 for r, _ in pts):
-            raise SolidWorksError("radius (first coordinate) cannot be negative -- the profile may not cross the axis.")
-        if all(abs(r) < 1e-9 for r, _ in pts):
-            raise SolidWorksError("The profile lies entirely on the axis (all radii are 0).")
+        if axis_mm is None:
+            if any(r < -1e-9 for r, _ in pts):
+                raise SolidWorksError("radius (first coordinate) cannot be negative -- the profile may not cross "
+                                      "the axis.")
+            z_vals = [z for _, z in pts]
+            if max(z_vals) - min(z_vals) < 1e-9:
+                raise SolidWorksError("The profile is flat along the axis (one z for every point): give it height.")
+            start, end = (0.0, min(z_vals)), (0.0, max(z_vals))
+        else:
+            start, end = self._revolve_axis(axis_mm)
+        offsets = [self._offset_from_line(start, end, p) for p in pts]
+        if min(offsets) < -1e-9 and max(offsets) > 1e-9:
+            raise SolidWorksError("The profile crosses the axis: put it on one side of the axis line.")
+        if all(abs(d) < 1e-9 for d in offsets):
+            raise SolidWorksError("The profile lies entirely on the axis.")
+        on_axis_points = [abs(d) < 1e-9 for d in offsets]
+        lone = [i for i, on in enumerate(on_axis_points)
+                if on and not (on_axis_points[i - 1] or on_axis_points[(i + 1) % len(pts)])]
+        if lone:
+            # the solid would pinch to a point there, which SolidWorks refuses (verified)
+            raise SolidWorksError(f"Point(s) {lone} touch the axis on their own: a profile may not meet its axis "
+                                  "in a single point. Move it off the axis, or lay a whole edge on it.")
         if not 0.0 < angle_deg <= 360.0:
             raise SolidWorksError(f"angle must be in (0, 360] (got {angle_deg}).")
         corners = self._profile_corners(pts, corner_radii_mm)
-        on_axis = sorted(i for _, group in corners[1] for i in group if abs(pts[i][0]) < 1e-9)
+        on_axis = sorted(i for _, group in corners[1] for i in group if abs(offsets[i]) < 1e-9)
         if on_axis:
             raise SolidWorksError(
-                f"Corner(s) {on_axis} lie on the axis (r = 0) and cannot be rounded; round the outer edges instead."
+                f"Corner(s) {on_axis} lie on the axis and cannot be rounded; round the outer edges instead."
             )
+        model = self._require_model()
 
         plane = self._first_ref_plane()
         if plane is None:
@@ -1272,12 +1293,11 @@ class SolidWorksSession:
         if not plane.Select2(False, 0):
             raise SolidWorksError("Could not select the reference plane.")
 
-        z_vals = [z for _, z in pts]
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)
         try:
-            lines = self._draw_polyline(sk, [(mm_to_m(r), mm_to_m(z)) for r, z in pts])
-            axis = self._draw_centerline(sk, 0.0, mm_to_m(min(z_vals)), 0.0, mm_to_m(max(z_vals)))
+            lines = self._draw_polyline(sk, [(mm_to_m(x), mm_to_m(y)) for x, y in pts])
+            axis = self._draw_centerline(sk, *(mm_to_m(c) for c in start), *(mm_to_m(c) for c in end))
             sketch = self._round_corners(sk, lines, corners[1], self._define_sketch(sk, lines + [axis]))
         finally:
             model.ClearSelection2(True)
@@ -1292,6 +1312,24 @@ class SolidWorksSession:
         if revolve is None:
             raise SolidWorksError("FeatureRevolve2 failed (None). Is the profile closed and valid?")
         return self._finish_feature(revolve, name, **sketch)
+
+    @staticmethod
+    def _revolve_axis(axis_mm) -> tuple:
+        """[[x1, y1], [x2, y2]] -> two distinct (x, y) points (mm); pure, unit-tested."""
+        try:
+            (x1, y1), (x2, y2) = axis_mm
+            start, end = (float(x1), float(y1)), (float(x2), float(y2))
+        except (TypeError, ValueError):
+            raise SolidWorksError(f"axis_mm needs two points [[x1, y1], [x2, y2]] (got {axis_mm}).") from None
+        if math.dist(start, end) < 1e-6:
+            raise SolidWorksError("The two axis points coincide: give two points on the axis.")
+        return start, end
+
+    @staticmethod
+    def _offset_from_line(start, end, point) -> float:
+        """Signed distance (mm) of `point` from the line start-end: which side, and how far."""
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        return (dx * (point[1] - start[1]) - dy * (point[0] - start[0])) / math.hypot(dx, dy)
 
     def _draw_path_on_front(self, model, path_mm, bend_radius_mm) -> tuple:
         """Draw a rounded polyline path on the Front plane.

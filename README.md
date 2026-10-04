@@ -194,7 +194,7 @@ The server speaks MCP over **stdio**.
 | `add_cylinder(diameter_mm, height_mm, name)` | Cylinder by revolving a profile 360° about an axis (Y axis) |
 | `add_disc(diameter_mm, thickness_mm, name, x_mm, y_mm)` | Disc/puck/flange: circle extruded along +Z, centred at (x, y) (holes/patterns compose) |
 | `add_cone(bottom_diameter_mm, top_diameter_mm, height_mm, name)` | Cone/frustum by revolve (top Ø = 0 → full cone) |
-| `add_revolved_profile(profile_mm, angle_deg, name, corner_radii_mm)` | Revolve any closed `(radius, height)` profile about the axis (shafts, vases, rings); `corner_radii_mm` rounds its edges |
+| `add_revolved_profile(profile_mm, angle_deg, name, corner_radii_mm, axis_mm)` | Revolve any closed `(radius, height)` profile about the Y axis (shafts, vases, rings), or `[x, y]` points about any line `axis_mm` on the Front plane; `corner_radii_mm` rounds its edges |
 | `add_swept_pipe(path_mm, diameter_mm, bend_radius_mm, name)` | Sweep a round profile along a 2D path with rounded bends (pipes, tubes, rods) |
 | `add_swept_profile(profile_mm, path_mm, bend_radius_mm, name, corner_radii_mm)` | Sweep any closed cross-section along a 2D path (rails, gaskets, trim, channels); `corner_radii_mm` rounds the cross-section |
 | `add_lofted_solid(profiles_mm, heights_mm, name)` | Loft/blend 2+ polygon profiles on stacked parallel planes (transitions, adapters) |

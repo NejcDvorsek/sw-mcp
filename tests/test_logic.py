@@ -578,3 +578,44 @@ def test_check_printability_checks_its_input(s, arguments, message):
 def test_a_drawing_is_a_pdf_or_a_slddrw(s):
     with pytest.raises(SolidWorksError, match="pdf or slddrw"):
         s.make_drawing("part.png")
+
+
+# --- revolving about any axis ---------------------------------------------------
+
+
+def test_a_revolve_axis_is_two_distinct_points():
+    assert SolidWorksSession._revolve_axis([[0, 0], [10, 10]]) == ((0.0, 0.0), (10.0, 10.0))
+    with pytest.raises(SolidWorksError, match="coincide"):
+        SolidWorksSession._revolve_axis([[5, 5], [5, 5]])
+    with pytest.raises(SolidWorksError, match="two points"):
+        SolidWorksSession._revolve_axis([[0, 0, 0]])
+
+
+def test_the_offset_from_a_slanted_axis_tells_side_and_distance():
+    offset = SolidWorksSession._offset_from_line
+    assert offset((0, 0), (10, 10), (15, 5)) == pytest.approx(-math.sqrt(50))
+    assert offset((0, 0), (10, 10), (5, 15)) == pytest.approx(math.sqrt(50))
+    assert offset((0, 0), (10, 10), (20, 20)) == pytest.approx(0)
+
+
+@pytest.mark.parametrize("profile,message", [
+    ([[10, 0], [20, 0], [20, 10], [0, 10]], "crosses the axis"),   # (0, 10) lies across y = x
+    ([[0, 0], [5, 5], [10, 10]], "entirely on the axis"),
+    ([[10, 0], [20, 0], [20, 10], [10, 10]], r"Point\(s\) \[3\] touch the axis on their own"),  # a pinch
+])
+def test_a_profile_must_stay_on_one_side_of_its_axis(s, profile, message):
+    with pytest.raises(SolidWorksError, match=message):
+        s.add_revolved_profile(profile, axis_mm=[[0, 0], [10, 10]])
+
+
+def test_a_corner_on_a_slanted_axis_cannot_be_rounded(s):
+    # the cone's corner (10, 10) lies on the axis y = x, on the edge it turns about
+    with pytest.raises(SolidWorksError, match=r"Corner\(s\) \[1\] lie on the axis"):
+        s.add_revolved_profile([[0, 0], [10, 10], [20, 0]], axis_mm=[[0, 0], [10, 10]], corner_radii_mm=[0, 2, 0])
+
+
+def test_a_profile_that_meets_the_y_axis_in_one_point_is_refused_too(s):
+    """SolidWorks refuses a solid that pinches to a point on its axis; a whole
+    edge on the axis (a cone) is fine."""
+    with pytest.raises(SolidWorksError, match="touch the axis on their own"):
+        s.add_revolved_profile([[0, 5], [5, 0], [10, 5], [5, 10]])  # a diamond touching r = 0 at (0, 5)
