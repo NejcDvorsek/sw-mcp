@@ -52,8 +52,10 @@ from .constants import (
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
     SW_FEATURE_SCOPE_ALL_BODIES,
+    SW_FILLET_OPT_STRAIGHT_TRANSITION,
     SW_FILLET_OPT_UNIFORM_RADIUS,
     SW_FILLET_TYPE_SIMPLE,
+    SW_FILLET_TYPE_VARIABLE,
     SW_MARK_MIRROR_BODY,
     SW_MARK_MIRROR_FEATURE,
     SW_MARK_MIRROR_PLANE,
@@ -2798,16 +2800,19 @@ class SolidWorksSession:
             raise SolidWorksError("FeatureCut4 failed (None). Does the slot fit on the +Z face?")
         return self._with_depth(self._finish_feature(cut, name, **sketch), depth_mm)
 
-    def add_fillet(self, radius_mm: float, edges: str = "all", name: str = "Fillet") -> dict:
+    def add_fillet(self, radius_mm: float, edges: str = "all", name: str = "Fillet",
+                   radii_at_mm: list | None = None) -> dict:
         """Round edges of the part's solid body with one constant radius.
 
         edges: 'all' (default); a world axis 'x'|'y'|'z' (straight edges parallel
         to it, e.g. 'z' = the depth edges of an add_box block); a face outline
         like '+z:outline' (the outer edges of the top face, not those of holes in
         it); every edge of one feature, 'feature:Boss'; or explicit indices like
-        '2,5' from list_edges. Returns how many
-        edges were filleted and the resulting mass properties (volume drops as
-        convex edges are rounded off).
+        '2,5' from list_edges. radii_at_mm = [[x, y, z, r], ...] makes the radius
+        vary: r at the edge end at each point (list_edges gives the ends),
+        radius_mm at the other ends, straight in between; 'vertex_radii' names
+        each end's radius dimension. Returns how many edges were filleted and the
+        resulting mass properties (volume drops as convex edges are rounded off).
         """
         model = self._require_model()
         if radius_mm <= 0:
@@ -2817,6 +2822,8 @@ class SolidWorksSession:
         edge_count = self._select_edges(body, edges)
         if edge_count == 0:
             raise SolidWorksError(f"No edges found for selector '{edges}'.")
+        if radii_at_mm:
+            return self._variable_fillet(radius_mm, radii_at_mm, edge_count, name)
 
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         fillet = feat_mgr.FeatureFillet3(
@@ -2833,6 +2840,98 @@ class SolidWorksSession:
                 "FeatureFillet3 failed (None). Is the radius too large for the geometry?"
             )
         return self._finish_feature(fillet, name, edges_filleted=edge_count)
+
+    _VERTEX_TOLERANCE_MM = 0.01
+
+    def _variable_fillet(self, radius_mm: float, radii_at_mm, edge_count: int, name: str) -> dict:
+        """Fillet the selected edges with a radius that runs straight from end to
+        end: radii_at_mm at the ends there, radius_mm at the others."""
+        ends = self._selected_edge_ends()
+        radii = self._vertex_radii(ends, radii_at_mm, radius_mm)
+        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        fillet = feat_mgr.FeatureFillet3(
+            SW_FILLET_OPT_STRAIGHT_TRANSITION, mm_to_m(radius_mm), 0.0, 0.0, SW_FILLET_TYPE_VARIABLE, 0, 0,
+            win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, [mm_to_m(r) for r in radii]),  # one per end
+            None, None, None, None, None, None,
+        )
+        if fillet is None:
+            raise SolidWorksError("FeatureFillet3 failed (None). Is a radius too large for the geometry?")
+        result = self._finish_feature(fillet, name, edges_filleted=edge_count)
+        feature = binding.wrap(fillet, self._mod.IFeature)
+        self._check_vertex_radii(feature, dict(zip(ends, radii)))
+        values = {d["name"]: d["value"] for d in self._dimension_entries(feature)}
+        result["vertex_radii"] = []
+        for k, (end, radius) in enumerate(zip(ends, radii)):
+            dimension = f"{self._vertex_radius_dimension(k)}@{result['feature']}"
+            if values.get(dimension) is None or abs(values[dimension] - radius) > 1e-6:
+                raise SolidWorksError(f"Could not find the dimension of the radius at {list(end)} ({dimension}).")
+            result["vertex_radii"].append({"at_mm": list(end), "radius_mm": radius, "dimension": dimension})
+        return result
+
+    def _vertex_mm(self, vertex) -> tuple:
+        return tuple(round(m_to_mm(c), 4) for c in binding.wrap(vertex, self._mod.IVertex).GetPoint())
+
+    def _selected_edge_ends(self) -> list:
+        """The ends of the selected edges in the order SolidWorks numbers them for
+        a variable fillet: edge by edge as selected, start before end, each once
+        (verified)."""
+        selmgr = binding.wrap(self._model.SelectionManager, self._mod.ISelectionMgr)
+        ends = []
+        for i in range(1, selmgr.GetSelectedObjectCount2(-1) + 1):
+            edge = binding.wrap(selmgr.GetSelectedObject6(i, -1), self._mod.IEdge)
+            vertices = [edge.GetStartVertex(), edge.GetEndVertex()]
+            if None in vertices:
+                raise SolidWorksError("A variable fillet needs edges with two ends; a full circle has none.")
+            for vertex in vertices:
+                position = self._vertex_mm(vertex)
+                if position not in ends:
+                    ends.append(position)
+        return ends
+
+    @classmethod
+    def _vertex_radii(cls, ends_mm, radii_at_mm, default_mm) -> list:
+        """The radius at each edge end: r where a point [x, y, z, r] lies on that
+        end, default_mm at the others; pure, unit-tested."""
+        radii = [default_mm] * len(ends_mm)
+        placed = set()
+        for entry in radii_at_mm:
+            try:
+                x, y, z, radius = (float(v) for v in entry)
+            except (TypeError, ValueError):
+                raise SolidWorksError(f"radii_at_mm takes [x, y, z, radius] per edge end (got {entry}).") from None
+            if radius <= 0:
+                raise SolidWorksError(f"A variable fillet needs a radius > 0 at every end (got {radius:g}).")
+            at = next((k for k, end in enumerate(ends_mm) if math.dist(end, (x, y, z)) <= cls._VERTEX_TOLERANCE_MM), None)
+            if at is None:
+                listed = ", ".join(f"({', '.join(f'{c:g}' for c in end)})" for end in ends_mm)
+                raise SolidWorksError(f"No end of the edges at ({x:g}, {y:g}, {z:g}); they end at {listed}.")
+            if at in placed:
+                raise SolidWorksError(f"radii_at_mm gives the end at ({x:g}, {y:g}, {z:g}) a radius twice.")
+            placed.add(at)
+            radii[at] = radius
+        return radii
+
+    @staticmethod
+    def _vertex_radius_dimension(k: int) -> str:
+        """SolidWorks names the radii of a variable fillet D0, D01, D02, ... in the
+        order it got them (verified up to D011)."""
+        return "D0" if k == 0 else f"D0{k}"
+
+    def _check_vertex_radii(self, feature, radius_at: dict) -> None:
+        """Read back the radius SolidWorks gave each end: the radii go in as a bare
+        list, so a different numbering would put them on the wrong ends unseen."""
+        data = binding.wrap(feature.GetDefinition(), self._mod.IVariableFilletFeatureData2)
+        if not data.AccessSelections(self._model, None):
+            raise SolidWorksError("Could not read the variable fillet back.")
+        try:
+            for i in range(data.FilletEdgeCount):
+                edge = binding.wrap(data.GetFilletEdgeAtIndex(i), self._mod.IEdge)
+                for vertex in (edge.GetStartVertex(), edge.GetEndVertex()):
+                    end, got = self._vertex_mm(vertex), m_to_mm(data.GetRadius(vertex))
+                    if end not in radius_at or abs(got - radius_at[end]) > 1e-6:
+                        raise SolidWorksError(f"SolidWorks put R{got:g} at {list(end)}, not the radius asked for there.")
+        finally:
+            data.ReleaseSelectionAccess()
 
     def add_chamfer(self, distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
         """Chamfer edges of the part's solid body at 45 degrees (equal distance).
@@ -3948,7 +4047,7 @@ class SolidWorksSession:
         return {"axis": axis, "point_mm": point, "radius_mm": round(m_to_mm(params[6]), 4)}
 
     def list_edges(self) -> dict:
-        """Inspect the solid body's edges: index, type; lines also give axis/length/midpoint."""
+        """Inspect the solid body's edges: index, type and ends; lines also give axis/length/midpoint."""
         self._require_model()
         body = self._solid_body()
         edges = body.GetEdges()
@@ -3972,6 +4071,9 @@ class SolidWorksSession:
                     entry["length_mm"] = round(m_to_mm(length), 3)
                     entry["midpoint_mm"] = [round(m_to_mm((p1[k] + p2[k]) / 2), 3) for k in range(3)]
                     entry["axis"] = self._axis_of(dx, dy, dz, length)
+            ends = [edge.GetStartVertex(), edge.GetEndVertex()]
+            if None not in ends:  # a full circle has no ends
+                entry["ends_mm"] = [list(self._vertex_mm(vertex)) for vertex in ends]
             out.append(entry)
         return {"ok": True, "count": len(out), "edges": out}
 

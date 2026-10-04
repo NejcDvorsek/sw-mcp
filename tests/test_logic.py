@@ -712,3 +712,29 @@ def test_a_loft_profile_starts_on_plus_x_or_at_its_first_vertex():
 def test_combine_bodies_knows_add_subtract_and_common(s):
     with pytest.raises(SolidWorksError, match="operation must be one of"):
         s.combine_bodies("glue", "Body1")
+
+
+# --- variable fillets, full rounds ---------------------------------------------------
+
+
+def test_a_variable_fillet_gives_each_edge_end_its_radius():
+    """Ends without a point keep the fillet's own radius."""
+    ends = [(0.0, 0.0, 10.0), (40.0, 0.0, 10.0), (0.0, 20.0, 10.0)]
+    assert SolidWorksSession._vertex_radii(ends, [[0, 20, 10, 6], [40, 0, 10, 4]], 2) == [2, 4, 6]
+
+
+@pytest.mark.parametrize("radii_at,match", [
+    ([[20, 0, 10, 5]], r"No end of the edges at \(20, 0, 10\).*\(0, 0, 10\), \(40, 0, 10\)"),
+    ([[0, 0, 10, 5], [0, 0, 10.0001, 6]], "twice"),
+    ([[0, 0, 10, 0]], "radius > 0"),
+    ([[0, 0, 10]], r"\[x, y, z, radius\]"),
+], ids=["off the ends", "twice", "zero", "short"])
+def test_a_variable_fillet_refuses_radii_it_cannot_place(radii_at, match):
+    with pytest.raises(SolidWorksError, match=match):
+        SolidWorksSession._vertex_radii([(0.0, 0.0, 10.0), (40.0, 0.0, 10.0)], radii_at, 2)
+
+
+def test_variable_fillet_radii_are_named_like_solidworks_does():
+    """SolidWorks numbers them in the order of the radii it got (verified up to 12)."""
+    assert [SolidWorksSession._vertex_radius_dimension(k) for k in (0, 1, 2, 10, 11)] == \
+        ["D0", "D01", "D02", "D010", "D011"]

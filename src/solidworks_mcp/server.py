@@ -566,16 +566,20 @@ async def cut_sketch(sketch: str, depth_mm: float | None = None, reverse: bool =
 
 
 @mcp.tool()
-async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet") -> dict:
+async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
+                     radii_at_mm: list | None = None) -> dict:
     """Round edges of the current part with one constant radius (mm).
 
     edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis,
     a face outline like "+z:outline" (the outer edges of the top face, not those
     of holes in it), every edge of one feature like "feature:Boss" (its top and
     where it meets the part: a moulded look), or explicit indices like "2,5" from
-    list_edges. Returns the number of edges filleted and the mass properties.
+    list_edges. radii_at_mm = [[x, y, z, r], ...] makes the radius vary: r at
+    the edge end at each point (list_edges gives the ends), radius_mm at the
+    other ends, straight in between; 'vertex_radii' gives each end's dimension.
+    Returns the number of edges filleted and the mass properties.
     """
-    return await _call(_session.add_fillet, radius_mm, edges, name)
+    return await _call(_session.add_fillet, radius_mm, edges, name, radii_at_mm)
 
 
 @mcp.tool()

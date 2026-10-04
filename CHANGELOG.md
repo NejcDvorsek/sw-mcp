@@ -34,6 +34,10 @@ All notable changes to this project are documented here. This project follows
   `add_extruded_profile_on_plane` keeps a body of its own; `list_bodies` lists
   them; `combine_bodies` adds, subtracts or intersects them; `split_body`
   splits the part along a plane.
+- `add_fillet(radii_at_mm=[[x, y, z, r], ...])`: a variable fillet. Its radius
+  runs straight from one edge end to the other, and each end's radius is a
+  dimension, listed in `vertex_radii`.
+- `list_edges` gives each edge's ends (`ends_mm`).
 
 ### Fixed
 - `add_lofted_solid` starts every profile at its first vertex. SolidWorks

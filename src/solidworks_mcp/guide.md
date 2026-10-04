@@ -167,6 +167,10 @@ stray drag in SolidWorks can change the part.
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
   holes in it), or every edge of one feature (`feature:Boss`: a boss's top and
   the edge where it meets the part, for a moulded look).
+  `radii_at_mm=[[x, y, z, r]]` lets the radius vary: r at the edge end at
+  that point (`list_edges` gives the ends), `radius_mm` at the others, straight
+  in between. Hand calculation for a right-angled edge of length L:
+  (1 - pi/4) L (r1^2 + r1 r2 + r2^2) / 3 comes off.
   Round vertical edges **before** cutting slots: a slot adds tangent edges that
   an axis selector would catch too.
 - **Ribs / gussets**: `add_rib` draws a straight rib in a plane parallel to the
