@@ -760,6 +760,29 @@ class SolidWorksSession:
             )
         return cleaned
 
+    def _loft_section(self, section):
+        """A loft profile: a cleaned polygon, or a checked round section
+        {"center_mm": [x, y], "diameter_mm": d}; pure, unit-tested."""
+        if not isinstance(section, dict):
+            return self._clean_polygon(section)
+        try:
+            (cx, cy), diameter = section["center_mm"], float(section["diameter_mm"])
+            centre = (float(cx), float(cy))
+        except (KeyError, TypeError, ValueError):
+            raise SolidWorksError(f'A round section is {{"center_mm": [x, y], "diameter_mm": d}} (got {section}).') from None
+        if diameter <= 0:
+            raise SolidWorksError(f"A round section needs a diameter > 0 (got {diameter}).")
+        return {"center_mm": centre, "diameter_mm": diameter}
+
+    @staticmethod
+    def _loft_start(section) -> tuple:
+        """Where a loft profile starts: +x on a round section, else the first
+        vertex; pure, unit-tested."""
+        if isinstance(section, dict):
+            (cx, cy), diameter = section["center_mm"], section["diameter_mm"]
+            return cx + diameter / 2, cy
+        return tuple(section[0])
+
     @staticmethod
     def _check_draft(draft_deg) -> None:
         if not -90.0 < draft_deg < 90.0:
@@ -1447,20 +1470,25 @@ class SolidWorksSession:
         return new_names.pop(), fixed
 
     def add_swept_pipe(self, path_mm: list, diameter_mm: float,
-                       bend_radius_mm: float = 0.0, name: str = "Pipe") -> dict:
+                       bend_radius_mm: float = 0.0, name: str = "Pipe", smooth: bool = False) -> dict:
         """Sweep a circular profile (pipe/tube/rod) along a 2D path on the Front plane.
 
         path_mm = [[x, y], ...] in mm: the pipe centreline. Interior corners are
         rounded with bend_radius_mm (required when the path has corners; a 2-point
-        straight path needs none). diameter_mm is the outer diameter; the round
-        profile is generated perpendicular to the path automatically. Returns mass
-        properties (volume = pi*(d/2)^2 * path_length). Use new_part first.
+        straight path needs none); smooth=True runs a spline through the points
+        instead, a flowing curve without straight stretches. diameter_mm is the
+        outer diameter; the round profile is generated perpendicular to the path
+        automatically. Returns mass properties (volume = pi*(d/2)^2 * path_length)
+        and path_length_mm. Use new_part first.
         """
         model = self._require_model()
         if diameter_mm <= 0:
             raise SolidWorksError(f"diameter must be > 0 (got {diameter_mm}).")
 
-        path_name, path = self._draw_path_on_front(model, path_mm, bend_radius_mm)
+        if smooth:
+            path_name, path = self._draw_spline_path_on_front(model, path_mm)
+        else:
+            path_name, path = self._draw_path_on_front(model, path_mm, bend_radius_mm)
         model.ClearSelection2(True)
         ext = binding.wrap(model.Extension, self._mod.IModelDocExtension)
         if not ext.SelectByID2(path_name, "SKETCH", 0.0, 0.0, 0.0, False, 4, None, 0):  # mark 4 = sweep path
@@ -1492,6 +1520,38 @@ class SolidWorksSession:
                 "(no overlapping bends, radius fits)?"
             )
         return self._finish_feature(pipe, name, **path)
+
+    def _draw_spline_path_on_front(self, model, path_mm) -> tuple:
+        """Draw an open spline through path_mm on the Front plane, fixed (its
+        points are the design). Returns (the sketch's name, its fix result with
+        the path's length)."""
+        pts = [(float(p[0]), float(p[1])) for p in path_mm]
+        if len(pts) < 2 or len({p for p in pts}) != len(pts):
+            raise SolidWorksError(f"A smooth path needs 2 or more distinct points (got {path_mm}).")
+        plane = self._first_ref_plane()
+        if plane is None or not plane.Select2(False, 0):
+            raise SolidWorksError("Could not select the Front plane for the path.")
+        before = self._profile_feature_names()
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sk.InsertSketch(True)
+        try:
+            coords = [mm_to_m(c) for x, y in pts for c in (x, y, 0.0)]
+            sk.AddToDB = True
+            try:
+                spline = sk.CreateSpline2(win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, coords), False)
+            finally:
+                sk.AddToDB = False
+            if not spline:
+                raise SolidWorksError("Spline path failed: CreateSpline2 returned nothing.")
+            length = m_to_mm(binding.wrap(spline, self._mod.ISketchSegment).GetLength())
+            fixed = self._fix_sketch(sk, [spline])
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)
+        new_names = self._profile_feature_names() - before
+        if len(new_names) != 1:
+            raise SolidWorksError(f"Could not identify the path just drawn (found {len(new_names)} new sketches).")
+        return new_names.pop(), {**fixed, "path_length_mm": round(length, 4)}
 
     @staticmethod
     def _require_path_starts_along_x(path_mm) -> None:
@@ -1592,16 +1652,18 @@ class SolidWorksSession:
                                     fully_defined=profile["fully_defined"] and path["fully_defined"])
 
     def add_lofted_solid(self, profiles_mm: list, heights_mm: list, name: str = "Loft") -> dict:
-        """Loft (blend) 2+ closed polygon profiles on parallel planes stacked along +Z.
+        """Loft (blend) 2+ closed profiles on parallel planes stacked along +Z.
 
         profiles_mm: a list of profiles, each a list of [x, y] vertices (mm) in the
-        Front-plane coordinate system (same convention as add_extruded_profile).
-        heights_mm: the +Z offset (mm) of each profile's plane; same length as
-        profiles_mm, strictly increasing, starting at 0. Each profile is auto-closed.
-        A 2-profile loft is a ruled transition; 3+ profiles blend smoothly through
-        the intermediate ones. Give profiles in a consistent vertex order/orientation
-        to avoid a twisted blend. Use for non-rotational transitions (revolve/cone
-        already cover round shapes). Returns mass properties. Use new_part first.
+        Front-plane coordinate system (same convention as add_extruded_profile),
+        or a round section {"center_mm": [x, y], "diameter_mm": d}: thick at the
+        knee, thin towards the foot, the centres free to wander. heights_mm: the
+        +Z offset (mm) of each profile's plane; same length as profiles_mm,
+        strictly increasing, starting at 0. A 2-profile loft is a ruled
+        transition; 3+ profiles blend smoothly through the intermediate ones.
+        Each profile starts at its first vertex (a round one on +x), so give
+        polygons in a consistent vertex order/orientation to avoid a twisted
+        blend. Returns mass properties. Use new_part first.
         """
         model = self._require_model()
         if len(profiles_mm) != len(heights_mm):
@@ -1613,7 +1675,7 @@ class SolidWorksSession:
         for lo, hi in zip(heights_mm, heights_mm[1:]):
             if hi <= lo:
                 raise SolidWorksError("heights_mm must be strictly increasing.")
-        cleaned = [self._clean_polygon(p) for p in profiles_mm]  # validates >= 3 distinct pts
+        cleaned = [self._loft_section(p) for p in profiles_mm]  # a circle, or >= 3 distinct points
 
         feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
@@ -1632,7 +1694,19 @@ class SolidWorksSession:
             before = self._profile_feature_names()
             sk.InsertSketch(True)
             try:
-                defined = self._define_sketch(sk, self._draw_polyline(sk, [(mm_to_m(x), mm_to_m(y)) for x, y in poly]))
+                if isinstance(poly, dict):
+                    (cx, cy), diameter = poly["center_mm"], poly["diameter_mm"]
+                    sk.AddToDB = True  # else its centre may snap onto the profile below
+                    try:
+                        circle = sk.CreateCircleByRadius(mm_to_m(cx), mm_to_m(cy), 0.0, mm_to_m(diameter / 2))
+                    finally:
+                        sk.AddToDB = False
+                    if not circle:
+                        raise SolidWorksError(f"Could not draw the round section at z={height}.")
+                    defined = self._define_sketch(sk, circles=[circle], names={
+                        ("x", 0): "x", ("y", 0): "y", ("diameter", 0): "diameter"})
+                else:
+                    defined = self._define_sketch(sk, self._draw_polyline(sk, [(mm_to_m(x), mm_to_m(y)) for x, y in poly]))
             finally:
                 model.ClearSelection2(True)
                 sk.InsertSketch(True)
@@ -1645,8 +1719,12 @@ class SolidWorksSession:
 
         model.ClearSelection2(True)
         ext = binding.wrap(model.Extension, self._mod.IModelDocExtension)
-        for sketch_name in sketch_names:
-            if not ext.SelectByID2(sketch_name, "SKETCH", 0.0, 0.0, 0.0, True, 1, None, 0):  # mark 1, append
+        for sketch_name, poly, height in zip(sketch_names, cleaned, heights_mm):
+            # The pick point is the profile's start point: each on +x of its circle
+            # (or each first vertex) keeps the loft from twisting (verified)
+            x, y = self._loft_start(poly)
+            if not ext.SelectByID2(sketch_name, "SKETCH", mm_to_m(x), mm_to_m(y), mm_to_m(height),
+                                   True, 1, None, 0):  # mark 1, append
                 raise SolidWorksError(f"Could not select profile '{sketch_name}'.")
 
         loft = feat_mgr.InsertProtrusionBlend(

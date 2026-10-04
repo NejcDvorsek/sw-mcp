@@ -147,6 +147,13 @@ stray drag in SolidWorks can change the part.
   (negative: outwards); the angle is a dimension, `draft`. Hand calculation
   for a w x h rectangle extruded d with t = tan(draft): w h d - (w + h) t d^2
   + 4/3 t^2 d^3.
+- **Organic shapes**: `add_lofted_solid` takes round sections,
+  `{"center_mm": [x, y], "diameter_mm": d}`: a leg thick at the knee and thin
+  at the foot, the centres free to wander. Two sections hold
+  pi h (R^2 + Rr + r^2) / 3 wherever the centres lie (a steep slant comes out
+  up to 1% fuller). Every profile starts at its first vertex (a round one on
+  +x), so give polygons in the same vertex order. `add_swept_pipe(smooth=True)`
+  runs a pipe along a spline through the points: pi r^2 x `path_length_mm`.
 - **Several bodies**: `merge=False` keeps a new extrusion a body of its own;
   `list_bodies` names them, with volume and box. `combine_bodies("subtract",
   main, [tool])` cuts one out of another, `add` joins them and `common` keeps

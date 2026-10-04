@@ -25,10 +25,20 @@ All notable changes to this project are documented here. This project follows
 - `draft_deg` on `add_extruded_profile` and `add_extruded_profile_on_plane`:
   the walls lean inwards as they rise (negative: outwards); the angle is a
   dimension, `draft`.
+- `add_lofted_solid` takes round sections, `{"center_mm": [x, y],
+  "diameter_mm": d}`, their centres free to wander: a leg thick at the knee
+  and thin at the foot.
+- `add_swept_pipe(smooth=True)` runs the pipe along a spline through the
+  points; the result gives `path_length_mm`.
 - Several bodies in one part: `merge=False` on `add_extruded_profile` and
   `add_extruded_profile_on_plane` keeps a body of its own; `list_bodies` lists
   them; `combine_bodies` adds, subtracts or intersects them; `split_body`
   splits the part along a plane.
+
+### Fixed
+- `add_lofted_solid` starts every profile at its first vertex. SolidWorks
+  started each at the corner nearest the origin, which twisted a loft whose
+  profiles lie off-centre.
 
 ## [0.9.0] — 2026-10-03
 

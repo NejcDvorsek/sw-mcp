@@ -694,6 +694,21 @@ def test_a_draft_stays_below_ninety_degrees(draft):
         SolidWorksSession._check_draft(draft)
 
 
+def test_a_round_loft_section_is_a_centre_and_a_diameter(s):
+    assert s._loft_section({"center_mm": [5, -2], "diameter_mm": 20}) == {"center_mm": (5.0, -2.0), "diameter_mm": 20.0}
+    with pytest.raises(SolidWorksError, match="diameter > 0"):
+        s._loft_section({"center_mm": [0, 0], "diameter_mm": 0})
+    with pytest.raises(SolidWorksError, match="A round section is"):
+        s._loft_section({"centre": [0, 0], "diameter_mm": 10})
+    assert len(s._loft_section([[0, 0], [10, 0], [10, 10]])) == 3  # a polygon stays a polygon
+
+
+def test_a_loft_profile_starts_on_plus_x_or_at_its_first_vertex():
+    """The start points line up across the profiles, so the loft does not twist."""
+    assert SolidWorksSession._loft_start({"center_mm": (5.0, -2.0), "diameter_mm": 20.0}) == (15.0, -2.0)
+    assert SolidWorksSession._loft_start([[3, 4], [10, 0], [10, 10]]) == (3, 4)
+
+
 def test_combine_bodies_knows_add_subtract_and_common(s):
     with pytest.raises(SolidWorksError, match="operation must be one of"):
         s.combine_bodies("glue", "Body1")

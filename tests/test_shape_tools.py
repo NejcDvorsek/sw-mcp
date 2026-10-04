@@ -176,3 +176,32 @@ def test_a_draft_tapers_the_walls(part, draft):
     straighter = part.set_dimension(tapered["dimensions"]["draft"], 2)
     t2 = math.tan(math.radians(2 if draft > 0 else -2))
     assert vol(straighter) == pytest.approx(20 * 10 * 10 - 30 * t2 * 100 + 4 / 3 * t2 ** 2 * 1000, rel=1e-9)
+
+
+@pytest.mark.parametrize("foot,rel", [([5, 0], 1e-4), ([-4, -9], 1e-2)], ids=["along x", "anywhere"])
+def test_a_round_loft_makes_a_frustum(part, foot, rel):
+    """Thick at the knee, thin at the foot: d 20 at z 0 to d 10 at z 30, the
+    narrow end moved. Shifted circles hold the same volume (Cavalieri):
+    pi h (R^2 + Rr + r^2) / 3. A steep slant comes out ~0.7% fuller in
+    SolidWorks (measured), hence the wider rel there."""
+    loft = part.add_lofted_solid([{"center_mm": [0, 0], "diameter_mm": 20}, {"center_mm": foot, "diameter_mm": 10}],
+                                 [0, 30])
+    assert vol(loft) == pytest.approx(math.pi * 30 * (10 ** 2 + 10 * 5 + 5 ** 2) / 3, rel=rel),         "a loft whose circles start at different angles twists, pinches in and loses volume"
+    assert {"profile0_diameter", "profile1_diameter", "profile1_x"} <= set(loft["dimensions"])
+    assert box(loft)["max_mm"][0] == pytest.approx(10, abs=0.01)  # the part box is loose around a lofted face
+
+
+def test_a_loft_starts_each_polygon_at_its_first_vertex(part):
+    """Square 20 round the origin to square 10 off to the lower left: the corner
+    nearest the origin is not the first one, so lining the profiles up by that
+    corner would twist the loft half a turn. Untwisted: h (a^2 + ab + b^2) / 3."""
+    loft = part.add_lofted_solid([[[-10, -10], [10, -10], [10, 10], [-10, 10]],
+                                  [[-12, -6], [-2, -6], [-2, 4], [-12, 4]]], [0, 30])
+    assert vol(loft) == pytest.approx(30 * (20 ** 2 + 20 * 10 + 10 ** 2) / 3), "a twisted loft pinches in"
+
+
+def test_a_smooth_pipe_follows_a_spline(part):
+    # Pappus for tubes: area x path length, near enough for a gentle curve
+    pipe = part.add_swept_pipe([[0, 0], [20, 10], [40, 0], [60, 10]], 4, smooth=True)
+    assert vol(pipe) == pytest.approx(math.pi * 2 ** 2 * pipe["path_length_mm"], rel=1e-3)
+    assert 60 < pipe["path_length_mm"] < 80

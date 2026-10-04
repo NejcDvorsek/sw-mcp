@@ -216,15 +216,17 @@ async def add_revolved_profile(profile_mm: list, angle_deg: float = 360.0,
 
 @mcp.tool()
 async def add_swept_pipe(path_mm: list, diameter_mm: float,
-                         bend_radius_mm: float = 0.0, name: str = "Pipe") -> dict:
+                         bend_radius_mm: float = 0.0, name: str = "Pipe", smooth: bool = False) -> dict:
     """Sweep a circular profile (pipe/tube/rod) along a 2D path on the Front plane.
 
     path_mm = [[x, y], …] in mm is the centreline. Interior corners are rounded
     with bend_radius_mm (required when the path turns; a 2-point straight path
-    needs none). diameter_mm = outer Ø; the round profile is auto-generated
-    perpendicular to the path. Returns mass properties. Use new_part first.
+    needs none); smooth=True runs a spline through the points instead, a
+    flowing curve. diameter_mm = outer Ø; the round profile is auto-generated
+    perpendicular to the path. Returns mass properties (pi r^2 x
+    path_length_mm). Use new_part first.
     """
-    return await _call(_session.add_swept_pipe, path_mm, diameter_mm, bend_radius_mm, name)
+    return await _call(_session.add_swept_pipe, path_mm, diameter_mm, bend_radius_mm, name, smooth)
 
 
 @mcp.tool()
@@ -246,14 +248,16 @@ async def add_swept_profile(profile_mm: list, path_mm: list,
 
 @mcp.tool()
 async def add_lofted_solid(profiles_mm: list, heights_mm: list, name: str = "Loft") -> dict:
-    """Loft (blend) 2+ closed polygon profiles on parallel planes stacked along +Z.
+    """Loft (blend) 2+ closed profiles on parallel planes stacked along +Z.
 
-    profiles_mm = [[[x,y],…], …] (mm), one polygon per profile in Front-plane
-    coords. heights_mm = the +Z offset (mm) of each profile, same length, strictly
-    increasing, starting at 0. A 2-profile loft is a ruled transition; 3+ blend
-    smoothly. Give profiles in a consistent vertex order to avoid twist. For
-    non-rotational transitions (round shapes: use add_revolved_profile/add_cone).
-    Returns mass properties. Use new_part first.
+    profiles_mm: per profile a polygon [[x,y],…] (mm) in Front-plane coords, or a
+    round section {"center_mm": [x, y], "diameter_mm": d} (thick at the knee,
+    thin at the foot, centres free to wander). heights_mm = the +Z offset (mm)
+    of each profile, same length, strictly increasing, starting at 0. A
+    2-profile loft is a ruled transition; 3+ blend smoothly. Each profile
+    starts at its first vertex (a round one on +x): give polygons in a
+    consistent vertex order to avoid twist. Returns mass properties. Use
+    new_part first.
     """
     return await _call(_session.add_lofted_solid, profiles_mm, heights_mm, name)
 
