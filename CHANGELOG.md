@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.10.0] — 2026-10-04
 
 ### Added
 - `add_revolved_profile(axis_mm=[[x1, y1], [x2, y2]])` turns a profile on the
