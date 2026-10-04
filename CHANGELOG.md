@@ -9,6 +9,8 @@ All notable changes to this project are documented here. This project follows
 - `add_revolved_profile(axis_mm=[[x1, y1], [x2, y2]])` turns a profile on the
   Front plane about any line in it, not only the Y axis: a hub turned about its
   own centre. The axis ends are dimensions.
+- `edges="feature:Boss"` for `add_fillet` and `add_chamfer`: every edge of one
+  feature, its top and where it meets the part, for a moulded look.
 
 ## [0.9.0] — 2026-10-03
 

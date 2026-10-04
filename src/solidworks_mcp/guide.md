@@ -137,7 +137,8 @@ stray drag in SolidWorks can change the part.
   the side outline goes, and what is left matches both views.
 - **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
-  holes in it).
+  holes in it), or every edge of one feature (`feature:Boss`: a boss's top and
+  the edge where it meets the part, for a moulded look).
   Round vertical edges **before** cutting slots: a slot adds tangent edges that
   an axis selector would catch too.
 - **Ribs / gussets**: `add_rib` draws a straight rib in a plane parallel to the

@@ -495,8 +495,9 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet")
 
     edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis,
     a face outline like "+z:outline" (the outer edges of the top face, not those
-    of holes in it), or explicit indices like "2,5" from list_edges. Returns the
-    number of edges filleted and the resulting mass properties.
+    of holes in it), every edge of one feature like "feature:Boss" (its top and
+    where it meets the part: a moulded look), or explicit indices like "2,5" from
+    list_edges. Returns the number of edges filleted and the mass properties.
     """
     return await _call(_session.add_fillet, radius_mm, edges, name)
 
@@ -505,9 +506,9 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet")
 async def add_chamfer(distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
     """Chamfer edges of the current part at 45° with the given distance (mm).
 
-    edges: "all" (default), "x"/"y"/"z", a face outline like "+z:outline", or
-    explicit indices like "2,5" from list_edges. Returns the number of edges
-    chamfered and the resulting mass properties.
+    edges: "all" (default), "x"/"y"/"z", a face outline like "+z:outline", a
+    feature's edges like "feature:Boss", or explicit indices like "2,5" from
+    list_edges. Returns the number of edges chamfered and the mass properties.
     """
     return await _call(_session.add_chamfer, distance_mm, edges, name)
 

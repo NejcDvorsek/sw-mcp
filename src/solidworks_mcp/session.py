@@ -577,6 +577,9 @@ class SolidWorksSession:
                     count += 1
             return count
 
+        feature = re.fullmatch(r"feature:(.+)", str(selector).strip(), re.IGNORECASE)
+        if feature:
+            return self._select_feature_edges(feature.group(1).strip())
         sel = str(selector).lower().replace(" ", "")
         outline = re.fullmatch(r"([+-][xyz]):outline", sel)
         if outline:
@@ -584,7 +587,7 @@ class SolidWorksSession:
         if sel != "all" and sel not in self._EDGE_AXES:
             raise SolidWorksError(
                 f"Unknown edge selector '{selector}'. Use 'all', 'x'/'y'/'z', a face outline like "
-                "'+z:outline', or indices like '2,5'."
+                "'+z:outline', a feature's edges like 'feature:Boss', or indices like '2,5'."
             )
         target = self._EDGE_AXES.get(sel)
         for edge_dispatch in edges:
@@ -592,6 +595,24 @@ class SolidWorksSession:
                 continue
             if binding.wrap(edge_dispatch, self._mod.IEntity).Select4(True, None):
                 count += 1
+        return count
+
+    def _select_feature_edges(self, name: str) -> int:
+        """Append-select every edge of the faces feature `name` made: rounding them
+        all at once gives a boss or a rib the soft look of a moulded part."""
+        feature = self._history_feature(name)
+        extension = binding.wrap(self._model.Extension, self._mod.IModelDocExtension)
+        seen, count = set(), 0
+        for face in feature.GetFaces() or ():
+            for edge in binding.wrap(face, self._mod.IFace2).GetEdges() or ():
+                key = bytes(extension.GetPersistReference3(edge))  # one edge, two faces: select it once
+                if key in seen:
+                    continue
+                seen.add(key)
+                if binding.wrap(edge, self._mod.IEntity).Select4(True, None):
+                    count += 1
+        if not count:
+            raise SolidWorksError(f"Feature '{name}' has no edges to round.")
         return count
 
     def _select_outline(self, body, direction: str) -> int:
@@ -2627,7 +2648,8 @@ class SolidWorksSession:
         edges: 'all' (default); a world axis 'x'|'y'|'z' (straight edges parallel
         to it, e.g. 'z' = the depth edges of an add_box block); a face outline
         like '+z:outline' (the outer edges of the top face, not those of holes in
-        it); or explicit indices like '2,5' from list_edges. Returns how many
+        it); every edge of one feature, 'feature:Boss'; or explicit indices like
+        '2,5' from list_edges. Returns how many
         edges were filleted and the resulting mass properties (volume drops as
         convex edges are rounded off).
         """
@@ -2659,9 +2681,10 @@ class SolidWorksSession:
     def add_chamfer(self, distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
         """Chamfer edges of the part's solid body at 45 degrees (equal distance).
 
-        edges: 'all' (default); a world axis 'x'|'y'|'z'; or explicit indices like
-        '2,5' from list_edges. Returns how many edges were chamfered and the
-        resulting mass properties.
+        edges: 'all' (default); a world axis 'x'|'y'|'z'; a face outline like
+        '+z:outline'; every edge of one feature, 'feature:Boss'; or explicit
+        indices like '2,5' from list_edges. Returns how many edges were chamfered
+        and the resulting mass properties.
         """
         model = self._require_model()
         if distance_mm <= 0:

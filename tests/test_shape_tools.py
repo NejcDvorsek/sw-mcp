@@ -100,3 +100,13 @@ def test_the_axis_of_a_revolve_is_a_dimension(part):
     assert vol(moved) == pytest.approx(100 * 2 * math.pi * 20, rel=1e-6)
 
 
+def test_fillet_rounds_every_edge_of_one_feature(part):
+    """The boss's top edge loses a spandrel of r^2 (1 - pi/4) at radius
+    R - 0.2234 r and the edge where it meets the block gains one at
+    R + 0.2234 r (Pappus). 'all' would round the block's edges too."""
+    part.add_box(40, 20, 10)
+    before = vol(part.add_boss_on_face(10, "+z", 20, 10, 10, 5, name="Boss"))
+    rounded = part.add_fillet(2, edges="feature:Boss")
+    spandrel, centroid = (1 - math.pi / 4) * 2 ** 2, (10 - 3 * math.pi) / (12 - 3 * math.pi) * 2
+    assert rounded["edges_filleted"] == 2
+    assert vol(rounded) - before == pytest.approx(spandrel * 2 * math.pi * 2 * centroid, abs=1e-3)
