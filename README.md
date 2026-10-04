@@ -35,12 +35,12 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. 73 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. 74 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 522 tests; each feature's integration test
+- **Tested against real SolidWorks.** 536 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -220,7 +220,8 @@ The server speaks MCP over **stdio**.
 | `cut_offset_pocket(face, x_mm, y_mm, z_mm, rim_mm, depth_mm, name)` | Pocket a face leaving a rim along its outline (I-beam web, tray, frame); rim and depth are dimensions |
 | `cut_slot(length_mm, width_mm, x_mm, y_mm, angle_deg, depth_mm, name)` | Cut a straight slotted hole (obround) on the +Z face at any angle |
 | `add_extruded_slot(start_mm, end_mm, width_mm, depth_mm, name)` | Extrude a stadium (rounded tab, lug, link) between two points, the round ends centred on them |
-| `add_fillet(radius_mm, edges, name)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, a face outline `"+z:outline"`, one feature's edges `"feature:Boss"`, or indices `"2,5"`) |
+| `add_fillet(radius_mm, edges, name, radii_at_mm)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, a face outline `"+z:outline"`, one feature's edges `"feature:Boss"`, or indices `"2,5"`); `radii_at_mm` varies the radius from end to end |
+| `add_full_round(face, x_mm, y_mm, z_mm, name)` | Round a rib's top off completely between its two closest opposite sides |
 | `add_chamfer(distance_mm, edges, name)` | Chamfer edges at 45° (`edges`: `all`, axis, a face outline, a feature's edges, or indices) |
 | `add_shell(thickness_mm, open_face)` | Hollow to a wall thickness; open a face (`+z`/…) or `none` |
 | `add_linear_pattern(count, spacing_mm, direction, feature_name)` | Repeat a feature N times along `+x`/`-x`/… |

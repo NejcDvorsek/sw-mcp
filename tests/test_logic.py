@@ -738,3 +738,17 @@ def test_variable_fillet_radii_are_named_like_solidworks_does():
     """SolidWorks numbers them in the order of the radii it got (verified up to 12)."""
     assert [SolidWorksSession._vertex_radius_dimension(k) for k in (0, 1, 2, 10, 11)] == \
         ["D0", "D01", "D02", "D010", "D011"]
+
+
+def test_a_full_round_takes_the_closest_pair_of_opposite_sides():
+    """A rib 10 wide and 40 long: across its width, not along its length."""
+    sides = [((0, -1, 0), (20, 0, 15)), ((0, 1, 0), (20, 40, 15)), ((-1, 0, 0), (15, 20, 15)), ((1, 0, 0), (25, 20, 15))]
+    assert SolidWorksSession._full_round_sides(sides) == (2, 3, 10.0)
+
+
+def test_a_full_round_needs_one_closest_pair_of_opposite_sides():
+    square = [((-1, 0, 0), (0, 20, 5)), ((1, 0, 0), (40, 20, 5)), ((0, -1, 0), (20, 0, 5)), ((0, 1, 0), (20, 40, 5))]
+    with pytest.raises(SolidWorksError, match="equally far apart"):
+        SolidWorksSession._full_round_sides(square)
+    with pytest.raises(SolidWorksError, match="two opposite flat side faces"):
+        SolidWorksSession._full_round_sides([((-1, 0, 0), (0, 0, 0)), ((0, 1, 0), (0, 40, 0))])

@@ -67,3 +67,29 @@ def test_a_variable_fillet_needs_its_points_at_the_edge_ends(part):
     with pytest.raises(SolidWorksError, match=r"No end of the edges at \(20, 0, 10\)"):
         part.add_fillet(2, edge_between(part, [0, 0, 10], [40, 0, 10]), radii_at_mm=[[20, 0, 10, 5]])
     assert part.get_mass_properties()["mass_properties"]["volume_mm3"] == pytest.approx(BLOCK)
+
+
+def rib_on_plate(part):
+    """A 40 x 40 x 5 plate with a rib 10 wide, 40 long and 20 high along y on top."""
+    part.add_box(40, 40, 5)
+    part.add_extruded_profile_on_face([[15, 0, 5], [25, 0, 5], [25, 40, 5], [15, 40, 5]], "+z", 20)
+
+
+def test_a_full_round_rounds_a_rib_off(part):
+    """The rib's top becomes a half cylinder of radius 5 between its sides, not
+    across its 40 mm length: each mm of rib loses a 10 x 5 rectangle less a
+    half disc."""
+    rib_on_plate(part)
+    rounded = part.add_full_round("+z", 20, 20, 25)
+    assert rounded["width_mm"] == pytest.approx(10)
+    assert vol(rounded) == pytest.approx(40 * 40 * 5 + 10 * 40 * 20 - 40 * (10 * 5 - math.pi * 5 ** 2 / 2),
+                                         rel=1e-9)
+    assert rounded["mass_properties"]["bounding_box_mm"]["max_mm"][2] == pytest.approx(25), \
+        "the crown of the round stays at the rib's top"
+
+
+def test_a_full_round_needs_one_narrowest_pair_of_sides(part):
+    part.add_box(40, 40, 10)
+    with pytest.raises(SolidWorksError, match="equally far apart"):
+        part.add_full_round("+z", 20, 20, 10)
+    assert part.get_mass_properties()["mass_properties"]["volume_mm3"] == pytest.approx(40 * 40 * 10)

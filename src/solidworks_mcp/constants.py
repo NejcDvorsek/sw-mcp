@@ -22,6 +22,7 @@ SW_BODY_SOLID = 0
 # swFeatureFilletType_e
 SW_FILLET_TYPE_SIMPLE = 0
 SW_FILLET_TYPE_VARIABLE = 1
+SW_FILLET_TYPE_FULL_ROUND = 3
 
 # swFeatureFilletOptions_e (bitmask). UNIFORM_RADIUS makes the fillet use the
 # single R1 radius for all edges; without it the API expects a per-edge Radii
@@ -31,6 +32,11 @@ SW_FILLET_OPT_UNIFORM_RADIUS = 2
 # swFeatureFilletVarRadiusType: a variable radius runs straight from end to end
 # (without it, along a smooth curve that misses the hand calculation)
 SW_FILLET_OPT_STRAIGHT_TRANSITION = 4
+
+# Full round fillet selection marks: side face set 1, centre face set, side face set 2
+SW_MARK_FULL_ROUND_SIDE_1 = 2
+SW_MARK_FULL_ROUND_CENTRE = 512
+SW_MARK_FULL_ROUND_SIDE_2 = 4
 
 # swChamferType_e -- AngleDistance is a setback distance + an angle (45 deg gives
 # a symmetric chamfer). EqualDistance(16) alone is a silent no-op on this build.

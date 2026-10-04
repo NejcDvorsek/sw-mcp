@@ -37,6 +37,8 @@ All notable changes to this project are documented here. This project follows
 - `add_fillet(radii_at_mm=[[x, y, z, r], ...])`: a variable fillet. Its radius
   runs straight from one edge end to the other, and each end's radius is a
   dimension, listed in `vertex_radii`.
+- `add_full_round`: rounds a rib's top off between its two closest opposite
+  sides, as on a moulded part.
 - `list_edges` gives each edge's ends (`ends_mm`).
 
 ### Fixed

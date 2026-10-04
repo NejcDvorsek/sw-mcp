@@ -171,6 +171,9 @@ stray drag in SolidWorks can change the part.
   that point (`list_edges` gives the ends), `radius_mm` at the others, straight
   in between. Hand calculation for a right-angled edge of length L:
   (1 - pi/4) L (r1^2 + r1 r2 + r2^2) / 3 comes off.
+  `add_full_round(face, x, y, z)` rounds a rib's top off completely: the point
+  lies on the top, the round runs across the rib between its closest opposite
+  sides, and a rib w wide and L long loses L w^2 (1/2 - pi/8).
   Round vertical edges **before** cutting slots: a slot adds tangent edges that
   an axis selector would catch too.
 - **Ribs / gussets**: `add_rib` draws a straight rib in a plane parallel to the

@@ -54,8 +54,12 @@ from .constants import (
     SW_FEATURE_SCOPE_ALL_BODIES,
     SW_FILLET_OPT_STRAIGHT_TRANSITION,
     SW_FILLET_OPT_UNIFORM_RADIUS,
+    SW_FILLET_TYPE_FULL_ROUND,
     SW_FILLET_TYPE_SIMPLE,
     SW_FILLET_TYPE_VARIABLE,
+    SW_MARK_FULL_ROUND_CENTRE,
+    SW_MARK_FULL_ROUND_SIDE_1,
+    SW_MARK_FULL_ROUND_SIDE_2,
     SW_MARK_MIRROR_BODY,
     SW_MARK_MIRROR_FEATURE,
     SW_MARK_MIRROR_PLANE,
@@ -2932,6 +2936,73 @@ class SolidWorksSession:
                         raise SolidWorksError(f"SolidWorks put R{got:g} at {list(end)}, not the radius asked for there.")
         finally:
             data.ReleaseSelectionAccess()
+
+    def add_full_round(self, face: str, x_mm: float, y_mm: float, z_mm: float, name: str = "FullRound") -> dict:
+        """Round a rib's top off completely: a fillet tangent to the planar face
+        facing `face` through the point and to the two opposite flat side faces
+        along it that lie closest together. Its radius is half their distance,
+        'width_mm', so it follows the rib; there is no radius dimension. Hand
+        calculation: a rib w wide and L long loses L w^2 (1/2 - pi/8)."""
+        model = self._require_model()
+        normal, side = self._parse_face_selector(face, default_side=None)
+        centre = self._select_face_through(self._solid_body(), normal, side, (x_mm, y_mm, z_mm), face)
+        sides = self._side_faces(centre, normal)
+        first, second, width = self._full_round_sides([(f.Normal, self._plane_point_mm(f)) for f in sides])
+        selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+        model.ClearSelection2(True)
+        for entity, mark in ((sides[first], SW_MARK_FULL_ROUND_SIDE_1), (centre, SW_MARK_FULL_ROUND_CENTRE),
+                             (sides[second], SW_MARK_FULL_ROUND_SIDE_2)):
+            data = binding.wrap(selmgr.CreateSelectData(), self._mod.ISelectData)
+            data.Mark = mark
+            if not binding.wrap(entity, self._mod.IEntity).Select4(True, data):
+                raise SolidWorksError("Could not select the faces for the full round.")
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        fillet = feat_mgr.FeatureFillet3(0, 0.0, 0.0, 0.0, SW_FILLET_TYPE_FULL_ROUND, 0, 0,
+                                         None, None, None, None, None, None, None)
+        if fillet is None:
+            raise SolidWorksError(f"SolidWorks could not round the {face} face off between its sides.")
+        return self._finish_feature(fillet, name, width_mm=round(width, 4))
+
+    def _side_faces(self, centre, normal) -> list:
+        """The flat faces along the edges of `centre` that stand square to it, each once."""
+        extension = binding.wrap(self._model.Extension, self._mod.IModelDocExtension)
+        seen, sides = set(), []
+        for edge in binding.wrap(centre, self._mod.IFace2).GetEdges() or ():
+            for neighbour in binding.wrap(edge, self._mod.IEdge).GetTwoAdjacentFaces2() or ():
+                neighbour = binding.wrap(neighbour, self._mod.IFace2)
+                if not binding.wrap(neighbour.GetSurface(), self._mod.ISurface).IsPlane():
+                    continue
+                if abs(sum(a * b for a, b in zip(neighbour.Normal, normal))) > 1e-6:
+                    continue  # the centre face itself, or a slanted neighbour
+                key = bytes(extension.GetPersistReference3(neighbour))
+                if key not in seen:
+                    seen.add(key)
+                    sides.append(neighbour)
+        return sides
+
+    def _plane_point_mm(self, face) -> tuple:
+        """A point on a planar face's plane (PlaneParams: normal, then root point)."""
+        params = binding.wrap(binding.wrap(face, self._mod.IFace2).GetSurface(), self._mod.ISurface).PlaneParams
+        return tuple(m_to_mm(c) for c in params[3:6])
+
+    @staticmethod
+    def _full_round_sides(sides) -> tuple:
+        """Of the side faces [(normal, point on it)], the opposite pair that lies
+        closest together: (i, j, distance); pure, unit-tested."""
+        pairs = []
+        for i, (normal, point) in enumerate(sides):
+            for j in range(i + 1, len(sides)):
+                other_normal, other_point = sides[j]
+                if sum(a * b for a, b in zip(normal, other_normal)) < -0.999999:
+                    pairs.append((abs(sum((b - a) * n for a, b, n in zip(point, other_point, normal))), i, j))
+        if not pairs:
+            raise SolidWorksError("A full round needs two opposite flat side faces along the face, such as a rib's sides.")
+        pairs.sort()
+        if len(pairs) > 1 and pairs[1][0] - pairs[0][0] < 1e-6:
+            raise SolidWorksError(f"Two pairs of side faces are equally far apart ({pairs[0][0]:g} mm): the full "
+                                  "round cannot tell which way to run.")
+        distance, i, j = pairs[0]
+        return i, j, distance
 
     def add_chamfer(self, distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
         """Chamfer edges of the part's solid body at 45 degrees (equal distance).

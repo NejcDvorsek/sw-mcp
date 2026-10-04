@@ -583,6 +583,19 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
 
 
 @mcp.tool()
+async def add_full_round(face: str, x_mm: float, y_mm: float, z_mm: float, name: str = "FullRound") -> dict:
+    """Round a rib's top off completely: a full round fillet, as on a moulded part.
+
+    The face facing `face` ("+z", ...) through the point (x, y, z) is the top;
+    the two opposite flat side faces along it that lie closest together are the
+    sides, so the round runs across the rib, not along it. The radius is half
+    their distance (width_mm in the result) and follows the rib. Hand
+    calculation: a rib w wide and L long loses L w^2 (1/2 - pi/8).
+    """
+    return await _call(_session.add_full_round, face, x_mm, y_mm, z_mm, name)
+
+
+@mcp.tool()
 async def add_chamfer(distance_mm: float, edges: str = "all", name: str = "Chamfer") -> dict:
     """Chamfer edges of the current part at 45° with the given distance (mm).
 
