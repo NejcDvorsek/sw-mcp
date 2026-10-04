@@ -249,7 +249,7 @@ The server speaks MCP over **stdio**.
 |---|---|
 | `new_assembly` | Create a new empty assembly (becomes the current document) |
 | `open_assembly(path)` / `save_assembly(path)` | Open / save a native `.sldasm`; `open_assembly` also imports STEP, IGES and Parasolid assemblies, parts as components in place |
-| `insert_component(path, x_mm, y_mm, z_mm, fixed)` | Insert a part with its **origin** at (x, y, z); the first component is fixed by default |
+| `insert_component(path, x_mm, y_mm, z_mm, fixed)` | Insert a part, or a `.sldasm` as a sub-assembly, with its **origin** at (x, y, z); the first component is fixed by default |
 | `list_components` | Name, path, fixed, position, rotation and bounding box of every component (its own extent, also when turned), and the mates with their dimensions and errors |
 | `set_component_transform(name, x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg)` | Move/rotate a component; the transform is read back and verified |
 | `add_mate(comp_a, face_a, comp_b, face_b, mate_type, distance_mm, angle_deg, flip)` | Mate two faces (by direction, or `#index` from `list_faces`): `coincident`, `distance`, `parallel`, `perpendicular`, `angle`, or `concentric` between cylinders — measured back afterwards; a refused mate is removed. A distance or angle mate returns its dimension: a joint angle as one number |

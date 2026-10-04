@@ -614,6 +614,30 @@ def test_a_corner_on_a_slanted_axis_cannot_be_rounded(s):
         s.add_revolved_profile([[0, 0], [10, 10], [20, 0]], axis_mm=[[0, 0], [10, 10]], corner_radii_mm=[0, 2, 0])
 
 
+# --- sub-assemblies --------------------------------------------------------------
+
+_IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+_TURN_Z_90 = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]  # rows: (x, y) -> (-y, x)
+
+
+def test_a_part_in_a_turned_sub_assembly_is_seen_in_the_sub_assemblys_frame():
+    """The sub-assembly sits turned 90 degrees at y = 100; its part sits 10 mm
+    along the sub-assembly's x, so in the root it is turned too and at
+    (0, 110, 0). Relative to the sub-assembly: no turn, 10 mm along x."""
+    rotation, shift = SolidWorksSession._relative_frame((_TURN_Z_90, [0, 100, 0]), (_TURN_Z_90, [0, 110, 0]))
+    assert sum(rotation, []) == pytest.approx(sum(_IDENTITY, [])) and shift == pytest.approx([10, 0, 0])
+
+
+def test_a_turned_part_in_a_straight_sub_assembly_keeps_its_turn():
+    rotation, shift = SolidWorksSession._relative_frame((_IDENTITY, [5, 5, 5]), (_TURN_Z_90, [5, 5, 5]))
+    assert sum(rotation, []) == pytest.approx(sum(_TURN_Z_90, [])) and shift == pytest.approx([0, 0, 0])
+
+
+def test_insert_component_takes_parts_and_sub_assemblies_only(s):
+    with pytest.raises(SolidWorksError, match=r"\.sldprt or a \.sldasm"):
+        s.insert_component("servo.step")
+
+
 def test_a_profile_that_meets_the_y_axis_in_one_point_is_refused_too(s):
     """SolidWorks refuses a solid that pinches to a point on its axis; a whole
     edge on the axis (a cone) is fine."""

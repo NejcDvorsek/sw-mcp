@@ -11,6 +11,9 @@ All notable changes to this project are documented here. This project follows
   own centre. The axis ends are dimensions.
 - `edges="feature:Boss"` for `add_fillet` and `add_chamfer`: every edge of one
   feature, its top and where it meets the part, for a moulded look.
+- `insert_component` takes a `.sldasm` as a sub-assembly, such as a servo
+  imported from STEP; `list_faces(component=...)` lists its parts' faces in the
+  sub-assembly's frame, each with its part, and `add_mate` mates them.
 
 ## [0.9.0] — 2026-10-03
 

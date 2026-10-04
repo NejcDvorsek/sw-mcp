@@ -181,7 +181,10 @@ stray drag in SolidWorks can change the part.
   (first angle) and an isometric view on A4 with the model's own dimensions,
   each shown once, so a fully dimensioned part gives a complete sketch to
   print or send; `.slddrw` keeps it editable. Save the part first.
-- **Assemblies**: `insert_component` puts a part's origin at a point;
+- **Assemblies**: `insert_component` puts a part's origin at a point; a
+  `.sldasm` goes in whole as a sub-assembly (save an imported servo first).
+  `list_faces(component=...)` then lists every part's faces in the
+  sub-assembly's own frame, naming the part, and `add_mate` takes them;
   transforms are read back, mates are measured back after the rebuild, and
   `check_interference` reports overlapping pairs with their volume.
   Component boxes are the parts' own extent, also when turned.

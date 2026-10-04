@@ -694,7 +694,9 @@ async def list_faces(component: str | None = None) -> dict:
     A cylindrical face also gives its axis, radius and a point on the axis (for
     a hole: its centre), so hole patterns can be read off. component: a
     component of the current assembly, listed in its own frame (e.g. an
-    imported servo). Indices are positional and shift as features are added.
+    imported servo); for a sub-assembly, every part's faces in the
+    sub-assembly's frame, each naming its part. Indices are positional and
+    shift as features are added; add_mate takes them as '#5'.
     """
     return await _call(_session.list_faces, component)
 
@@ -820,7 +822,7 @@ async def save_assembly(path: str) -> dict:
 @mcp.tool()
 async def insert_component(path: str, x_mm: float = 0.0, y_mm: float = 0.0,
                            z_mm: float = 0.0, fixed: bool | None = None) -> dict:
-    """Insert a .sldprt into the current assembly with its ORIGIN at (x, y, z) mm.
+    """Insert a .sldprt, or a .sldasm as a sub-assembly, with its ORIGIN at (x, y, z) mm.
 
     The part's own origin lands exactly on that point, and the placement is read
     back and verified. fixed=True pins the component; fixed=False leaves it free

@@ -3616,31 +3616,49 @@ class SolidWorksSession:
         """
         if component is None:
             self._require_model()
-            faces = self._body_faces(self._solid_body())
+            out = [self._face_entry(i, face) for i, face in enumerate(self._body_faces(self._solid_body()))]
         else:
-            faces = self._component_faces(self._component_by_name(self._require_assembly(), component))
-        out = [self._face_entry(i, face) for i, face in enumerate(faces)]
+            comp = self._component_by_name(self._require_assembly(), component)
+            out = []
+            for i, (face, part) in enumerate(self._component_faces(comp)):
+                entry = self._face_entry(i, face, self._part_frame_in(comp, part))
+                if part.Name2 != comp.Name2:
+                    entry["part"] = part.Name2  # a part inside a sub-assembly
+                out.append(entry)
         return {"ok": True, "count": len(out), "faces": out}
 
-    def _face_entry(self, index: int, face_dispatch) -> dict:
+    def _face_entry(self, index: int, face_dispatch, frame=None) -> dict:
+        """A face's index, type, area and centre; a planar face's normal, a
+        cylinder's axis. `frame` (rotation rows, shift mm) moves it from its
+        part's coordinates into a sub-assembly's."""
         face = binding.wrap(face_dispatch, self._mod.IFace2)
         surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
         planar = bool(surface is not None and surface.IsPlane())
+        rotation, shift = frame or ([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0, 0.0, 0.0])
+
+        def turn(v):
+            return [sum(rotation[row][i] * v[i] for i in range(3)) for row in range(3)]
+
+        def place(p):
+            return [c + s for c, s in zip(turn(p), shift)]
+
         box = face.GetBox()
         center = None
         if box and len(box) >= 6:
-            center = [round(m_to_mm((box[j] + box[j + 3]) / 2), 3) for j in range(3)]
+            center = [m_to_mm((box[j] + box[j + 3]) / 2) for j in range(3)]
         entry = {
             "index": index,
             "type": "planar" if planar else "curved",
             "area_mm2": round(face.GetArea() * 1e6, 3),
-            "center_mm": center,
+            "center_mm": None if center is None else [round(c, 3) + 0.0 for c in place(center)],
         }
         if planar:
-            nx, ny, nz = face.Normal
-            entry["normal"] = [round(nx, 4), round(ny, 4), round(nz, 4)]
+            entry["normal"] = [round(n, 4) + 0.0 for n in turn(face.Normal)]
         elif surface is not None and surface.IsCylinder() and center is not None:
-            entry["cylinder"] = self._cylinder_entry(surface, center)
+            cylinder = self._cylinder_entry(surface, center)
+            entry["cylinder"] = {"axis": [round(a, 6) + 0.0 for a in turn(cylinder["axis"])],
+                                 "point_mm": [round(p, 4) + 0.0 for p in place(cylinder["point_mm"])],
+                                 "radius_mm": cylinder["radius_mm"]}
         return entry
 
     @staticmethod
@@ -3653,8 +3671,7 @@ class SolidWorksSession:
         axis = [c / length for c in params[3:6]]
         along = sum((c - o) * a for c, o, a in zip(center_mm, origin, axis))
         point = [o + along * a for o, a in zip(origin, axis)]
-        return {"axis": [round(a, 6) + 0.0 for a in axis], "point_mm": [round(p, 4) + 0.0 for p in point],
-                "radius_mm": round(m_to_mm(params[6]), 4)}
+        return {"axis": axis, "point_mm": point, "radius_mm": round(m_to_mm(params[6]), 4)}
 
     def list_edges(self) -> dict:
         """Inspect the solid body's edges: index, type; lines also give axis/length/midpoint."""
@@ -4255,7 +4272,8 @@ class SolidWorksSession:
 
     def insert_component(self, path: str, x_mm: float = 0.0, y_mm: float = 0.0,
                          z_mm: float = 0.0, fixed: bool | None = None) -> dict:
-        """Insert a part into the current assembly with its ORIGIN at (x, y, z) mm.
+        """Insert a part (.sldprt) or a sub-assembly (.sldasm) into the current
+        assembly with its ORIGIN at (x, y, z) mm.
 
         The part's own origin lands on the given point (AddComponent5's own X/Y/Z
         would centre the bounding box there instead, so the position is applied
@@ -4265,8 +4283,11 @@ class SolidWorksSession:
         by mates. The default (None) fixes only the FIRST component, which is the
         ground the rest of the assembly is positioned against.
         """
-        asm = self._require_assembly()
         abs_path = os.path.abspath(path)
+        doc_type = {".sldprt": SW_DOC_PART, ".sldasm": SW_DOC_ASSEMBLY}.get(os.path.splitext(abs_path)[1].lower())
+        if doc_type is None:
+            raise SolidWorksError(f"insert_component takes a .sldprt or a .sldasm (got '{path}').")
+        asm = self._require_assembly()
         if not os.path.isfile(abs_path):
             raise SolidWorksError(f"Part not found: {abs_path}")
         if fixed is None:
@@ -4275,7 +4296,7 @@ class SolidWorksSession:
         # AddComponent5 gives None for a part that is not loaded, so open it
         # silently first and switch back to the assembly before inserting.
         title = self._model.GetTitle()
-        self._sw.OpenDoc6(abs_path, SW_DOC_PART, SW_OPEN_DOC_SILENT, "", 0, 0)
+        self._sw.OpenDoc6(abs_path, doc_type, SW_OPEN_DOC_SILENT, "", 0, 0)
         self._sw.ActivateDoc3(title, True, 0, 0)
 
         comp = binding.wrap(
@@ -4332,44 +4353,72 @@ class SolidWorksSession:
     # --- faces inside a component --------------------------------------------
 
     def _component_faces(self, comp) -> list:
-        """Every face of every solid body of the component (component coordinates)."""
-        bodies = self._solid_bodies(comp)
-        if not bodies:
-            raise SolidWorksError(
-                f"Component '{comp.Name2}' has no solid body to pick a face on."
-            )
+        """Every face of every solid body of the component as (face, part): a
+        part component's own faces, or those of every part in a sub-assembly.
+        Faces keep their part's coordinates."""
         faces = []
-        for body in bodies:
-            body_faces = body.GetFaces()
-            if not body_faces:
-                continue
-            faces.extend(body_faces if isinstance(body_faces, (list, tuple)) else [body_faces])
+        for part in self._solid_parts(comp):
+            for body in self._solid_bodies(part):
+                faces.extend((face, part) for face in body.GetFaces() or ())
+        if not faces:
+            raise SolidWorksError(f"Component '{comp.Name2}' has no solid body to pick a face on.")
         return faces
+
+    def _part_frame_in(self, comp, part) -> tuple:
+        """(rotation rows, shift mm) taking `part` coordinates into the coordinates
+        of `comp`, the component it sits in (identity for comp itself)."""
+        if part.Name2 == comp.Name2:
+            return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0, 0.0, 0.0]
+        outer, inner = self._frame(comp), self._frame(part)
+        rotation, shift = self._relative_frame((outer[0], outer[1]), (inner[0], inner[1]))
+        return rotation, [m_to_mm(s) for s in shift]
+
+    @staticmethod
+    def _relative_frame(outer, inner) -> tuple:
+        """(rotation rows, shift) taking `inner` coordinates into `outer`'s, both
+        given as (rotation rows, shift) relative to one root: R_o^T R_i and
+        R_o^T (t_i - t_o). Pure, unit-tested."""
+        (r_o, t_o), (r_i, t_i) = outer, inner
+        rotation = [[sum(r_o[k][row] * r_i[k][col] for k in range(3)) for col in range(3)] for row in range(3)]
+        shift = [sum(r_o[k][row] * (t_i[k] - t_o[k]) for k in range(3)) for row in range(3)]
+        return rotation, shift
 
     def _component_face(self, comp, selector: str):
         """Face '+x' / '-z:inner' of a component, or face '#5' by its
-        list_faces(component=...) index; returns (IFace2, position_mm or None).
+        list_faces(component=...) index; returns (IFace2, the part it is on).
 
         The direction is read in the COMPONENT's own coordinate system (verified:
         a component's faces keep part coordinates however the component is
-        turned), so '-x' is always the part's own -X face. ':inner' picks the
-        cavity side of a hollow part -- the inside of a room wall, not its skin.
-        An index reaches any face, such as a hole for a concentric mate.
+        turned), so '-x' is always the part's own -X face; in a sub-assembly, the
+        sub-assembly's -X. ':inner' picks the cavity side of a hollow part -- the
+        inside of a room wall, not its skin. An index reaches any face, such as a
+        hole for a concentric mate.
         """
+        faces = self._component_faces(comp)
         index = self._face_index(selector)
         if index is not None:
-            faces = self._component_faces(comp)
             if index >= len(faces):
                 raise SolidWorksError(f"Component '{comp.Name2}' has faces #0 to #{len(faces) - 1}; "
                                       "list_faces(component=...) shows them.")
-            return binding.wrap(faces[index], self._mod.IFace2), None
+            face, part = faces[index]
+            return binding.wrap(face, self._mod.IFace2), part
         normal, side = self._parse_face_selector(selector)
-        face, position_mm = self._pick_planar_face(self._component_faces(comp), normal, side)
-        if face is None:
+        if side not in self._FACE_SIDES:
+            raise SolidWorksError(f"Unknown face side '{side}'. Use 'outer' or 'inner'.")
+        facing = []
+        for part in {part.Name2: part for _, part in faces}.values():
+            rotation, shift = self._part_frame_in(comp, part)
+            # the direction as the part sees it, and where its faces lie along it in comp's frame
+            target = [sum(rotation[k][i] * normal[k] for k in range(3)) for i in range(3)]
+            along = sum(s * n for s, n in zip(shift, normal))
+            facing += [(face, position + along, part)
+                       for face, position in self._planar_faces_facing([f for f, p in faces if p is part], target)]
+        if not facing:
             raise SolidWorksError(
                 f"Component '{comp.Name2}' has no planar face pointing {selector}."
             )
-        return face, position_mm
+        face, _, part = (max if side == "outer" else min)(facing, key=lambda found: found[1])
+        return face, part
 
     def _face_plane_in_assembly(self, comp, face):
         """A component face as (point, normal) in ASSEMBLY coordinates, in metres.
@@ -4535,8 +4584,9 @@ class SolidWorksSession:
 
         first = self._component_by_name(asm, comp_a)
         second = self._component_by_name(asm, comp_b)
-        face_1, _ = self._component_face(first, face_a)
-        face_2, _ = self._component_face(second, face_b)
+        # a face in a sub-assembly lies on one of its parts, whose transform places it
+        face_1, part_1 = self._component_face(first, face_a)
+        face_2, part_2 = self._component_face(second, face_b)
         self._check_mate_faces(key, ((face_a, first, face_1), (face_b, second, face_2)))
         placements = [(comp, self._transform_data(comp)) for comp in (first, second)]
         mates_before = {m.Name for m in self._mates()}
@@ -4583,7 +4633,7 @@ class SolidWorksSession:
             )
 
         asm.EditRebuild()
-        problem = self._mate_problem(key, first, face_1, second, face_2, distance_mm, angle_deg)
+        problem = self._mate_problem(key, part_1, face_1, part_2, face_2, distance_mm, angle_deg)
         if problem:
             self._undo_mate(asm, mates_before, placements)
             raise SolidWorksError(problem)
@@ -4595,9 +4645,9 @@ class SolidWorksSession:
             "placements": {c.Name2: self._placement(c) for c in (first, second)},
         }
         if key == "concentric":
-            entry["axis_offset_mm"] = round(self._axes_apart(first, face_1, second, face_2)[0], 6)
+            entry["axis_offset_mm"] = round(self._axes_apart(part_1, face_1, part_2, face_2)[0], 6)
         else:
-            measured_mm, measured_deg = self._measure_mate(first, face_1, second, face_2)
+            measured_mm, measured_deg = self._measure_mate(part_1, face_1, part_2, face_2)
             entry.update(distance_mm=round(measured_mm, 6), angle_deg=round(measured_deg, 6))
         if key in ("distance", "angle"):
             entry["dimension"] = self._mate_dimension(mate)

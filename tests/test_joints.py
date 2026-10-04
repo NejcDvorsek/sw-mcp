@@ -121,3 +121,28 @@ def test_a_refused_mate_leaves_the_assembly_as_it_was(linkage):
     assert after["mates"] == before["mates"], f"the refused mate stayed: {after['mates']}"
     assert not any("error" in mate for mate in after["mates"])
     assert after["components"] == before["components"]
+
+
+def test_a_sub_assembly_is_inserted_and_mated_on_a_parts_hole(sw, linkage_parts, tmp_path):
+    """The real servo arrives as an assembly: inserted whole, its parts' holes
+    are listed in its own frame and take a concentric mate."""
+    sw.new_assembly()
+    sw.insert_component(linkage_parts["shin"], 10, 0, 0)  # the shin's hole (55, 5) lands at (65, 5)
+    pair = sw.save_assembly(str(tmp_path / "pair.sldasm"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        sw.insert_component(linkage_parts["thigh"], 0, 0, 0)
+        inserted = sw.insert_component(pair, 30, 40, 20)
+        assert inserted["component"]["name"].startswith("pair")
+        [shin_hole] = [f for f in sw.list_faces(component="pair")["faces"] if "cylinder" in f]
+        assert shin_hole["part"].endswith("shin-1")
+        assert shin_hole["cylinder"]["point_mm"][:2] == pytest.approx([65, 5], abs=1e-4), "not in the pair's frame"
+        mated = sw.add_mate("pair", f"#{shin_hole['index']}", "thigh", hole(sw, "thigh"), "concentric")
+        assert mated["axis_offset_mm"] == pytest.approx(0, abs=1e-4)
+        probe = sw.measure_distance("pair", point_mm=[5, 5, 22.5])  # the thigh's hole axis, through the shin's hole
+        assert probe["inside"] is False and probe["distance_mm"] == pytest.approx(2, abs=1e-4), probe
+    finally:
+        sw.close_part()
+        for title in ("pair.sldasm", "thigh.sldprt", "shin.sldprt"):
+            sw._sw.CloseDoc(title)
