@@ -132,6 +132,13 @@ stray drag in SolidWorks can change the part.
 - **Side-view shapes** (wedges, windows, symmetric recesses):
   `cut_profile_through_plane` on the Front/Top/Right plane or another plane by
   name, through all or a depth centred on the plane.
+- **Planes at an angle**: `add_plane("front", angle_deg=30, about="y")` turns a
+  default plane about a model axis it holds (right-hand rule: positive turns
+  counterclockwise seen from the axis's positive end); `add_plane("Plane1", offset_mm=5)`
+  moves any plane. Both return `origin_mm`, `x_axis` and `y_axis`: the point
+  (u, v) on the plane is origin + u x_axis + v y_axis, which is what
+  `add_extruded_profile_on_plane` and `cut_profile_through_plane` take. The
+  angle or offset is a dimension, and what is built on the plane follows it.
 - **A shape from two views**: extrude the front view, then cut the side view
   with `cut_profile_through_plane(..., keep_inside=True)`: everything outside
   the side outline goes, and what is left matches both views.

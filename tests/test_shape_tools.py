@@ -21,6 +21,10 @@ def vol(result):
     return result["mass_properties"]["volume_mm3"]
 
 
+def box(result):
+    return result["mass_properties"]["bounding_box_mm"]
+
+
 def inner_area(rim):
     """The face inside the rim: a rounded rectangle with R(5 - rim) corners."""
     return (60 - 2 * rim) * (20 - 2 * rim) - (4 - math.pi) * (5 - rim) ** 2
@@ -110,3 +114,41 @@ def test_fillet_rounds_every_edge_of_one_feature(part):
     spandrel, centroid = (1 - math.pi / 4) * 2 ** 2, (10 - 3 * math.pi) / (12 - 3 * math.pi) * 2
     assert rounded["edges_filleted"] == 2
     assert vol(rounded) - before == pytest.approx(spandrel * 2 * math.pi * 2 * centroid, abs=1e-3)
+
+
+# --- planes to build on; profiles at an angle -------------------------------------
+
+
+def on_plane(frame, u, v):
+    """The model point (u, v) on a plane add_plane described."""
+    return [o + u * x + v * y for o, x, y in zip(frame["origin_mm"], frame["x_axis"], frame["y_axis"])]
+
+
+def test_an_offset_plane_carries_an_extrusion_either_way(part):
+    part.add_box(40, 20, 10)
+    plane = part.add_plane("front", offset_mm=15)
+    assert plane["normal"] == pytest.approx([0, 0, 1], abs=1e-6) and plane["origin_mm"][2] == pytest.approx(15)
+    square = [on_plane(plane, u, v) for u, v in ((0, 0), (10, 0), (10, 10), (0, 10))]
+    up = part.add_extruded_profile_on_plane(square, plane["plane"], 3)  # z 15..18, apart from the block
+    assert box(up)["max_mm"][2] == pytest.approx(18) and vol(up) == pytest.approx(40 * 20 * 10 + 10 * 10 * 3)
+    down = part.add_extruded_profile_on_plane(square, plane["plane"], 5, reverse=True)  # z 10..15 joins them
+    assert box(down)["min_mm"][2] == pytest.approx(0) and vol(down) == pytest.approx(8000 + 300 + 500)
+
+
+def test_a_turned_plane_holds_a_turned_block(part):
+    """Front turned 30 degrees about y faces (sin 30, 0, cos 30); a 10 x 10
+    square on it extruded 4 is a 400 mm^3 block leaning with it. Its angle is a
+    dimension: at 90 the block stands along x."""
+    plane = part.add_plane("front", angle_deg=30, about="y", name="Slant")
+    assert plane["plane"] == "Slant"
+    # SolidWorks first turns it the other way; that try must be gone again
+    assert [f["name"] for f in part.list_features()["features"] if f["type"] == "RefPlane"] == ["Slant"]
+    assert plane["normal"] == pytest.approx([0.5, 0, math.sqrt(3) / 2], abs=1e-6)
+    square = [on_plane(plane, u, v) for u, v in ((0, 0), (10, 0), (10, 10), (0, 10))]
+    block = part.add_extruded_profile_on_plane(square, "Slant", 4)
+    assert vol(block) == pytest.approx(400) and block["fully_defined"] is True
+    upright = part.set_dimension(plane["dimensions"]["angle"], 90)
+    assert vol(upright) == pytest.approx(400)
+    assert box(upright)["size_mm"][0] == pytest.approx(4, abs=1e-4), "the block did not turn with its plane"
+
+

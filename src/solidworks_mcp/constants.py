@@ -41,6 +41,10 @@ SW_SLOT_LENGTH_CENTER = 0       # length is centre-to-centre of the end arcs
 # OptionFlip the offset goes against the plane's normal.
 SW_REF_PLANE_DISTANCE = 8
 SW_REF_PLANE_FLIP = 256
+# A plane at an angle to another about an axis it holds (add_plane): Angle to
+# the plane (selected first, mark 0) and Coincident with the axis (mark 1).
+SW_REF_PLANE_COINCIDENT = 4
+SW_REF_PLANE_ANGLE = 16
 
 # IFeatureManager.InsertMirrorFeature2 (verified): selection marks for what to
 # mirror (features 1, a body 256) and the mirror plane (2); swFeatureScope_e.

@@ -14,6 +14,10 @@ All notable changes to this project are documented here. This project follows
 - `insert_component` takes a `.sldasm` as a sub-assembly, such as a servo
   imported from STEP; `list_faces(component=...)` lists its parts' faces in the
   sub-assembly's frame, each with its part, and `add_mate` mates them.
+- `add_plane`: a reference plane at an offset from a plane, or turned about a
+  model axis by the right-hand rule, its offset or angle a dimension; it gives
+  the plane's origin and axes. `add_extruded_profile_on_plane` extrudes a
+  polygon drawn on any plane, such as that one.
 
 ## [0.9.0] — 2026-10-03
 

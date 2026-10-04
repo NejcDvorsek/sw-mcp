@@ -643,3 +643,30 @@ def test_a_profile_that_meets_the_y_axis_in_one_point_is_refused_too(s):
     edge on the axis (a cone) is fine."""
     with pytest.raises(SolidWorksError, match="touch the axis on their own"):
         s.add_revolved_profile([[0, 5], [5, 0], [10, 5], [5, 10]])  # a diamond touching r = 0 at (0, 5)
+
+
+# --- planes at an angle, turned profiles ------------------------------------------
+
+
+@pytest.mark.parametrize("normal,axis,angle,expected", [
+    ((0, 0, 1), "y", 30, (0.5, 0, math.sqrt(3) / 2)),      # front turned about y: tips towards +x
+    ((0, 0, 1), "x", 90, (0, -1, 0)),                       # front about x, a quarter turn: faces -y
+    ((0, 1, 0), "z", 90, (-1, 0, 0)),                       # top about z
+    ((1, 0, 0), "y", -90, (0, 0, 1)),                       # right about y, the other way
+])
+def test_a_turned_plane_follows_the_right_hand_rule(normal, axis, angle, expected):
+    assert SolidWorksSession._turned_normal(normal, axis, angle) == pytest.approx(expected, abs=1e-12)
+
+
+@pytest.mark.parametrize("arguments,message", [
+    ({}, "Give offset_mm or angle_deg"),
+    ({"offset_mm": 5, "angle_deg": 30, "about": "y"}, "Give offset_mm or angle_deg"),
+    ({"angle_deg": 30, "about": "w"}, "about must be"),
+    ({"base": "front", "angle_deg": 30, "about": "z"}, "lies in the top and right planes"),
+    ({"base": "top", "angle_deg": 180, "about": "x"}, "between -180 and 180"),
+])
+def test_add_plane_checks_its_input(s, arguments, message):
+    with pytest.raises(SolidWorksError, match=message):
+        s.add_plane(**arguments)
+
+

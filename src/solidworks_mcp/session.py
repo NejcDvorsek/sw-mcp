@@ -71,6 +71,8 @@ from .constants import (
     SW_ISO_TAPPED_HOLE,
     SW_PREF_DEFAULT_TEMPLATE_DRAWING,
     SW_RAY_NORMALS_ENTRY_EXIT,
+    SW_REF_PLANE_ANGLE,
+    SW_REF_PLANE_COINCIDENT,
     SW_REF_PLANE_DISTANCE,
     SW_REF_PLANE_FLIP,
     SW_RELATIONS_ALL,
@@ -2534,6 +2536,38 @@ class SolidWorksSession:
             )
         return self._with_depth(self._finish_feature(cut, name, **defined), depth_mm)
 
+    def add_extruded_profile_on_plane(self, points_mm: list, plane: str, depth_mm: float,
+                                      reverse: bool = False, name: str = "Extrude",
+                                      corner_radii_mm=None) -> dict:
+        """Extrude a polygon sketched on a reference plane, merged with the body.
+
+        plane: 'front', 'top', 'right' or a plane by name, such as one add_plane
+        made at an angle. points_mm are 3D [x, y, z] vertices ON that plane
+        (add_plane gives its origin and axes: origin + u x_axis + v y_axis).
+        depth_mm along the plane's normal, or the other way with reverse=True.
+        corner_radii_mm rounds the corners as for add_extruded_profile. Returns
+        mass properties.
+        """
+        if depth_mm <= 0:
+            raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        if not points_mm:
+            raise SolidWorksError("No profile points given.")
+        corners = self._profile_corners(points_mm, corner_radii_mm)
+        model = self._require_model()
+        ref, label = self._named_plane(plane)
+        model.ClearSelection2(True)
+        if not ref.Select2(False, 0):
+            raise SolidWorksError(f"Could not select the {label}.")
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sketch = self._open_face_sketch(sk, label)
+        try:
+            uv_m = [self._model_to_sketch_uv(sketch, *(mm_to_m(c) for c in p), label) for p in points_mm]
+            defined = self._draw_defined_polygon(sk, self._clean_polygon(uv_m), corners)
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)  # close the sketch, also when a point is rejected
+        return self._extrude_sketch(depth_mm, name, defined, f"Is the profile on the {label} closed?", reverse=reverse)
+
     def _define_slot(self, sk) -> dict:
         """Define an open straight-slot sketch by its end-arc centres and width.
 
@@ -3018,6 +3052,124 @@ class SolidWorksSession:
         # InsertRefPlane's return is a generic dispatch without Select2; take the
         # new plane from the tree instead.
         return self._last_ref_plane(), True
+
+    # The default planes that hold each model axis, and each default plane's normal.
+    _AXIS_PLANES = {"x": ("front", "top"), "y": ("front", "right"), "z": ("top", "right")}
+    _PLANE_NORMALS = {"front": (0.0, 0.0, 1.0), "top": (0.0, 1.0, 0.0), "right": (1.0, 0.0, 0.0)}
+
+    def add_plane(self, base: str = "front", offset_mm: float = 0.0, angle_deg: float = 0.0,
+                  about: str | None = None, name: str | None = None) -> dict:
+        """A reference plane to build on, its position a dimension.
+
+        Either `base` (front/top/right or a plane by name) moved offset_mm along
+        its normal, or a default plane turned angle_deg about the model axis
+        `about` that it holds (front holds x and y, top x and z, right y and z),
+        by the right-hand rule. For both, turn first and offset that plane next.
+        Returns the plane's name and how a sketch on it lies in the model:
+        origin_mm, normal, x_axis and y_axis, so a point (u, v) on it is
+        origin + u x_axis + v y_axis.
+        """
+        if bool(offset_mm) == bool(angle_deg):
+            raise SolidWorksError("Give offset_mm or angle_deg (for both: turn first, then offset that plane).")
+        key = axis = None
+        if angle_deg:
+            key, axis = str(base).lower(), str(about or "").lower()
+            if axis not in self._AXIS_PLANES:
+                raise SolidWorksError(f"about must be 'x', 'y' or 'z' (got {about!r}).")
+            if key not in self._AXIS_PLANES[axis]:
+                raise SolidWorksError(f"The {axis} axis lies in the {' and '.join(self._AXIS_PLANES[axis])} planes: "
+                                      f"turn one of those about it (got '{base}').")
+            if not 0.0 < abs(angle_deg) < 180.0:
+                raise SolidWorksError(f"angle_deg must be between -180 and 180, not 0 (got {angle_deg}).")
+        self._require_model()
+        if angle_deg:
+            plane = self._turned_plane(key, axis, angle_deg)
+        else:
+            plane, _ = self._plane_at(base, offset_mm)
+        if name:
+            plane.Name = name
+            if plane.Name != name:
+                raise SolidWorksError(f"The plane could not be named '{name}' (it is '{plane.Name}'): is the name taken?")
+        dimension = self._first_dimension_name(plane)
+        return {"ok": True, "plane": plane.Name, "dimensions": {"angle" if angle_deg else "offset": dimension},
+                **self._plane_frame(plane)}
+
+    def _turned_plane(self, base: str, axis: str, angle_deg: float):
+        """The default plane `base` turned angle_deg about the model axis `axis`
+        (right-hand rule). SolidWorks picks its own sense, so the normal is
+        checked and the plane built the other way round when it is wrong."""
+        model = self._model
+        base_plane, _ = self._named_plane(base)
+        expected = self._turned_normal(self._PLANE_NORMALS[base], axis, angle_deg)
+        reference_axis = self._model_axis(axis)
+        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
+        for flip in (False, True):
+            before = {f.Name for f in self._history()}
+            model.ClearSelection2(True)
+            if not (base_plane.Select2(False, 0) and reference_axis.Select2(True, 1)):
+                raise SolidWorksError(f"Could not select the {base} plane and the {axis} axis.")
+            constraint = SW_REF_PLANE_ANGLE | (SW_REF_PLANE_FLIP if flip else 0)
+            if feat_mgr.InsertRefPlane(constraint, math.radians(abs(angle_deg)), SW_REF_PLANE_COINCIDENT,
+                                       0.0, 0, 0.0) is None:
+                raise SolidWorksError(f"Could not turn the {base} plane {angle_deg:g} degrees about {axis}.")
+            plane = self._last_ref_plane()
+            normal = self._plane_frame(plane)["normal"]
+            if abs(sum(n * e for n, e in zip(normal, expected))) > 1 - 1e-6:
+                return plane
+            self._remove_features_since(before)  # turned the wrong way: build it the other way round
+        raise SolidWorksError(f"SolidWorks did not turn the {base} plane {angle_deg:g} degrees about {axis}.")
+
+    @staticmethod
+    def _turned_normal(normal, axis: str, angle_deg: float) -> list:
+        """`normal` turned angle_deg about the model axis `axis` by the right-hand
+        rule; pure, unit-tested."""
+        c, s = math.cos(math.radians(angle_deg)), math.sin(math.radians(angle_deg))
+        x, y, z = normal
+        if axis == "x":
+            return [x, c * y - s * z, s * y + c * z]
+        if axis == "y":
+            return [c * x + s * z, y, -s * x + c * z]
+        return [c * x - s * y, s * x + c * y, z]
+
+    def _model_axis(self, axis: str):
+        """A reference axis along the model axis `axis`, where its two default
+        planes meet; made once, named 'Axis X' etc., and hidden."""
+        label = f"Axis {axis.upper()}"
+        found = [f for f in self._history() if f.Name == label and f.GetTypeName2() == "RefAxis"]
+        if found:
+            return found[0]
+        model = self._model
+        first, second = (self._named_plane(key)[0] for key in self._AXIS_PLANES[axis])
+        model.ClearSelection2(True)
+        if not (first.Select2(False, 0) and second.Select2(True, 0)) or not model.InsertAxis2(True):
+            raise SolidWorksError(f"Could not make a reference axis along {axis}.")
+        made = [f for f in self._history() if f.GetTypeName2() == "RefAxis"][-1]
+        made.Name = label
+        if made.Select2(False, 0):
+            model.BlankRefGeom()  # construction geometry; keep screenshots clean
+        model.ClearSelection2(True)
+        return made
+
+    def _plane_frame(self, plane) -> dict:
+        """How a sketch on `plane` lies in the model: origin (mm), normal and the
+        sketch's x and y axes as unit vectors."""
+        model = self._model
+        model.ClearSelection2(True)
+        if not plane.Select2(False, 0):
+            raise SolidWorksError(f"Could not select '{plane.Name}'.")
+        sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
+        sketch = self._open_face_sketch(sk, plane.Name)
+        try:
+            to_model = binding.wrap(binding.wrap(sketch.ModelToSketchTransform, self._mod.IMathTransform).Inverse(),
+                                    self._mod.IMathTransform)
+            origin = self._to_model_mm(to_model, 0.0, 0.0, 0.0)
+            # a metre along each sketch axis keeps the rounded millimetres precise
+            axes = [[round((c - o) / 1000.0, 6) + 0.0 for c, o in zip(self._to_model_mm(to_model, *unit), origin)]
+                    for unit in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))]
+        finally:
+            model.ClearSelection2(True)
+            sk.InsertSketch(True)  # an empty sketch is dropped again
+        return {"origin_mm": origin, "x_axis": axes[0], "y_axis": axes[1], "normal": axes[2]}
 
     def run_guarded(self, fn, *args, **kwargs):
         """Run a tool; when it fails, delete what it added to the current part.

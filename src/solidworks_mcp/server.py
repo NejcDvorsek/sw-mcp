@@ -24,6 +24,7 @@ Conventions
 - Millimetres and degrees. New geometry starts on the Front plane (XY) and extrudes along +Z from z = 0. add_box spans x 0..w, y 0..h; add_disc is centred on the origin; revolves turn about Y.
 - Faces are picked by direction: '+z', '-x', ... *_on_face tools take 3D points on the face and use the face facing that way through them (the top, a pocket floor, a step); '+z:outer' / '+z:inner' force the outermost / innermost one. Other tools use the outermost face.
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
+- Other orientations: add_plane (an offset, or turned about x/y/z) and build on it with add_extruded_profile_on_plane or cut_profile_through_plane.
 - In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror and cut_profile_through_plane.
 - A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
 
@@ -268,6 +269,36 @@ async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float
     """
     return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name, corner_radii_mm,
                        keep_inside)
+
+
+@mcp.tool()
+async def add_plane(base: str = "front", offset_mm: float = 0.0, angle_deg: float = 0.0,
+                    about: str | None = None, name: str | None = None) -> dict:
+    """Make a reference plane to sketch on: an offset or a turned plane, its position a dimension.
+
+    base moved offset_mm along its normal (base: front/top/right or a plane by
+    name), or a default plane turned angle_deg about a model axis it holds,
+    about='x'/'y'/'z' (front holds x and y, top x and z, right y and z), by the
+    right-hand rule. For both, turn first, then offset that plane. Returns its
+    name for plane= arguments, and origin_mm, normal, x_axis and y_axis: a point
+    (u, v) on it is origin + u x_axis + v y_axis.
+    """
+    return await _call(_session.add_plane, base, offset_mm, angle_deg, about, name)
+
+
+@mcp.tool()
+async def add_extruded_profile_on_plane(points_mm: list, plane: str, depth_mm: float, reverse: bool = False,
+                                        name: str = "Extrude",
+                                        corner_radii_mm: float | list | None = None) -> dict:
+    """Extrude a polygon drawn on a reference plane, such as one add_plane made at an angle.
+
+    points_mm = 3D [x, y, z] points ON the plane (origin + u x_axis + v y_axis
+    from add_plane). depth_mm along the plane's normal, or the other way with
+    reverse=True; merged with the part. corner_radii_mm rounds the corners as
+    for add_extruded_profile. Returns mass properties.
+    """
+    return await _call(_session.add_extruded_profile_on_plane, points_mm, plane, depth_mm, reverse, name,
+                       corner_radii_mm)
 
 
 @mcp.tool()
