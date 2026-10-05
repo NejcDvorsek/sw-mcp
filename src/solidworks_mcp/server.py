@@ -588,7 +588,7 @@ async def cut_sketch(sketch: str, depth_mm: float | None = None, reverse: bool =
 
 @mcp.tool()
 async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
-                     radii_at_mm: list | None = None) -> dict:
+                     radii_at_mm: list | None = None, skip_shorter_mm: float | None = None) -> dict:
     """Round edges of the current part with one constant radius (mm).
 
     edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis,
@@ -598,9 +598,11 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
     list_edges. radii_at_mm = [[x, y, z, r], ...] makes the radius vary: r at
     the edge end at each point (list_edges gives the ends), radius_mm at the
     other ends, straight in between; 'vertex_radii' gives each end's dimension.
-    Returns the number of edges filleted and the mass properties.
+    skip_shorter_mm leaves out edges shorter than that. A refusal names the
+    edges the radius does not fit (each tried alone). Returns the number of
+    edges filleted and the mass properties.
     """
-    return await _call(_session.add_fillet, radius_mm, edges, name, radii_at_mm)
+    return await _call(_session.add_fillet, radius_mm, edges, name, radii_at_mm, skip_shorter_mm)
 
 
 @mcp.tool()
@@ -897,12 +899,16 @@ async def list_faces(component: str | None = None) -> dict:
 
 
 @mcp.tool()
-async def list_edges() -> dict:
-    """List the part's edges (index, type; lines give axis/length/midpoint).
+async def list_edges(face: str | None = None, feature: str | None = None, within_mm: list | None = None,
+                     min_length_mm: float | None = None) -> dict:
+    """List the part's edges: index, type, length, ends; lines also axis and midpoint.
 
-    Use the index with add_fillet/add_chamfer edges="2,5" to target specific edges.
+    Narrow it on a big part: face (a list_faces index, "#5"), feature (the edges
+    of the faces it made), within_mm ([[x1, y1, z1], [x2, y2, z2]]: both ends
+    inside), min_length_mm. Indices are always those of the whole part: use them
+    with add_fillet/add_chamfer edges="2,5".
     """
-    return await _call(_session.list_edges)
+    return await _call(_session.list_edges, face, feature, within_mm, min_length_mm)
 
 
 @mcp.tool()

@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 600 tests; each feature's integration test
+- **Tested against real SolidWorks.** 613 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -220,7 +220,7 @@ The server speaks MCP over **stdio**.
 | `cut_offset_pocket(face, x_mm, y_mm, z_mm, rim_mm, depth_mm, name)` | Pocket a face leaving a rim along its outline (I-beam web, tray, frame); rim and depth are dimensions |
 | `cut_slot(length_mm, width_mm, x_mm, y_mm, angle_deg, depth_mm, name)` | Cut a straight slotted hole (obround) on the +Z face at any angle |
 | `add_extruded_slot(start_mm, end_mm, width_mm, depth_mm, name)` | Extrude a stadium (rounded tab, lug, link) between two points, the round ends centred on them |
-| `add_fillet(radius_mm, edges, name, radii_at_mm)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, a face outline `"+z:outline"`, one feature's edges `"feature:Boss"`, or indices `"2,5"`); `radii_at_mm` varies the radius from end to end |
+| `add_fillet(radius_mm, edges, name, radii_at_mm, skip_shorter_mm)` | Round edges (`edges`: `all`, axis `x`/`y`/`z`, a face outline `"+z:outline"`, one feature's edges `"feature:Boss"`, or indices `"2,5"`); `radii_at_mm` varies the radius from end to end; a refusal names the edges that do not fit |
 | `add_full_round(face, x_mm, y_mm, z_mm, name)` | Round a rib's top off completely between its two closest opposite sides |
 | `add_chamfer(distance_mm, edges, name)` | Chamfer edges at 45° (`edges`: `all`, axis, a face outline, a feature's edges, or indices) |
 | `add_shell(thickness_mm, open_face)` | Hollow to a wall thickness; open a face (`+z`/…) or `none` |
@@ -244,7 +244,7 @@ The server speaks MCP over **stdio**.
 | `rebuild(top_only)` | Force rebuild, report errors |
 | `get_mass_properties` | Volume, mass, density, surface area, centre of mass, bounding box |
 | `get_bounding_box` | Tight part bounding box (min/max/size, mm) |
-| `list_faces(component)` / `list_edges` | Inspect faces (normal/area/centre; a cylinder's axis, radius and centre, also of a component in an assembly) and edges (type/ends/axis/length) by index |
+| `list_faces(component)` / `list_edges(face, feature, within_mm, min_length_mm)` | Inspect faces (normal/area/centre; a cylinder's axis, radius and centre, also of a component in an assembly) and edges (type/length/ends/axis) by index, narrowed to a face, a feature, a box or a length |
 | `check_printability(up, overhang_deg, min_wall_mm)` | For a print direction: overhanging faces (area, worst lean, centre), bed contact, height; with `min_wall_mm` the walls thinner than that |
 | `export(path, file_format, quality, deviation_mm, angle_deg, per_component)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg`; an assembly's STL as one file or one per component |
 | `screenshot(path, view, zoom_mm)` | PNG/BMP/JPG from a standard view (`iso`, `front`, `top`, …), zoomed to fit or onto a region |

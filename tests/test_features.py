@@ -770,9 +770,10 @@ def test_global_variable_drives_a_sketch_dimension(part):
 
 
 def test_profile_with_many_points_is_fixed_not_dimensioned(part):
-    # 32 points (a mesh-like outline): dimensioning it would take seconds per
-    # point and nobody edits that; it must be frozen, yet fully defined
-    n, r = 32, 10.0
+    # 64 points (a mesh-like outline, past MAX_DIMENSIONED_VERTICES): dimensioning
+    # it would take seconds per point and nobody edits that; it must be frozen,
+    # yet fully defined
+    n, r = 64, 10.0
     ring = [[r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n)] for k in range(n)]
     result = part.add_extruded_profile(ring, 5)
     assert result["fully_defined"] is True

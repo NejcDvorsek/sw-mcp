@@ -186,7 +186,11 @@ stray drag in SolidWorks can change the part.
 - **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
   holes in it), or every edge of one feature (`feature:Boss`: a boss's top and
-  the edge where it meets the part, for a moulded look).
+  the edge where it meets the part, for a moulded look). On a big part,
+  `list_edges(face="#5")`, `feature=`, `within_mm=` or `min_length_mm=` narrow
+  the list; the indices stay those of the whole part. A refused fillet names
+  the edges the radius does not fit and gives the ones that round together;
+  `skip_shorter_mm` leaves out slivers.
   `radii_at_mm=[[x, y, z, r]]` lets the radius vary: r at the edge end at
   that point (`list_edges` gives the ends), `radius_mm` at the others, straight
   in between. Hand calculation for a right-angled edge of length L:

@@ -40,10 +40,10 @@ from .units import m_to_mm, mm_to_m
 EXACT_MM = 1e-9
 
 # Every dimension makes SolidWorks re-solve the sketch, so dimensioning grows
-# quadratically: 40 points took 15 s (7 s with solving paused), 120 points 90 s.
-# Sketches with more points than this are fixed instead; nobody edits that many
-# dimensions, and such profiles usually come from a mesh.
-MAX_DIMENSIONED_VERTICES = 24
+# quadratically: 40 points took 15 s (7 s with solving paused, 5 s within a tool
+# call, where CommandInProgress is set), 120 points 90 s. Sketches with more
+# points than this are fixed instead: such profiles usually come from a mesh.
+MAX_DIMENSIONED_VERTICES = 60
 
 
 @dataclass(frozen=True)

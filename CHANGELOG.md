@@ -23,6 +23,11 @@ All notable changes to this project are documented here. This project follows
   nothing moves: the mate it steps holds nothing any more.
 - `export(..., per_component=True)` writes an assembly's STL as one file per
   component; every export lists its `files`.
+- `list_edges` takes `face`, `feature`, `within_mm` and `min_length_mm`, and
+  gives every edge's length.
+- `add_fillet(skip_shorter_mm=...)` leaves out short edges. A refused fillet
+  names the edges that do not fit and offers the ones that round together.
+- Profiles up to 60 points are dimensioned point by point (24 before).
 - Feature and mate errors come with their cause in words.
 
 ### Changed

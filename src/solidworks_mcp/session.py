@@ -2845,7 +2845,7 @@ class SolidWorksSession:
         return self._with_depth(self._finish_feature(cut, name, **sketch), depth_mm)
 
     def add_fillet(self, radius_mm: float, edges: str = "all", name: str = "Fillet",
-                   radii_at_mm: list | None = None) -> dict:
+                   radii_at_mm: list | None = None, skip_shorter_mm: float | None = None) -> dict:
         """Round edges of the part's solid body with one constant radius.
 
         edges: 'all' (default); a world axis 'x'|'y'|'z' (straight edges parallel
@@ -2855,8 +2855,11 @@ class SolidWorksSession:
         '2,5' from list_edges. radii_at_mm = [[x, y, z, r], ...] makes the radius
         vary: r at the edge end at each point (list_edges gives the ends),
         radius_mm at the other ends, straight in between; 'vertex_radii' names
-        each end's radius dimension. Returns how many edges were filleted and the
-        resulting mass properties (volume drops as convex edges are rounded off).
+        each end's radius dimension. skip_shorter_mm leaves out the edges shorter
+        than that (slivers a radius cannot follow). When SolidWorks refuses, each
+        edge is tried alone and the error names the ones that do not fit. Returns
+        how many edges were filleted and the resulting mass properties (volume
+        drops as convex edges are rounded off).
         """
         model = self._require_model()
         if radius_mm <= 0:
@@ -2866,11 +2869,28 @@ class SolidWorksSession:
         edge_count = self._select_edges(body, edges)
         if edge_count == 0:
             raise SolidWorksError(f"No edges found for selector '{edges}'.")
+        skipped = 0
+        if skip_shorter_mm is not None:
+            skipped = self._deselect_short_edges(skip_shorter_mm)
+            edge_count -= skipped
+            if edge_count == 0:
+                raise SolidWorksError(f"Every edge of '{edges}' is shorter than {skip_shorter_mm:g} mm.")
         if radii_at_mm:
             return self._variable_fillet(radius_mm, radii_at_mm, edge_count, name)
 
-        feat_mgr = binding.wrap(model.FeatureManager, self._mod.IFeatureManager)
-        fillet = feat_mgr.FeatureFillet3(
+        selected = self._selected_objects()
+        fillet = self._uniform_fillet(radius_mm)
+        if fillet is None:
+            raise SolidWorksError(self._fillet_refusal(radius_mm, selected))
+        result = self._finish_feature(fillet, name, edges_filleted=edge_count)
+        if skip_shorter_mm is not None:
+            result["edges_skipped"] = skipped
+        return result
+
+    def _uniform_fillet(self, radius_mm: float):
+        """FeatureFillet3 on the selected edges with one radius; None when refused."""
+        feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        return feat_mgr.FeatureFillet3(
             SW_FILLET_OPT_UNIFORM_RADIUS,      # Options (uniform R1; no propagation)
             mm_to_m(radius_mm),                # R1 (uniform radius)
             0.0, 0.0,                          # R2, Rho
@@ -2879,11 +2899,64 @@ class SolidWorksSession:
             None, None, None, None,            # Radii, Dist2Arr, RhoArr, SetBackDistances
             None, None, None,                  # PointRadius/Dist2/Rho arrays
         )
-        if fillet is None:
-            raise SolidWorksError(
-                "FeatureFillet3 failed (None). Is the radius too large for the geometry?"
-            )
-        return self._finish_feature(fillet, name, edges_filleted=edge_count)
+
+    def _selected_objects(self) -> list:
+        selmgr = binding.wrap(self._model.SelectionManager, self._mod.ISelectionMgr)
+        return [selmgr.GetSelectedObject6(i, -1) for i in range(1, selmgr.GetSelectedObjectCount2(-1) + 1)]
+
+    def _deselect_short_edges(self, shorter_mm: float) -> int:
+        """Keep only the selected edges at least shorter_mm long; return how many went."""
+        selected = self._selected_objects()
+        long_enough = [e for e in selected if self._edge_entry(0, e)["length_mm"] >= shorter_mm]
+        self._model.ClearSelection2(True)
+        for edge in long_enough:
+            binding.wrap(edge, self._mod.IEntity).Select4(True, None)
+        return len(selected) - len(long_enough)
+
+    _MAX_FILLET_TRIALS = 200
+
+    def _fillet_refusal(self, radius_mm: float, edges: list) -> str:
+        """Why a fillet was refused. The edges are added one at a time to a
+        trial fillet (removed again each time): an edge that breaks the group
+        is left out, and tried alone to tell which fail on their own."""
+        if len(edges) < 2 or len(edges) > self._MAX_FILLET_TRIALS:
+            return f"SolidWorks could not round {len(edges)} edge(s) with R{radius_mm:g}: is the radius too large?"
+        model = self._model
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        index_of = {ref: i for i, ref in enumerate(self._persist_refs(self._solid_body().GetEdges() or ()))}
+
+        def rounds(refs) -> bool:
+            model.ClearSelection2(True)
+            for ref in refs:
+                binding.wrap(extension.GetObjectByPersistReference3(ref)[0], self._mod.IEntity).Select4(True, None)
+            trial = self._uniform_fillet(radius_mm)
+            model.ClearSelection2(True)
+            if trial is None:
+                return False
+            binding.wrap(trial, self._mod.IFeature).Select2(False, 0)
+            extension.DeleteSelection2(SW_DELETE_ABSORBED)
+            model.ClearSelection2(True)
+            return True
+
+        fits, alone, together = [], [], []
+        for ref in self._persist_refs(edges):
+            if rounds(fits + [ref]):
+                fits.append(ref)
+            else:
+                (together if rounds([ref]) else alone).append(ref)
+
+        def named(refs) -> str:
+            return ", ".join(f"{index_of.get(ref, -1)} ({self._edge_entry(0, extension.GetObjectByPersistReference3(ref)[0])['length_mm']:g} mm)"
+                             for ref in refs)
+
+        parts = []
+        if alone:
+            parts.append(f"edge(s) {named(alone)} fail even alone")
+        if together:
+            parts.append(f"edge(s) {named(together)} round alone but not with the others")
+        keep = ",".join(str(index_of.get(ref, -1)) for ref in fits)
+        return (f"R{radius_mm:g} does not round all {len(edges)} edges: {'; '.join(parts)}. The other {len(fits)} "
+                f"round together: edges=\"{keep}\" (list_edges indices), a smaller radius, or skip_shorter_mm.")
 
     _VERTEX_TOLERANCE_MM = 0.01
 
@@ -4372,36 +4445,83 @@ class SolidWorksSession:
         point = [o + along * a for o, a in zip(origin, axis)]
         return {"axis": axis, "point_mm": point, "radius_mm": round(m_to_mm(params[6]), 4)}
 
-    def list_edges(self) -> dict:
-        """Inspect the solid body's edges: index, type and ends; lines also give axis/length/midpoint."""
+    def list_edges(self, face=None, feature: str | None = None, within_mm=None,
+                   min_length_mm: float | None = None) -> dict:
+        """Inspect the solid body's edges: index, type, length and ends (a full
+        circle has none); lines also give axis and midpoint. Narrow the list
+        with face (a list_faces index, '#5'), feature (the edges of the faces it
+        made), within_mm ([[x1, y1, z1], [x2, y2, z2]]: both ends inside) and
+        min_length_mm. Indices stay those of the whole list, for add_fillet."""
         self._require_model()
         body = self._solid_body()
-        edges = body.GetEdges()
-        if not isinstance(edges, (list, tuple)):
-            edges = [edges]
+        edges = list(body.GetEdges() or ())
+        chosen = range(len(edges))
+        if face is not None or feature is not None:
+            index_of = {ref: i for i, ref in enumerate(self._persist_refs(edges))}
+            for picked in (self._face_edges(body, face) if face is not None else None,
+                           self._feature_edges(feature) if feature is not None else None):
+                if picked is not None:
+                    keep = {index_of[ref] for ref in self._persist_refs(picked) if ref in index_of}
+                    chosen = [i for i in chosen if i in keep]
+        box = self._box_corners(within_mm) if within_mm is not None else None
         out = []
-        for i, edge_dispatch in enumerate(edges):
-            edge = binding.wrap(edge_dispatch, self._mod.IEdge)
-            curve = binding.wrap(edge.GetCurve(), self._mod.ICurve)
-            is_line = bool(curve is not None and curve.IsLine())
-            is_circle = bool(curve is not None and not is_line and curve.IsCircle())
-            entry = {"index": i, "type": "line" if is_line else ("circle" if is_circle else "curve")}
-            if is_line:
-                start = edge.GetStartVertex()
-                end = edge.GetEndVertex()
-                if start is not None and end is not None:
-                    p1 = binding.wrap(start, self._mod.IVertex).GetPoint()
-                    p2 = binding.wrap(end, self._mod.IVertex).GetPoint()
-                    dx, dy, dz = p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]
-                    length = (dx * dx + dy * dy + dz * dz) ** 0.5
-                    entry["length_mm"] = round(m_to_mm(length), 3)
-                    entry["midpoint_mm"] = [round(m_to_mm((p1[k] + p2[k]) / 2), 3) for k in range(3)]
-                    entry["axis"] = self._axis_of(dx, dy, dz, length)
-            ends = [edge.GetStartVertex(), edge.GetEndVertex()]
-            if None not in ends:  # a full circle has no ends
-                entry["ends_mm"] = [list(self._vertex_mm(vertex)) for vertex in ends]
+        for i in chosen:
+            entry = self._edge_entry(i, edges[i])
+            if min_length_mm is not None and entry["length_mm"] < min_length_mm:
+                continue
+            if box is not None and not all(all(lo <= c <= hi for c, lo, hi in zip(p, *box))
+                                           for p in entry.get("ends_mm", [entry["start_mm"]])):
+                continue
+            entry.pop("start_mm")
             out.append(entry)
         return {"ok": True, "count": len(out), "edges": out}
+
+    _CURVE_TYPES = {3001: "line", 3002: "circle"}  # ICurve.Identity
+
+    def _edge_entry(self, index: int, edge_dispatch) -> dict:
+        """One edge in four COM calls: its curve, the curve's type, its ends and
+        parameter range in one array (GetCurveParams2), and its length."""
+        edge = binding.wrap(edge_dispatch, self._mod.IEdge)
+        curve = binding.wrap(edge.GetCurve(), self._mod.ICurve)
+        params = edge.GetCurveParams2()  # start xyz, end xyz (m), start and end parameter
+        start = [round(m_to_mm(v), 4) + 0.0 for v in params[0:3]]
+        end = [round(m_to_mm(v), 4) + 0.0 for v in params[3:6]]
+        kind = self._CURVE_TYPES.get(curve.Identity(), "curve")
+        length = m_to_mm(curve.GetLength3(params[6], params[7]))
+        entry = {"index": index, "type": kind, "length_mm": round(length, 3), "start_mm": start}
+        if math.dist(start, end) > 1e-6:  # a full circle starts where it ends
+            entry["ends_mm"] = [start, end]
+        if kind == "line":
+            d = [b - a for a, b in zip(start, end)]
+            entry["midpoint_mm"] = [round((a + b) / 2, 3) for a, b in zip(start, end)]
+            entry["axis"] = self._axis_of(*d, math.dist(start, end))
+        return entry
+
+    def _persist_refs(self, entities) -> list:
+        extension = binding.wrap(self._model.Extension, self._mod.IModelDocExtension)
+        return [bytes(extension.GetPersistReference3(e)) for e in entities]
+
+    def _face_edges(self, body, face) -> list:
+        index = self._face_index(face)
+        faces = self._body_faces(body)
+        if index is None or not 0 <= index < len(faces):
+            raise SolidWorksError(f"face takes a list_faces index, '#0' to '#{len(faces) - 1}' (got {face!r}).")
+        return list(binding.wrap(faces[index], self._mod.IFace2).GetEdges() or ())
+
+    def _feature_edges(self, name: str) -> list:
+        return [edge for face in (self._history_feature(name).GetFaces() or ())
+                for edge in binding.wrap(face, self._mod.IFace2).GetEdges() or ()]
+
+    @staticmethod
+    def _box_corners(within_mm) -> tuple:
+        """[[x1, y1, z1], [x2, y2, z2]] -> (low, high), corners in any order; pure."""
+        try:
+            (a, b) = within_mm
+            a, b = [float(c) for c in a], [float(c) for c in b]
+            assert len(a) == len(b) == 3
+        except (TypeError, ValueError, AssertionError):
+            raise SolidWorksError(f"within_mm takes two corners [[x1, y1, z1], [x2, y2, z2]] (got {within_mm}).") from None
+        return [min(p, q) for p, q in zip(a, b)], [max(p, q) for p, q in zip(a, b)]
 
     # --- bodies: separate, combined, split -------------------------------------------
 

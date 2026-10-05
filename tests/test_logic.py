@@ -10,6 +10,7 @@ import pytest
 
 from solidworks_mcp.errors import SolidWorksError
 from solidworks_mcp.session import SolidWorksSession
+from solidworks_mcp.sketch_constraints import MAX_DIMENSIONED_VERTICES
 
 
 @pytest.fixture
@@ -88,8 +89,8 @@ def test_corner_groups_reject_a_list_that_does_not_fit_the_profile():
         SolidWorksSession._corner_groups([5, 5, 5], 4)
     with pytest.raises(SolidWorksError, match=">= 0"):
         SolidWorksSession._corner_groups([5, -1, 5, 5], 4)
-    with pytest.raises(SolidWorksError, match="24"):
-        SolidWorksSession._corner_groups(1, 30)  # such profiles are fixed, not dimensioned
+    with pytest.raises(SolidWorksError, match=str(MAX_DIMENSIONED_VERTICES)):  # such profiles are fixed, not dimensioned
+        SolidWorksSession._corner_groups(1, MAX_DIMENSIONED_VERTICES + 6)
 
 
 def test_corner_radii_must_leave_some_straight_edge():
