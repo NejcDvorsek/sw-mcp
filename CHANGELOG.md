@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.11.0] — 2026-10-05
 
 ### Added
 - `set_equation` replaces the equation that sets the same name, a global
