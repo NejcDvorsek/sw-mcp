@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- `make_drawing` left its drawing open in SolidWorks, and with it the part
+  after `close_part`: it closed the drawing by the title it had before it
+  was saved.
+
 ## [0.11.0] — 2026-10-05
 
 ### Added

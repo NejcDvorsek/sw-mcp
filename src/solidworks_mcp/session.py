@@ -4891,7 +4891,6 @@ class SolidWorksSession:
         drawing = binding.wrap(self._sw.NewDocument(template, SW_DWG_PAPER_A4, 0.0, 0.0), self._mod.IModelDoc2)
         if drawing is None:
             raise SolidWorksError(f"SolidWorks could not start a drawing from the template '{template}'.")
-        title = drawing.GetTitle()
         try:
             sheets = binding.wrap(drawing, self._mod.IDrawingDoc)
             if not sheets.Create1stAngleViews2(part_path):
@@ -4914,7 +4913,9 @@ class SolidWorksSession:
             abs_path = os.path.abspath(path)
             self._write_via_saveas3(abs_path, drawing)
         finally:
-            self._sw.CloseDoc(title)
+            # saved, the drawing is named after the part ('holed_box - Sheet1'),
+            # so the title it started with no longer closes it (verified)
+            self._sw.CloseDoc(drawing.GetTitle())
         return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "views": views,
                 "dimensions": len(dimensions), "scale": f"{scale[0]:g}:{scale[1]:g}"}
 
