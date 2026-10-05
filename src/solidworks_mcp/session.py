@@ -107,6 +107,7 @@ from .constants import (
     SW_TOGGLE_3D_INTERCONNECT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
+    SW_TOGGLE_STL_ONE_FILE,
     SW_UNITS_LINEAR,
     SW_UNSUPPRESS_DEPENDENT,
     SW_WZD_COUNTERBORE,
@@ -4655,7 +4656,8 @@ class SolidWorksSession:
         sw.SetUserPreferenceDoubleValue(SW_STL_ANGLE_TOLERANCE, old["angle"])
 
     def export(self, path: str, file_format: str | None = None, quality: str = "fine",
-               deviation_mm: float | None = None, angle_deg: float | None = None) -> dict:
+               deviation_mm: float | None = None, angle_deg: float | None = None,
+               per_component: bool = False) -> dict:
         """Export the current part (STEP/STL/IGES/Parasolid/3MF/image) via SaveAs3.
 
         Silent (no overwrite prompt). Success is verified by checking the file
@@ -4664,27 +4666,58 @@ class SolidWorksSession:
         For STL/3MF, tessellation resolution is applied first (and restored after):
         quality 'coarse'|'fine' (default 'fine' for print quality), or pass
         deviation_mm (+ optional angle_deg) for a reproducible Custom resolution
-        (overrides quality). Ignored for STEP/IGES/Parasolid/images.
+        (overrides quality). Ignored for STEP/IGES/Parasolid/images. An
+        assembly goes to STL as one file, or with per_component=True as one file
+        per component next to `path`; `files` lists what was written.
         """
-        self._require_model()
+        model = self._require_model()
         fmt = (file_format or os.path.splitext(path)[1].lstrip(".")).lower()
         if fmt not in EXPORT_FORMATS:
             raise SolidWorksError(
                 f"Unknown export format '{fmt}'. Allowed: {sorted(EXPORT_FORMATS)}."
             )
+        assembly_stl = fmt == "stl" and int(model.GetType()) == SW_DOC_ASSEMBLY
+        if per_component and not assembly_stl:
+            raise SolidWorksError("per_component is for an assembly exported to STL.")
         abs_path = os.path.abspath(path)
         result = {"ok": True, "path": abs_path, "format": fmt}
+        files = [abs_path]
         if fmt in self._MESH_EXPORT_FORMATS:
             old = self._apply_stl_resolution(quality, deviation_mm, angle_deg)
+            together = self._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE)
             try:
-                self._write_via_saveas3(abs_path)
+                if assembly_stl:  # SolidWorks' own setting would decide, and the user's may be per part
+                    self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE, not per_component)
+                if per_component:
+                    files = self._write_stl_per_component(abs_path)
+                else:
+                    self._write_via_saveas3(abs_path)
             finally:
+                self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE, together)
                 self._restore_stl_resolution(old)
             result["resolution"] = "custom" if deviation_mm is not None else quality
         else:
             self._write_via_saveas3(abs_path)
-        result["bytes"] = os.path.getsize(abs_path)
+        result["files"] = files
+        result["bytes"] = sum(os.path.getsize(f) for f in files)
         return result
+
+    def _write_stl_per_component(self, abs_path: str) -> list:
+        """SaveAs3 the assembly to STL one file per component; return the files
+        that appeared or changed in the folder (SolidWorks names them itself)."""
+        folder = os.path.dirname(abs_path)
+        os.makedirs(folder, exist_ok=True)
+
+        def stl_files():
+            return {os.path.join(folder, f): os.path.getmtime(os.path.join(folder, f))
+                    for f in os.listdir(folder) if f.lower().endswith(".stl")}
+
+        before = stl_files()
+        self._model.SaveAs3(abs_path, SW_SAVE_AS_CURRENT_VERSION, SW_SAVE_AS_OPTIONS_SILENT)
+        written = sorted(f for f, mtime in stl_files().items() if before.get(f) != mtime)
+        if not written:
+            raise SolidWorksError(f"SolidWorks wrote no STL files into {folder}.")
+        return written
 
     def screenshot(self, path: str, view: str = "iso", zoom_mm: list | None = None) -> dict:
         """Screenshot of the current part or assembly to PNG/BMP/JPG.

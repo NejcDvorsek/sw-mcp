@@ -6,6 +6,8 @@ expected position, box and interference volume follows from a hand calculation.
 Distances are in mm, volumes in mm^3.
 """
 
+import os
+
 import pytest
 
 from solidworks_mcp.constants import SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT
@@ -336,6 +338,24 @@ def test_screenshot_and_export_work_on_an_assembly(assembly, blocks, tmp_path):
     two_blocks(assembly, blocks)
     assert assembly.screenshot(str(tmp_path / "asm.png"))["bytes"] > 0
     assert assembly.export(str(tmp_path / "asm.step"))["bytes"] > 0
+
+
+def test_an_assembly_goes_to_one_stl_or_one_per_component(assembly, blocks, tmp_path):
+    """SolidWorks' own setting decides by default, and per component the
+    expected file never appears: both ways are asked for explicitly."""
+    two_blocks(assembly, blocks)
+    whole = assembly.export(str(tmp_path / "whole.stl"))
+    assert whole["bytes"] > 0 and whole["files"] == [whole["path"]]
+    apart = assembly.export(str(tmp_path / "apart" / "asm.stl"), per_component=True)
+    names = sorted(os.path.basename(f).lower() for f in apart["files"])
+    assert len(names) == 2 and "block_a" in names[0] and "block_b" in names[1], names
+    assert all(os.path.getsize(f) > 0 for f in apart["files"])
+
+
+def test_one_stl_per_component_is_for_assemblies(part, tmp_path):
+    part.add_box(10, 10, 10)
+    with pytest.raises(SolidWorksError, match="per_component is for an assembly"):
+        part.export(str(tmp_path / "block.stl"), per_component=True)
 
 
 # --- outer vs inner face selection (the shelled-box bug) ----------------------

@@ -922,15 +922,18 @@ async def check_printability(up: str = "+z", overhang_deg: float = 45.0,
 
 @mcp.tool()
 async def export(path: str, file_format: str | None = None, quality: str = "fine",
-                 deviation_mm: float | None = None, angle_deg: float | None = None) -> dict:
+                 deviation_mm: float | None = None, angle_deg: float | None = None,
+                 per_component: bool = False) -> dict:
     """Export the current part or assembly to STEP/STL/IGES/Parasolid/3MF (format from extension).
 
     Silent (no prompts). Verifies the file appears on disk and reports its size.
     For STL/3MF, tessellation resolution is set first: quality 'coarse'|'fine'
     (default 'fine' for print quality), or pass deviation_mm (+ optional angle_deg)
     for a reproducible custom resolution (overrides quality). Ignored for other formats.
+    An assembly goes to STL as one file, or one file per component with
+    per_component=True (SolidWorks names them); `files` lists what was written.
     """
-    return await _call(_session.export, path, file_format, quality, deviation_mm, angle_deg)
+    return await _call(_session.export, path, file_format, quality, deviation_mm, angle_deg, per_component)
 
 
 @mcp.tool()

@@ -21,12 +21,16 @@ All notable changes to this project are documented here. This project follows
   (`mate`).
 - `check_motion` lists the components that moved (`moving`) and fails when
   nothing moves: the mate it steps holds nothing any more.
+- `export(..., per_component=True)` writes an assembly's STL as one file per
+  component; every export lists its `files`.
 - Feature and mate errors come with their cause in words.
 
 ### Changed
 - Tool calls run with SolidWorks' CommandInProgress set, which makes its COM
   calls up to a hundred times faster: `list_edges` on 144 edges took 18 s,
   now 0.6 s.
+- An assembly exported to STL is one file, whatever SolidWorks' own setting
+  says (with one file per component the expected file never appeared).
 
 ### Fixed
 - Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch

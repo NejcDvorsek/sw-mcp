@@ -210,6 +210,7 @@ SW_COMPONENT_LIGHTWEIGHT_STATES = {1, 4}
 # swUserPreferenceToggle_e
 SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE = 10
 SW_TOGGLE_STL_DONT_TRANSLATE = 71  # keep STL output in model coordinates (default: moved to positive space)
+SW_TOGGLE_STL_ONE_FILE = 72        # swSTLComponentsIntoOneFile: an assembly's STL as one file, not one per part
 # swMultiCAD_Enable3DInterconnect: with it on, an imported assembly arrives as ONE
 # wrapped sub-assembly, so its parts cannot be listed or mated (verified)
 SW_TOGGLE_3D_INTERCONNECT = 691
