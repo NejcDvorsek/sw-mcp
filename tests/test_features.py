@@ -687,6 +687,35 @@ def test_screenshot_zooms_onto_a_detail(part, tmp_path):
     assert shown_view(part).Scale2 > 5 * whole, "the zoomed screenshot shows the whole part"
 
 
+def on_screen(session, point_mm):
+    """Where a model point lands in the view, in SolidWorks' screen coordinates."""
+    import pythoncom
+    import win32com.client
+    mod = binding.module()
+    xform = binding.wrap(shown_view(session).Transform, mod.IMathTransform)
+    mathutil = binding.wrap(session._sw.GetMathUtility(), mod.IMathUtility)
+    coords = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8, [c / 1000 for c in point_mm])
+    point = binding.wrap(mathutil.CreatePoint(coords), mod.IMathPoint)
+    return list(binding.wrap(point.MultiplyTransform(xform), mod.IMathPoint).ArrayData)[:2]
+
+
+def test_screenshot_zooms_onto_the_region_from_every_side(part, tmp_path):
+    # ViewZoomTo2 reads its corners along the screen's axes, which are x, y, z
+    # only in the front view: elsewhere the region landed off screen and the
+    # picture showed something else, or only the background
+    part.add_box(40, 20, 10)
+    region, centre = [[26, 11, 0], [34, 19, 10]], [30, 15, 5]
+    part.screenshot(str(tmp_path / "front.png"), view="front", zoom_mm=region)
+    middle = on_screen(part, centre)
+    off = {}
+    for view in ("back", "left", "right", "top", "bottom", "iso"):
+        part.screenshot(str(tmp_path / f"{view}.png"), view=view, zoom_mm=region)
+        landed = on_screen(part, centre)
+        if math.dist(landed, middle) > 1:
+            off[view] = [round(c) for c in landed]
+    assert not off, f"the zoomed region is not in the middle of the picture ({middle}) in these views: {off}"
+
+
 def test_screenshot_leaves_the_planes_out(part, tmp_path, monkeypatch):
     """At the moment of the picture SolidWorks' View > Planes is off, unless
     show_planes asks for it, and the part's own setting comes back afterwards.

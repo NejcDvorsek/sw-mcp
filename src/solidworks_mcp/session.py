@@ -9,6 +9,7 @@ language-independent plane walk, forced-SI mass properties) are the ones proven
 green by scripts/m1_block.py and scripts/m2_parametric.py.
 """
 
+import itertools
 import math
 import os
 import re
@@ -4909,8 +4910,22 @@ class SolidWorksSession:
         if zoom_mm is None:
             model.ViewZoomtofit2()
         else:
-            model.ViewZoomTo2(*(mm_to_m(c) for c in zoom_mm[0]), *(mm_to_m(c) for c in zoom_mm[1]))
+            # ViewZoomTo2 reads its corners along the screen's axes, which are
+            # x, y, z only in the front view: turn the region's box first
+            rotation = binding.wrap(model.ActiveView, self._mod.IModelView).Orientation3.ArrayData[:9]
+            low, high = self._box_along_screen(zoom_mm, rotation)
+            model.ViewZoomTo2(*(mm_to_m(c) for c in low), *(mm_to_m(c) for c in high))
         return self.export(path, ext)
+
+    @staticmethod
+    def _box_along_screen(corners_mm, rotation) -> tuple:
+        """The box around a model-space box once turned into a view: (low, high)
+        along the screen's x, y and z. rotation is the view's Orientation3, whose
+        columns are the screen axes in model space; pure, unit-tested."""
+        axes = [rotation[col::3] for col in range(3)]
+        turned = [[sum(p * a for p, a in zip(corner, axis)) for axis in axes]
+                  for corner in itertools.product(*zip(*corners_mm))]
+        return [min(t[i] for t in turned) for i in range(3)], [max(t[i] for t in turned) for i in range(3)]
 
     def make_drawing(self, path: str) -> dict:
         """A 2D drawing of the current part, saved as PDF or as an editable .slddrw.

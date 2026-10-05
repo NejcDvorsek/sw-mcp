@@ -403,6 +403,14 @@ def test_screenshot_zoom_needs_two_3d_corners(s, zoom):
         s.screenshot("shot.png", zoom_mm=zoom)
 
 
+def test_a_zoom_region_turns_into_the_bottom_view():
+    # from below the screen's x is the model's x, its y the model's z, and the
+    # viewer looks along +y; the bottom view's Orientation3, as SolidWorks gives it
+    bottom = (1, 0, 0, 0, 0, -1, 0, 1, 0)
+    low, high = SolidWorksSession._box_along_screen([[70, -100, -24], [112, -70, 24]], bottom)
+    assert (low, high) == ([70, -24, 70], [112, 24, 100])
+
+
 class _FakePart:
     """Just enough of an IComponent2 part for the suppression checks."""
 

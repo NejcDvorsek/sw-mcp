@@ -20,6 +20,9 @@ All notable changes to this project are documented here. This project follows
   now picks the face straight along its normal, whatever the view.
 - `add_hole_wizard` at a point off the face, for instance inside an earlier
   hole's countersink, now says so, and by how much.
+- `screenshot(zoom_mm=...)` in any view but the front zoomed onto another
+  region, or showed only the background: the region is now turned into the
+  view first.
 
 ## [0.11.0] — 2026-10-05
 
