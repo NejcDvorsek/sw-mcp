@@ -10,6 +10,7 @@ trust the installed library over web docs.
 # swDocumentTypes_e (for OpenDoc6 / IModelDoc2.GetType)
 SW_DOC_PART = 1
 SW_DOC_ASSEMBLY = 2
+SW_DOC_DRAWING = 3
 
 # swEndConditions_e
 SW_END_COND_BLIND = 0

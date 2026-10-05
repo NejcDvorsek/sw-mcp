@@ -14,6 +14,8 @@ All notable changes to this project are documented here. This project follows
   name the features that fail to rebuild (`failing_features`).
 - `{"arc": [u, v], "center": [u, v]}` in `add_sketch`: an arc round a given
   centre, the short way.
+- `list_documents` and `activate_document`: back to an open document by its
+  title, also a new one that was never saved.
 
 ### Fixed
 - Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch

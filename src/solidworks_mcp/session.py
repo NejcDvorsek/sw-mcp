@@ -45,6 +45,7 @@ from .constants import (
     SW_DELETE_CHILDREN,
     SW_DETAILING_NO_OPTION,
     SW_DOC_ASSEMBLY,
+    SW_DOC_DRAWING,
     SW_DOC_PART,
     SW_DONT_REBUILD_ACTIVE_DOC,
     SW_DWG_PAPER_A4,
@@ -268,6 +269,41 @@ class SolidWorksSession:
         self._sw.CloseDoc(title)
         self._model = None
         return {"ok": True, "closed": title}
+
+    _DOC_TYPES = {SW_DOC_PART: "part", SW_DOC_ASSEMBLY: "assembly", SW_DOC_DRAWING: "drawing"}
+
+    def _open_documents(self) -> list:
+        return [binding.wrap(d, self._mod.IModelDoc2) for d in (self._ensure().GetDocuments() or ())]
+
+    def _document_entry(self, document) -> dict:
+        return {"title": document.GetTitle(), "path": document.GetPathName(),
+                "type": self._DOC_TYPES.get(int(document.GetType()), "other"),
+                "modified": bool(document.GetSaveFlag()), "visible": bool(document.Visible)}
+
+    def list_documents(self) -> dict:
+        """The documents open in SolidWorks: title, path (empty until saved),
+        type, unsaved changes, and which one is current here and active there.
+        Parts an open assembly loaded come along, not visible."""
+        current = self._model.GetTitle() if self._model is not None else None
+        active = binding.wrap(self._ensure().ActiveDoc, self._mod.IModelDoc2)
+        active = active.GetTitle() if active is not None else None
+        out = [{**self._document_entry(d), "current": d.GetTitle() == current, "active": d.GetTitle() == active}
+               for d in self._open_documents()]
+        return {"ok": True, "count": len(out), "documents": out}
+
+    def activate_document(self, title: str) -> dict:
+        """Make an open document current again by its title (list_documents),
+        also a new one that was never saved."""
+        documents = self._open_documents()
+        key = re.sub(r"\.(sldprt|sldasm|slddrw)$", "", str(title).strip(), flags=re.IGNORECASE).lower()
+        matches = [d for d in documents if d.GetTitle() == title] or \
+            [d for d in documents if re.sub(r"\.(sldprt|sldasm|slddrw)$", "", d.GetTitle(), flags=re.IGNORECASE).lower() == key]
+        if len(matches) != 1:
+            listed = ", ".join(d.GetTitle() for d in documents) or "none"
+            raise SolidWorksError(f"No open document '{title}' (open: {listed}).")
+        self._model = matches[0]
+        self._require_model()  # SolidWorks' active document too
+        return {"ok": True, "current": self._model.GetTitle(), **self._document_entry(self._model)}
 
     def _close_active_document(self) -> dict:
         active = binding.wrap(self._ensure().ActiveDoc, self._mod.IModelDoc2)

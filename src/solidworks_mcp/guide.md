@@ -236,6 +236,9 @@ stray drag in SolidWorks can change the part.
   (first angle) and an isometric view on A4 with the model's own dimensions,
   each shown once, so a fully dimensioned part gives a complete sketch to
   print or send; `.slddrw` keeps it editable. Save the part first.
+- **Open documents**: `list_documents` lists what SolidWorks has open;
+  `activate_document(title)` makes one current again, also a new part that was
+  never saved (after `open_part` and `close_part` on another).
 - **Assemblies**: `insert_component` puts a part's origin at a point; a
   `.sldasm` goes in whole as a sub-assembly (save an imported servo first).
   `list_faces(component=...)` then lists every part's faces in the

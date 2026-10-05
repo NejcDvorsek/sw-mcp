@@ -816,6 +816,26 @@ async def delete_equation(equation: str) -> dict:
 
 
 @mcp.tool()
+async def list_documents() -> dict:
+    """List the documents open in SolidWorks: title, path (empty until saved), type, unsaved changes.
+
+    `current` marks the one the tools work on, `active` SolidWorks' own. Parts
+    an open assembly loaded come along, with visible false.
+    """
+    return await _call(_session.list_documents)
+
+
+@mcp.tool()
+async def activate_document(title: str) -> dict:
+    """Make an open document current again by its title, also a new one that was never saved.
+
+    For after open_part / close_part on another document; list_documents gives
+    the titles.
+    """
+    return await _call(_session.activate_document, title)
+
+
+@mcp.tool()
 async def rebuild(top_only: bool = False) -> dict:
     """Force a rebuild of the current part and report whether it rebuilt without errors."""
     return await _call(_session.rebuild, top_only)
