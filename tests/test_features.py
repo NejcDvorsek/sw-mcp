@@ -584,10 +584,11 @@ def test_a_part_reopened_behind_another_document_can_still_be_cut(part, tmp_path
     SolidWorks' active document, and every sketch on it was refused ('refused
     a horizontal relation'), until everything was closed and reopened."""
     part.add_box(40, 20, 10)
-    shin = part.save_part(str(tmp_path / "shin.sldprt"))["path"]
+    # a name no one has open: SolidWorks opens no second document of a title
+    saved = part.save_part(str(tmp_path / "reopened_behind_another.sldprt"))["path"]
     other = part.new_part()["title"]  # now SolidWorks' active document
     try:
-        part.open_part(shin)
+        part.open_part(saved)
         pocket = part.cut_profile([[5, 5], [15, 5], [15, 15], [5, 15]], 2)
         assert abs(vol(pocket) - (8000 - 10 * 10 * 2)) < 0.01
     finally:
