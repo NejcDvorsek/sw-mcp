@@ -971,6 +971,20 @@ class SolidWorksSession:
         return lines
 
     @staticmethod
+    def _draw_circle(sk, u_m, v_m, radius_m):
+        """A circle in the open sketch, drawn with AddToDB: else SolidWorks'
+        inference snaps a centre near an axis or another sketch onto it (a hole
+        0.75 mm below the x axis landed on it, verified)."""
+        sk.AddToDB = True
+        try:
+            circle = sk.CreateCircleByRadius(u_m, v_m, 0.0, radius_m)
+        finally:
+            sk.AddToDB = False
+        if not circle:
+            raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
+        return circle
+
+    @staticmethod
     def _draw_centerline(sk, x1_m, y1_m, x2_m, y2_m):
         """A revolve axis, drawn like _draw_polyline so no automatic relation lands on it."""
         sk.AddToDB = True
@@ -1226,9 +1240,7 @@ class SolidWorksSession:
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)
         try:
-            circle = sk.CreateCircleByRadius(mm_to_m(x_mm), mm_to_m(y_mm), 0.0, mm_to_m(diameter_mm / 2.0))
-            if not circle:
-                raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
+            circle = self._draw_circle(sk, mm_to_m(x_mm), mm_to_m(y_mm), mm_to_m(diameter_mm / 2.0))
             sketch = self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
         finally:
             model.ClearSelection2(True)
@@ -1703,13 +1715,7 @@ class SolidWorksSession:
             try:
                 if isinstance(poly, dict):
                     (cx, cy), diameter = poly["center_mm"], poly["diameter_mm"]
-                    sk.AddToDB = True  # else its centre may snap onto the profile below
-                    try:
-                        circle = sk.CreateCircleByRadius(mm_to_m(cx), mm_to_m(cy), 0.0, mm_to_m(diameter / 2))
-                    finally:
-                        sk.AddToDB = False
-                    if not circle:
-                        raise SolidWorksError(f"Could not draw the round section at z={height}.")
+                    circle = self._draw_circle(sk, mm_to_m(cx), mm_to_m(cy), mm_to_m(diameter / 2))
                     defined = self._define_sketch(sk, circles=[circle], names={
                         ("x", 0): "x", ("y", 0): "y", ("diameter", 0): "diameter"})
                 else:
@@ -1843,10 +1849,7 @@ class SolidWorksSession:
         sk = binding.wrap(model.SketchManager, self._mod.ISketchManager)
         sk.InsertSketch(True)  # the sketch is created on the selected face
         try:
-            circle = sk.CreateCircleByRadius(
-                mm_to_m(x_mm), mm_to_m(y_mm), 0.0, mm_to_m(diameter_mm / 2.0))
-            if not circle:
-                raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
+            circle = self._draw_circle(sk, mm_to_m(x_mm), mm_to_m(y_mm), mm_to_m(diameter_mm / 2.0))
             sketch = self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
         finally:
             model.ClearSelection2(True)
@@ -2286,9 +2289,7 @@ class SolidWorksSession:
         try:
             u, v = self._model_to_sketch_uv(sketch, mm_to_m(x_mm), mm_to_m(y_mm),
                                             mm_to_m(z_mm), face)
-            circle = sk.CreateCircleByRadius(u, v, 0.0, mm_to_m(diameter_mm / 2.0))
-            if not circle:
-                raise SolidWorksError("Circle sketch failed: CreateCircleByRadius returned nothing.")
+            circle = self._draw_circle(sk, u, v, mm_to_m(diameter_mm / 2.0))
             # x/y are the face sketch's own horizontal/vertical directions
             return self._define_sketch(sk, circles=[circle], names={("x", 0): "x", ("y", 0): "y"})
         finally:

@@ -13,6 +13,11 @@ All notable changes to this project are documented here. This project follows
   broken by a deleted feature; `delete_equation` removes one. Their results
   name the features that fail to rebuild (`failing_features`).
 
+### Fixed
+- Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch
+  inference moved a hole 0.75 mm below the x axis onto the axis, and its
+  sketch got no y dimension. Circles are now drawn without inference.
+
 ## [0.10.0] — 2026-10-04
 
 ### Added
