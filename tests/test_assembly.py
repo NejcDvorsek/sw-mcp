@@ -238,8 +238,8 @@ def disc(sw, tmp_path_factory):
 
 def test_a_turned_round_part_keeps_its_own_box(sw, disc):
     """SolidWorks' component box turns with the component and grows: this disc
-    came out 28.3 wide, and an arm in the Quadruped reached 4.7 mm further than
-    its box said. Every box the tools report must be the part's own."""
+    came out 28.3 wide, and an arm in a real assembly reached 4.7 mm further
+    than its box said. Every box the tools report must be the part's own."""
     sw.new_assembly()
     try:
         sw.insert_component(disc, 0, 0, 0)
