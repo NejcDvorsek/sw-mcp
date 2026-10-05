@@ -188,7 +188,7 @@ def test_a_round_loft_makes_a_frustum(part, foot, rel):
                                  [0, 30])
     assert vol(loft) == pytest.approx(math.pi * 30 * (10 ** 2 + 10 * 5 + 5 ** 2) / 3, rel=rel),         "a loft whose circles start at different angles twists, pinches in and loses volume"
     assert {"profile0_diameter", "profile1_diameter", "profile1_x"} <= set(loft["dimensions"])
-    assert box(loft)["max_mm"][0] == pytest.approx(10, abs=0.01)  # the part box is loose around a lofted face
+    assert box(loft)["max_mm"][0] == pytest.approx(10, abs=1e-4),         "the box should hug the lofted face (SolidWorks' own part box reads 10.004)"
 
 
 def test_a_loft_starts_each_polygon_at_its_first_vertex(part):

@@ -4253,28 +4253,18 @@ class SolidWorksSession:
 
     def _bounding_box(self):
         # IModelDoc2 has no GetBox, so the call depends on the document type. A
-        # part measures via IPartDoc.GetPartBox(NoConversion=True), in metres;
-        # best-effort, so a failure there does not break the core measurement.
-        # An assembly joins the tight boxes of its components: IAssemblyDoc.GetBox
-        # joins their turned outer boxes, too big for a rotated part (verified:
-        # a 20 mm disc turned 45 degrees came out 28.3 wide).
+        # part joins its solid bodies' tight boxes, from their extreme points:
+        # IPartDoc.GetPartBox runs loose round curved faces (10.004 for a loft
+        # ending at 10, verified; millimetres round spline cuts). An empty part
+        # has no box. An assembly joins the tight boxes of its components:
+        # IAssemblyDoc.GetBox joins their turned outer boxes, too big for a
+        # rotated part (verified: a 20 mm disc turned 45 degrees came out 28.3 wide).
         model = self._require_model()
         if int(model.GetType()) == SW_DOC_ASSEMBLY:
             assembly = binding.wrap(model, self._mod.IAssemblyDoc)
             assembly.EditRebuild()  # mates move components on a rebuild: measure where they end up
             return self._joined_box([self._component_box(c) for c in self._components(assembly)])
-        try:
-            box = binding.wrap(model, self._mod.IPartDoc).GetPartBox(True)
-        except pythoncom.com_error:
-            return None
-        if not box or len(box) < 6:
-            return None
-        xmin, ymin, zmin, xmax, ymax, zmax = (m_to_mm(v) for v in box[:6])
-        return {
-            "min_mm": [round(xmin, 4), round(ymin, 4), round(zmin, 4)],
-            "max_mm": [round(xmax, 4), round(ymax, 4), round(zmax, 4)],
-            "size_mm": [round(xmax - xmin, 4), round(ymax - ymin, 4), round(zmax - zmin, 4)],
-        }
+        return self._joined_box([self._body_box(body) for body in self._part_bodies()])
 
     def get_bounding_box(self) -> dict:
         self._require_model()

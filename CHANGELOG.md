@@ -26,6 +26,8 @@ All notable changes to this project are documented here. This project follows
   origin ("SolidWorks did not draw the points"): SolidWorks merges points
   closer than a tenth of a micrometre. Such points are one point now, and a
   centre that close to the origin goes onto it, as a relation.
+- A part's bounding box hugs its curved faces: SolidWorks' own part box ran
+  loose round lofts and splines.
 
 ## [0.10.0] — 2026-10-04
 
