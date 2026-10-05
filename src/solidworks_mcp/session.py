@@ -3931,6 +3931,10 @@ class SolidWorksSession:
         it sets, its value and whether it is a global variable. `broken` marks
         one that names a dimension or variable that is gone, as one left behind
         by delete_feature."""
+        out = self._equation_entries()
+        return {"ok": True, "count": len(out), "equations": out}
+
+    def _equation_entries(self) -> list:
         model = self._require_model()
         eqmgr = self._equation_mgr()
         texts = [eqmgr.Equation(i) for i in range(eqmgr.GetCount())]
@@ -3942,7 +3946,7 @@ class SolidWorksSession:
             out.append({"index": i, "equation": text, "name": names[0] if names else None,
                         "value": round(eqmgr.Value(i), 6), "global": bool(eqmgr.GlobalVariable(i)),
                         "broken": any(n.lower() not in variables and model.Parameter(n) is None for n in names)})
-        return {"ok": True, "count": len(out), "equations": out}
+        return out
 
     def delete_equation(self, equation) -> dict:
         """Delete an equation by the name it sets ('L_thigh', 'D1@Boss') or by its
@@ -4200,12 +4204,15 @@ class SolidWorksSession:
         return {"ok": True, "count": len(features), "features": features,
                 "under_defined_sketches": self._under_defined_sketches()}
 
-    def delete_feature(self, name: str, with_children: bool = False) -> dict:
+    def delete_feature(self, name: str, with_children: bool = False, with_equations: bool = False) -> dict:
         """Delete a history feature with the sketches it absorbed; rebuild, remeasure.
 
         What is built on it (a fillet on its edges, a sketch on its face) would
         be left broken, so it refuses and names those unless with_children=True
-        deletes them too. `deleted` lists what went, in tree order.
+        deletes them too. `deleted` lists what went, in tree order. Equations
+        that named its dimensions break: `broken_equations` lists them, unless
+        with_equations=True deletes them (`deleted_equations`); global
+        variables stay.
         """
         model = self._require_model()
         feature = self._history_feature(name)
@@ -4216,6 +4223,7 @@ class SolidWorksSession:
                 f"'{name}' instead, or pass with_children=True to delete them too."
             )
         before = [f.Name for f in self._history()]
+        broken_before = {e["equation"] for e in self._equation_entries() if e["broken"]}
         model.ClearSelection2(True)
         if not feature.Select2(False, 0):
             raise SolidWorksError(f"Could not select '{name}'.")
@@ -4224,12 +4232,20 @@ class SolidWorksSession:
             raise SolidWorksError(f"SolidWorks refused to delete '{name}'.")
         rebuilt_ok = bool(model.ForceRebuild3(False))
         after = {f.Name for f in self._history()}
-        return {
-            "ok": True,
-            "deleted": [n for n in before if n not in after],
-            "rebuild_ok": rebuilt_ok,
-            "mass_properties": self.get_mass_properties()["mass_properties"],
-        }
+        result = {"ok": True, "deleted": [n for n in before if n not in after]}
+        broken = [e for e in self._equation_entries() if e["broken"] and e["equation"] not in broken_before]
+        if with_equations and broken:
+            eqmgr = self._equation_mgr()
+            for entry in sorted(broken, key=lambda e: e["index"], reverse=True):  # later indexes first
+                if eqmgr.Delete(entry["index"]) < 0:
+                    raise SolidWorksError(f"SolidWorks refused to delete {entry['equation']}.")
+            rebuilt_ok = bool(model.ForceRebuild3(False))
+            result["deleted_equations"] = [e["equation"] for e in broken]
+            # one that used a variable set by a deleted equation breaks in turn
+            broken = [e for e in self._equation_entries() if e["broken"] and e["equation"] not in broken_before]
+        result.update(broken_equations=[e["equation"] for e in broken], rebuild_ok=rebuilt_ok,
+                      mass_properties=self.get_mass_properties()["mass_properties"])
+        return result
 
     def suppress_feature(self, name: str, suppress: bool = True) -> dict:
         """Suppress a history feature or bring it back; rebuild, remeasure.

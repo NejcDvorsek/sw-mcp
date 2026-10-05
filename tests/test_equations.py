@@ -52,6 +52,19 @@ def test_an_equation_left_behind_by_a_deleted_feature_shows_and_goes(part):
     assert "D1@Puck" not in by_name(part) and gone["deleted"] == '"D1@Puck" = "W"'
 
 
+def test_delete_feature_names_the_equations_it_breaks_or_takes_them_along(part):
+    part.add_box(40, 20, 10)
+    part.add_disc(10, 5, x_mm=20, y_mm=10, name="Puck")
+    part.add_disc(6, 5, x_mm=5, y_mm=5, name="Old")
+    part.set_equations(['"W" = 7', '"D1@Puck" = "W"', '"D1@Old" = "W"'])
+    left = part.delete_feature("Old")
+    assert left["broken_equations"] == ['"D1@Old" = "W"'], "the result must name the equation it left broken"
+    gone = part.delete_feature("Puck", with_equations=True)
+    assert gone["deleted_equations"] == ['"D1@Puck" = "W"'] and gone["broken_equations"] == []
+    # the variable stays, and so does the equation that was broken already
+    assert sorted(by_name(part)) == ["D1@Old", "W"]
+
+
 def test_a_refused_equation_leaves_the_others_as_they_were(part):
     block = part.add_box(40, 20, 10)
     part.set_equations(['"L" = 85', f'"{block["dimensions"]["depth"]}" = "L" / 5'])

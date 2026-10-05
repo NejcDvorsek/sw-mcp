@@ -744,13 +744,15 @@ async def list_features() -> dict:
 
 
 @mcp.tool()
-async def delete_feature(name: str, with_children: bool = False) -> dict:
+async def delete_feature(name: str, with_children: bool = False, with_equations: bool = False) -> dict:
     """Delete a feature (a list_features name) with its sketch, then rebuild and remeasure.
 
     The way to undo a step. Refuses when other features are built on it and
-    names them; with_children=True deletes those too.
+    names them; with_children=True deletes those too. Equations that named its
+    dimensions break and come back as broken_equations; with_equations=True
+    deletes them (global variables stay).
     """
-    return await _call(_session.delete_feature, name, with_children)
+    return await _call(_session.delete_feature, name, with_children, with_equations)
 
 
 @mcp.tool()

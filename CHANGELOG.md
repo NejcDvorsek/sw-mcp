@@ -5,6 +5,11 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+- `delete_feature` names the equations it leaves broken
+  (`broken_equations`); `with_equations=True` deletes them along, keeping
+  the global variables.
+
 ### Changed
 - `screenshot` leaves reference planes and axes out, so they do not cut
   through the shape; `show_planes=True` keeps them.

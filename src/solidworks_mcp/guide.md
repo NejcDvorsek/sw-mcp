@@ -47,6 +47,8 @@ short connect-time instructions first; this is the long version.
   edges, a sketch on its face) and names them; `with_children=True` deletes
   those too. A loft or rib keeps its hidden helper plane, as in SolidWorks
   itself: delete that plane as well (`list_features` shows it as a RefPlane).
+  Equations that named its dimensions break and come back as
+  `broken_equations`; `with_equations=True` deletes them.
   `suppress_feature` takes a feature out but keeps it and its
   dimensions, to try a variant; `suppress=False` brings it back together with
   what depends on it.

@@ -238,7 +238,7 @@ The server speaks MCP over **stdio**.
 | `extrude_sketch(sketch, depth_mm, reverse, name)` / `cut_sketch(sketch, depth_mm, reverse, name)` | Build on an existing sketch by name (one a person drew): extrude it, or cut it blind or through all |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
 | `list_features()` | The part's history in tree order (name, type, suppressed); flags features that fail to rebuild and sketches that are not fully defined |
-| `delete_feature(name, with_children)` | Undo a step: delete a feature with its sketch; refuses (and names them) while other features depend on it, unless `with_children` |
+| `delete_feature(name, with_children, with_equations)` | Undo a step: delete a feature with its sketch; refuses (and names them) while other features depend on it, unless `with_children`; names the equations it breaks, or deletes them with `with_equations` |
 | `suppress_feature(name, suppress)` | Take a feature out but keep it and its dimensions (try a variant); `suppress=False` brings it back with its dependents |
 | `set_material(name, database)` | Assign a material (e.g. `6061 Alloy`) so mass/density are real |
 | `rebuild(top_only)` | Force rebuild, report errors |
