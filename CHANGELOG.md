@@ -14,6 +14,12 @@ All notable changes to this project are documented here. This project follows
 - `make_drawing` left its drawing open in SolidWorks, and with it the part
   after `close_part`: it closed the drawing by the title it had before it
   was saved.
+- `add_hole_wizard` picked its face as seen on screen, so in another view
+  (a screenshot leaves one behind) the hole failed with "has no position
+  sketch to define", or silently went into the face seen first there. It
+  now picks the face straight along its normal, whatever the view.
+- `add_hole_wizard` at a point off the face, for instance inside an earlier
+  hole's countersink, now says so, and by how much.
 
 ## [0.11.0] — 2026-10-05
 

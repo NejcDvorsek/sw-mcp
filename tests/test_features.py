@@ -10,7 +10,7 @@ import math
 import pytest
 
 from solidworks_mcp import binding
-from solidworks_mcp.constants import SW_TOGGLE_DISPLAY_PLANES
+from solidworks_mcp.constants import SW_TOGGLE_DISPLAY_PLANES, VIEWS
 from solidworks_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
@@ -975,6 +975,40 @@ def test_wizard_rejects_a_size_it_does_not_know(part):
     part.add_box(40, 20, 10)
     with pytest.raises(SolidWorksError, match="M3.3"):
         part.add_hole_wizard("clearance", "M3.3", "+z", 20, 10, 10)
+
+
+def test_wizard_refuses_a_point_over_an_existing_countersink(part):
+    # the face lies at the point's height, but the point falls into the first
+    # hole's countersink (2.5 mm out: past the 1.7 bore, within the 3.36 rim):
+    # the wizard then picked the cone there and failed with "has no position
+    # sketch to define"
+    part.add_box(40, 20, 10)
+    part.add_hole_wizard("countersink", "M3", "+z", 20, 10, 10)
+    before = part.list_features()["count"]
+    with pytest.raises(SolidWorksError, match=r"not on the \+z face"):
+        part.add_hole_wizard("countersink", "M3", "+z", 22.5, 10, 10)
+    assert part.list_features()["count"] == before, "a refused hole must leave the part as it was"
+
+
+def test_wizard_hole_lands_on_its_face_whatever_the_view(part):
+    # an L, 20 deep: the low +y step at y = 10 sits behind the -x face as seen
+    # from the left. The wizard's face was picked on screen, so in this view
+    # (a screenshot leaves one behind) it hit that -x face instead
+    part.add_extruded_profile([[0, 0], [40, 0], [40, 10], [10, 10], [10, 20], [0, 20]], 20)
+    part._model.ShowNamedView2("", VIEWS["left"])
+    hole = part.add_hole_wizard("clearance", "M3", "+y", 25, 10, 10)
+    assert hole["fully_defined"] is True
+    assert part._circular_edges_at(25, 10, 10), "the hole went into the face seen first in the view, not +y at (25, 10, 10)"
+
+
+def test_wizard_hole_on_either_of_two_top_faces_at_one_height(part):
+    # a 5 deep slot right across splits the top into two faces at z = 10; the
+    # point decides which one, so neither may be refused as off the face
+    part.add_box(40, 20, 10)
+    part.cut_profile([[18, 0], [22, 0], [22, 20], [18, 20]], 5)
+    for x in (8, 32):
+        hole = part.add_hole_wizard("clearance", "M3", "+z", x, 10, 10)
+        assert hole["fully_defined"] is True, f"the hole at x={x} did not land on its top face"
 
 
 # --- compare the part with a reference mesh --------------------------------------

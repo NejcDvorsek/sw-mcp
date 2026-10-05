@@ -98,6 +98,7 @@ SW_ISO_SCREW_CLEARANCES = 144      # ISO 273
 SW_ISO_TAPPED_HOLE = 147
 SW_COSMETIC_THREAD_WITH_CALLOUT = 1  # swWzdHoleCosmeticThreadTypes_e
 SCREW_FITS = {"close": 0, "normal": 1, "loose": 2}  # swWzdHoleScrewClearanceTypes_e
+SW_SEL_FACES = 2                   # swSelectType_e, for IModelDocExtension.SelectByRay
 
 # STL/3MF tessellation, set as ISldWorks user preferences BEFORE SaveAs3 (the mesh
 # translator reads them at save time). These are GLOBAL/application prefs, so the

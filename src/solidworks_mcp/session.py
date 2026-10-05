@@ -90,6 +90,7 @@ from .constants import (
     SW_SKETCH_TEXT,
     SW_SAVE_AS_CURRENT_VERSION,
     SW_SAVE_AS_OPTIONS_SILENT,
+    SW_SEL_FACES,
     SW_SLOT_CREATION_LINE,
     SW_SLOT_LENGTH_CENTER,
     SW_START_SKETCH_PLANE,
@@ -510,7 +511,9 @@ class SolidWorksSession:
             return self._select_planar_face(body, normal, label, side)
         position = sum(p * n for p, n in zip(point_mm, normal))
         facing = self._planar_faces_facing(self._body_faces(body), normal)
-        face = next((f for f, pos in facing if abs(pos - position) <= self._ON_FACE_TOLERANCE_MM), None)
+        at_level = [f for f, pos in facing if abs(pos - position) <= self._ON_FACE_TOLERANCE_MM]
+        # faces at one height (a top split by a slot): the one the point is on
+        face = min(at_level, key=lambda f: self._off_face_mm(f, point_mm), default=None)
         if face is None:
             levels = ", ".join(f"{pos:g}" for pos in sorted({round(pos, 6) for _, pos in facing})) or "none"
             raise SolidWorksError(
@@ -521,6 +524,14 @@ class SolidWorksSession:
         if not binding.wrap(face, self._mod.IEntity).Select4(False, None):
             raise SolidWorksError(f"Could not select the {label} face.")
         return face
+
+    def _off_face_mm(self, face, point_mm) -> float:
+        """How far the 3D point lies from the face: 0 on it, more beyond its edge
+        or over an opening in it, such as a hole."""
+        nearest = face.GetClosestPointOn(*(mm_to_m(c) for c in point_mm))
+        if not nearest or len(nearest) < 3:
+            raise SolidWorksError("SolidWorks found no nearest point on the face.")
+        return math.dist(point_mm, [m_to_mm(c) for c in nearest[:3]])
 
     _DIRECTIONS = {
         "+x": (1.0, 0.0, 0.0), "-x": (-1.0, 0.0, 0.0),
@@ -1987,6 +1998,9 @@ class SolidWorksSession:
     # while absorbing transform round-off.
     _ON_FACE_TOLERANCE_MM = 1e-3
 
+    # where a ray that picks a face at a point starts, above it along the normal
+    _PICK_ABOVE_MM = 0.01
+
     _EDGE_POINT_TOLERANCE_MM = 0.01
     _THREAD_DIAMETER_TOLERANCE_MM = 0.01
 
@@ -2249,10 +2263,21 @@ class SolidWorksSession:
             diameter_m = mm_to_m(self._thread_minor_diameter(major, pitch))
 
         normal, side = self._parse_face_selector(face, default_side=None)
-        self._select_face_through(self._solid_body(), normal, side, point, face)  # a face through the point?
+        target = self._select_face_through(self._solid_body(), normal, side, point, face)
+        off = self._off_face_mm(target, point)
+        if off > self._ON_FACE_TOLERANCE_MM:  # the pick would land on whatever lies there, e.g. a countersink
+            raise SolidWorksError(
+                f"({x_mm:g}, {y_mm:g}, {z_mm:g}) mm is not on the {face} face but {off:.3g} mm off it: "
+                f"beyond its edge, or over an opening such as an earlier hole. Give a point on the face."
+            )
         model.ClearSelection2(True)
         ext = binding.wrap(model.Extension, self._mod.IModelDocExtension)
-        if not ext.SelectByID2("", "FACE", *(mm_to_m(c) for c in point), False, 0, None, 0):
+        # The wizard drills where the face is picked. SelectByID2 picks what the
+        # view shows first at that spot (in a side view: another face, or none),
+        # so a ray from just above the point straight into the face picks it.
+        start = [mm_to_m(c + n * self._PICK_ABOVE_MM) for c, n in zip(point, normal)]
+        if not ext.SelectByRay(*start, *(-n for n in normal), mm_to_m(self._ON_FACE_TOLERANCE_MM),
+                               SW_SEL_FACES, False, 0, 0):
             raise SolidWorksError(f"Could not pick the {face} face at ({x_mm:g}, {y_mm:g}, {z_mm:g}) mm.")
         hole_type, fastener = self._WIZARD_KINDS[kind]
         through = depth_mm is None
