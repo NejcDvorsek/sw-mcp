@@ -16,6 +16,7 @@ All notable changes to this project are documented here. This project follows
   centre, the short way.
 - `list_documents` and `activate_document`: back to an open document by its
   title, also a new one that was never saved.
+- `delete_component` removes a component from an assembly, with its mates.
 
 ### Fixed
 - Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch

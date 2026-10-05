@@ -836,6 +836,17 @@ async def activate_document(title: str) -> dict:
 
 
 @mcp.tool()
+async def delete_component(component: str) -> dict:
+    """Remove a component from the current assembly, with the mates that hold it.
+
+    component: its name in list_components ("Bracket-1", or "Bracket" while
+    there is one). Returns the mates deleted, the components left and the
+    assembly's mass properties.
+    """
+    return await _call(_session.delete_component, component)
+
+
+@mcp.tool()
 async def rebuild(top_only: bool = False) -> dict:
     """Force a rebuild of the current part and report whether it rebuilt without errors."""
     return await _call(_session.rebuild, top_only)

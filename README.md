@@ -35,7 +35,7 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 75 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete and suppress features; read, extrude and cut a person's sketches; import STEP. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 81 tools in total.
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
@@ -261,6 +261,7 @@ The server speaks MCP over **stdio**.
 | `open_assembly(path)` / `save_assembly(path)` | Open / save a native `.sldasm`; `open_assembly` also imports STEP, IGES and Parasolid assemblies, parts as components in place |
 | `insert_component(path, x_mm, y_mm, z_mm, fixed)` | Insert a part, or a `.sldasm` as a sub-assembly, with its **origin** at (x, y, z); the first component is fixed by default |
 | `list_components` | Name, path, fixed, position, rotation and bounding box of every component (its own extent, also when turned), and the mates with their dimensions and errors |
+| `delete_component(component)` | Remove a component from the assembly, with its mates |
 | `set_component_transform(name, x_mm, y_mm, z_mm, rx_deg, ry_deg, rz_deg)` | Move/rotate a component; the transform is read back and verified |
 | `add_mate(comp_a, face_a, comp_b, face_b, mate_type, distance_mm, angle_deg, flip)` | Mate two faces (by direction, or `#index` from `list_faces`): `coincident`, `distance`, `parallel`, `perpendicular`, `angle`, or `concentric` between cylinders — measured back afterwards; a refused mate is removed. A distance or angle mate returns its dimension: a joint angle as one number |
 | `check_motion(dimension_name, values, distances)` | Step a joint through its range: overlapping pairs and chosen distances per step, the smallest distance and where it occurs |

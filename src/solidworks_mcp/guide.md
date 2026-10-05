@@ -241,6 +241,7 @@ stray drag in SolidWorks can change the part.
   never saved (after `open_part` and `close_part` on another).
 - **Assemblies**: `insert_component` puts a part's origin at a point; a
   `.sldasm` goes in whole as a sub-assembly (save an imported servo first).
+  `delete_component` takes one out again, with its mates.
   `list_faces(component=...)` then lists every part's faces in the
   sub-assembly's own frame, naming the part, and `add_mate` takes them;
   transforms are read back, mates are measured back after the rebuild, and

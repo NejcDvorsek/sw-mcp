@@ -5105,6 +5105,27 @@ class SolidWorksSession:
             entry["error"] = {"code": code, "warning": bool(warning)}
         return entry
 
+    def delete_component(self, component: str) -> dict:
+        """Remove a component from the current assembly, with the mates that
+        hold it. Returns the mates that went with it, the components left and the
+        assembly's mass properties."""
+        model = self._require_model()
+        asm = self._require_assembly()
+        comp = self._component_by_name(asm, component)
+        name = comp.Name2
+        mates_before = [m.Name for m in self._mates()]
+        model.ClearSelection2(True)
+        selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+        if not comp.Select4(False, selmgr.CreateSelectData(), False):
+            raise SolidWorksError(f"Could not select component '{name}'.")
+        if not binding.wrap(model.Extension, self._mod.IModelDocExtension).DeleteSelection2(SW_DELETE_ABSORBED):
+            raise SolidWorksError(f"SolidWorks refused to delete component '{name}'.")
+        model.ClearSelection2(True)
+        mates_after = {m.Name for m in self._mates()}
+        return {"ok": True, "deleted": name, "mates_deleted": [m for m in mates_before if m not in mates_after],
+                "components": [c.Name2 for c in self._components(asm)],
+                "mass_properties": self.get_mass_properties()["mass_properties"]}
+
     def set_component_transform(self, name: str, x_mm: float, y_mm: float, z_mm: float,
                                 rx_deg: float = 0.0, ry_deg: float = 0.0,
                                 rz_deg: float = 0.0) -> dict:
