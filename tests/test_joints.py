@@ -146,3 +146,27 @@ def test_a_sub_assembly_is_inserted_and_mated_on_a_parts_hole(sw, linkage_parts,
         sw.close_part()
         for title in ("pair.sldasm", "thigh.sldprt", "shin.sldprt"):
             sw._sw.CloseDoc(title)
+
+
+def test_add_mate_names_the_mate_it_made(linkage):
+    angle = knee(linkage, 90)
+    assert angle["mate"] in [m["name"] for m in linkage.list_components()["mates"]]
+
+
+def test_a_suppressed_angle_mate_moves_nothing_and_check_motion_says_so(linkage):
+    """Suppressed, the angle mate lets go of the shin: its dimension still
+    changes, but nothing turns, so a clash-free verdict would be empty."""
+    angle = knee(linkage, 90)
+    assert linkage.suppress_mate(angle["mate"])["suppressed"]
+    with pytest.raises(SolidWorksError, match="moved no component"):
+        linkage.check_motion(angle["dimension"], [30, 60])
+    assert not linkage.suppress_mate(angle["mate"], suppress=False)["suppressed"]
+    assert linkage.check_motion(angle["dimension"], [30, 60])["moving"] == ["shin-1"]
+
+
+def test_a_deleted_mate_is_gone(linkage):
+    angle = knee(linkage, 90)
+    gone = linkage.delete_mate(angle["mate"])
+    assert gone["deleted"] == angle["mate"] and angle["mate"] not in gone["mates"] and len(gone["mates"]) == 2
+    with pytest.raises(SolidWorksError, match=rf"No mate '{angle['mate']}'"):
+        linkage.delete_mate(angle["mate"])

@@ -836,6 +836,24 @@ async def activate_document(title: str) -> dict:
 
 
 @mcp.tool()
+async def delete_mate(name: str) -> dict:
+    """Delete a mate of the current assembly by name (list_components, or add_mate's 'mate').
+
+    Its components are free to move again. Returns the mates left.
+    """
+    return await _call(_session.delete_mate, name)
+
+
+@mcp.tool()
+async def suppress_mate(name: str, suppress: bool = True) -> dict:
+    """Suppress a mate so it stops holding its components (it stays in the tree), or bring it back.
+
+    suppress=False brings it back. Returns whether it is suppressed now.
+    """
+    return await _call(_session.suppress_mate, name, suppress)
+
+
+@mcp.tool()
 async def delete_component(component: str) -> dict:
     """Remove a component from the current assembly, with the mates that hold it.
 

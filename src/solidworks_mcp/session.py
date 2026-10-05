@@ -21,6 +21,7 @@ import win32gui
 
 from . import __version__, binding, free_sketch
 from .constants import (
+    FEATURE_ERRORS,
     DRAWING_FORMATS,
     EXPORT_FORMATS,
     IMPORT_FORMATS,
@@ -3896,13 +3897,18 @@ class SolidWorksSession:
     def _same_equation(a: str, b: str) -> bool:
         return re.sub(r"\s+", "", a).lower() == re.sub(r"\s+", "", b).lower()
 
+    @staticmethod
+    def _error_entry(code, warning) -> dict:
+        """A feature's error code with what it means, where known; pure."""
+        return {"code": code, "warning": bool(warning), "cause": FEATURE_ERRORS.get(code, f"SolidWorks error {code}")}
+
     def _failing_features(self) -> list:
         """The features that fail to rebuild (errors, not warnings), in tree order."""
         failing = []
         for feat in self._iter_features():
             code, warning = feat.GetErrorCode2()
             if code and not warning:
-                failing.append({"name": feat.Name, "type": feat.GetTypeName2(), "code": code})
+                failing.append({"name": feat.Name, "type": feat.GetTypeName2(), **self._error_entry(code, warning)})
         return failing
 
     def list_dimensions(self) -> dict:
@@ -4087,7 +4093,7 @@ class SolidWorksSession:
             entry = {"name": feat.Name, "type": feat.GetTypeName2(), "suppressed": self._is_suppressed(feat)}
             code, warning = feat.GetErrorCode2()
             if code:
-                entry["error"] = {"code": code, "warning": bool(warning)}
+                entry["error"] = self._error_entry(code, warning)
             features.append(entry)
         return {"ok": True, "count": len(features), "features": features,
                 "under_defined_sketches": self._under_defined_sketches()}
@@ -5117,8 +5123,44 @@ class SolidWorksSession:
             entry["dimensions"] = [{key: d[key] for key in ("name", "value", "unit")} for d in dimensions]
         code, warning = mate.GetErrorCode2()
         if code:
-            entry["error"] = {"code": code, "warning": bool(warning)}
+            entry["error"] = self._error_entry(code, warning)
         return entry
+
+    def _mate_by_name(self, name: str):
+        mates = self._mates()
+        found = [m for m in mates if m.Name == name] or [m for m in mates if m.Name.lower() == str(name).lower()]
+        if len(found) != 1:
+            raise SolidWorksError(f"No mate '{name}' (there are: {', '.join(m.Name for m in mates) or 'none'}).")
+        return found[0]
+
+    def delete_mate(self, name: str) -> dict:
+        """Delete a mate of the current assembly by name (list_components, or
+        add_mate's 'mate'); its components are free to move again."""
+        model = self._require_model()
+        asm = self._require_assembly()
+        mate = self._mate_by_name(name)
+        title = mate.Name
+        model.ClearSelection2(True)
+        if not mate.Select2(False, 0):
+            raise SolidWorksError(f"Could not select mate '{title}'.")
+        if not binding.wrap(model.Extension, self._mod.IModelDocExtension).DeleteSelection2(SW_DELETE_ABSORBED):
+            raise SolidWorksError(f"SolidWorks refused to delete mate '{title}'.")
+        model.ClearSelection2(True)
+        asm.EditRebuild()
+        return {"ok": True, "deleted": title, "mates": [m.Name for m in self._mates()]}
+
+    def suppress_mate(self, name: str, suppress: bool = True) -> dict:
+        """Suppress a mate, so it stops holding its components while it stays in
+        the tree, or bring it back with suppress=False."""
+        self._require_model()
+        asm = self._require_assembly()
+        mate = self._mate_by_name(name)
+        action = SW_SUPPRESS_FEATURE if suppress else SW_UNSUPPRESS_DEPENDENT
+        if not mate.SetSuppression2(action, SW_THIS_CONFIGURATION, None):
+            raise SolidWorksError(f"SolidWorks refused to {'suppress' if suppress else 'unsuppress'} mate '{mate.Name}'.")
+        asm.EditRebuild()
+        mate = self._mate_by_name(name)
+        return {"ok": True, "mate": mate.Name, "suppressed": self._is_suppressed(mate)}
 
     def delete_component(self, component: str) -> dict:
         """Remove a component from the current assembly, with the mates that
@@ -5447,6 +5489,7 @@ class SolidWorksSession:
             raise SolidWorksError(problem)
         entry = {
             "ok": True,
+            "mate": next((m.Name for m in self._mates() if m.Name not in mates_before), None),
             "mate_type": key,
             "components": [first.Name2, second.Name2],
             "faces": [face_a, face_b],
@@ -5635,8 +5678,10 @@ class SolidWorksSession:
         Each step gives the overlapping component pairs with their volume and
         the distance between each pair in `distances` ([["Rod", "Bolt"], ...]);
         the summary gives whether every step is clash-free and each pair's
-        smallest distance with the value where it occurs. The dimension goes
-        back to its value afterwards.
+        smallest distance with the value where it occurs, and `moving` the
+        components that moved. Nothing moving fails: the mate the dimension
+        belongs to holds nothing any more (suppressed, or a face it used is
+        gone). The dimension goes back to its value afterwards.
         """
         if not values:
             raise SolidWorksError("Give the values to step through, e.g. [30, 60, 90].")
@@ -5650,7 +5695,8 @@ class SolidWorksSession:
         dim = self._dimension(dimension_name)
         unit, to_system, from_system = self._dimension_unit(dim)
         original = dim.SystemValue
-        steps = []
+        start = {c.Name2: self._transform_data(c) for c in self._components(asm)}
+        moving, steps = set(), []
         try:
             for value in values:
                 dim.SystemValue = to_system(value)
@@ -5659,6 +5705,7 @@ class SolidWorksSession:
                 if abs(applied - value) > 1e-6:
                     raise SolidWorksError(f"'{dimension_name}' did not take {value:g} {unit} (it reads "
                                           f"{applied:g}): is it a driven dimension?")
+                moving |= {c.Name2 for c in self._components(asm) if self._moved(start.get(c.Name2), c)}
                 steps.append({
                     f"value_{unit}": value,
                     "rebuild_ok": rebuilt,
@@ -5668,14 +5715,25 @@ class SolidWorksSession:
         finally:
             dim.SystemValue = original
             model.ForceRebuild3(False)
+        if not moving and any(abs(to_system(value) - original) > 1e-12 for value in values):
+            raise SolidWorksError(f"Stepping '{dimension_name}' through {values} moved no component: its mate holds "
+                                  "nothing any more (suppressed, or a face it used is gone); list_components shows it.")
         for step in steps:
             step["distances"] = [{"between": d["between"], "distance_mm": d["distance_mm"]} for d in step["distances"]]
         smallest = []
         for i in range(len(pairs)):
             closest = min(steps, key=lambda s: s["distances"][i]["distance_mm"])
             smallest.append({**closest["distances"][i], f"at_{unit}": closest[f"value_{unit}"]})
-        return {"ok": True, "dimension": dimension_name, "steps": steps,
+        return {"ok": True, "dimension": dimension_name, "steps": steps, "moving": sorted(moving),
                 "clash_free": not any(step["interferences"] for step in steps), "smallest_distances": smallest}
+
+    def _moved(self, before, comp) -> bool:
+        """Whether the component's transform left `before` (a new one has moved)."""
+        if before is None:
+            return True
+        now = self._transform_data(comp)
+        return (any(abs(a - b) > self._ROTATION_TOLERANCE for a, b in zip(before[:9], now[:9]))
+                or any(abs(a - b) > mm_to_m(self._TRANSFORM_TOLERANCE_MM) for a, b in zip(before[9:12], now[9:12])))
 
     def get_assembly_bounding_box(self) -> dict:
         """Bounding box of the whole assembly (min/max/size in mm)."""

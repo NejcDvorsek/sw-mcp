@@ -260,7 +260,9 @@ stray drag in SolidWorks can change the part.
   distances=[["Rod", "Bolt"]])` checks overlaps and clearances at every step
   and puts the joint back. `flip` turns an angle mate the other way. A mate
   that contradicts the others is refused and removed, naming the one it
-  fights; `list_components` lists the mates and their errors.
+  fights; `list_components` lists the mates and their errors, in words.
+  `check_motion` fails when nothing moves: then the mate lost a face, or is
+  suppressed. `delete_mate` and `suppress_mate` take the name add_mate returns.
 - **A person's part**: `list_features` names their sketches and planes.
   `read_sketch` reads a sketch back in model coordinates, so you can check it
   against the points that must fit before building on it. `extrude_sketch` and

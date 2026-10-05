@@ -17,6 +17,11 @@ All notable changes to this project are documented here. This project follows
 - `list_documents` and `activate_document`: back to an open document by its
   title, also a new one that was never saved.
 - `delete_component` removes a component from an assembly, with its mates.
+- `delete_mate` and `suppress_mate`; `add_mate` returns the new mate's name
+  (`mate`).
+- `check_motion` lists the components that moved (`moving`) and fails when
+  nothing moves: the mate it steps holds nothing any more.
+- Feature and mate errors come with their cause in words.
 
 ### Changed
 - Tool calls run with SolidWorks' CommandInProgress set, which makes its COM

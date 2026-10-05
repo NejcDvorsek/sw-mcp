@@ -20,6 +20,19 @@ SW_END_COND_MID_PLANE = 6
 # swBodyType_e
 SW_BODY_SOLID = 0
 
+# swFeatureError_e: what IFeature.GetErrorCode2 reports, for the codes a tool meets
+FEATURE_ERRORS = {
+    1: "unknown",
+    12: "the fillet radius does not fit",
+    38: "a mate edge is not valid",
+    39: "a mate face is not valid",
+    41: "a mate entity is not valid",
+    43: "dangling: a face or edge it used is gone",
+    46: "over-defined: it fights another mate",
+    47: "ill-defined",
+    48: "broken: a face or edge it used is gone",
+}
+
 # swFeatureFilletType_e
 SW_FILLET_TYPE_SIMPLE = 0
 SW_FILLET_TYPE_VARIABLE = 1

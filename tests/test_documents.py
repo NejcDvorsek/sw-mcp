@@ -47,3 +47,34 @@ def test_a_component_goes_with_its_mates(assembly, blocks):
     assert gone["components"] == ["block_a-1"] and len(gone["mates_deleted"]) == 1
     assert gone["mass_properties"]["volume_mm3"] == pytest.approx(40 * 20 * 10)
     assert not assembly.list_components().get("mates")
+
+
+def test_a_mate_whose_face_is_gone_says_so(sw, tmp_path):
+    """The lower block is rebuilt as a cylinder: the top face the mate held is
+    gone, and list_components says so in words, not only as error 48."""
+    paths = {}
+    for name, size in (("lower", (40, 20, 10)), ("upper", (20, 20, 20))):
+        sw.new_part()
+        sw.add_box(*size)
+        paths[name] = sw.save_part(str(tmp_path / f"{name}.sldprt"))["path"]
+        sw.close_part()
+    sw.new_assembly()
+    title = sw._model.GetTitle()
+    try:
+        sw.insert_component(paths["lower"])
+        sw.insert_component(paths["upper"], 0, 0, 30)
+        mate = sw.add_mate("upper-1", "-z", "lower-1", "+z", "coincident")["mate"]
+        sw.open_part(paths["lower"])
+        sw.delete_feature("BlockExtrude", with_children=True)
+        sw.add_cylinder(10, 10)
+        sw.save_part(paths["lower"])
+        sw.close_part()
+        sw.activate_document(title)
+        sw.rebuild()
+        [entry] = [m for m in sw.list_components()["mates"] if m["name"] == mate]
+        assert entry["error"]["code"] == 48 and "gone" in entry["error"]["cause"], entry
+    finally:
+        sw.activate_document(title)
+        sw.close_part()
+        for name in ("lower.sldprt", "upper.sldprt"):
+            sw._sw.CloseDoc(name)
