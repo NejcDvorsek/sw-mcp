@@ -107,6 +107,8 @@ from .constants import (
     SW_TOGGLE_3D_INTERCONNECT,
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
+    SW_TOGGLE_DISPLAY_AXES,
+    SW_TOGGLE_DISPLAY_PLANES,
     SW_TOGGLE_STL_ONE_FILE,
     SW_UNITS_LINEAR,
     SW_UNSUPPRESS_DEPENDENT,
@@ -4839,18 +4841,21 @@ class SolidWorksSession:
             raise SolidWorksError(f"SolidWorks wrote no STL files into {folder}.")
         return written
 
-    def screenshot(self, path: str, view: str = "iso", zoom_mm: list | None = None) -> dict:
-        """Screenshot of the current part or assembly to PNG/BMP/JPG.
+    def screenshot(self, path: str, view: str = "iso", zoom_mm: list | None = None,
+                   show_planes: bool = False) -> dict:
+        """Screenshot of the current part or assembly to PNG/JPG/TIF.
 
         view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or
         'bottom'. Zoomed to fit, or onto the box zoom_mm = [[x1, y1, z1],
-        [x2, y2, z2]] (model mm) to judge a detail. Writes via the same SaveAs3
-        path as `export`, so the return shape matches: {"ok", "path", "format",
-        "bytes"} where "format" is the image extension.
+        [x2, y2, z2]] (model mm) to judge a detail. Reference planes and axes
+        are left out unless show_planes=True; the part's own setting comes back
+        afterwards. Writes via the same SaveAs3 path as `export`, so the return
+        shape matches: {"ok", "path", "format", "bytes"} where "format" is the
+        image extension.
         """
         ext = os.path.splitext(path)[1].lstrip(".").lower()
-        if ext not in {"png", "bmp", "jpg", "tif"}:
-            raise SolidWorksError(f"Screenshot extension '{ext}' is not supported (png/bmp/jpg/tif).")
+        if ext not in {"png", "jpg", "tif"}:  # SaveAs3 to .bmp wrote nothing (returned 256)
+            raise SolidWorksError(f"Screenshot extension '{ext}' is not supported (png/jpg/tif).")
         key = str(view).lower()
         if key not in VIEWS:
             raise SolidWorksError(f"Unknown view '{view}'. Use {', '.join(VIEWS)}.")
@@ -4858,9 +4863,20 @@ class SolidWorksSession:
             raise SolidWorksError(f"zoom_mm needs two corners [[x1, y1, z1], [x2, y2, z2]] (got {zoom_mm}).")
         model = self._require_model()
         busy = self._command_in_progress(False)  # the view must redraw for the picture
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        shown = {}
         try:
+            if not show_planes:  # planes and axes run through the part and hide its shape
+                for toggle in (SW_TOGGLE_DISPLAY_PLANES, SW_TOGGLE_DISPLAY_AXES):
+                    shown[toggle] = bool(extension.GetUserPreferenceToggle(toggle, 0))
+                    extension.SetUserPreferenceToggle(toggle, 0, False)
+                model.GraphicsRedraw2()
             return self._take_screenshot(model, path, ext, key, zoom_mm)
         finally:
+            for toggle, value in shown.items():
+                extension.SetUserPreferenceToggle(toggle, 0, value)
+            if shown:
+                model.GraphicsRedraw2()
             self._command_in_progress(busy)
 
     def _take_screenshot(self, model, path, ext, key, zoom_mm) -> dict:

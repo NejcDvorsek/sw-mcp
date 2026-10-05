@@ -211,6 +211,8 @@ SW_COMPONENT_LIGHTWEIGHT_STATES = {1, 4}
 SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE = 10
 SW_TOGGLE_STL_DONT_TRANSLATE = 71  # keep STL output in model coordinates (default: moved to positive space)
 SW_TOGGLE_STL_ONE_FILE = 72        # swSTLComponentsIntoOneFile: an assembly's STL as one file, not one per part
+SW_TOGGLE_DISPLAY_AXES = 4         # swDisplayAxes: a document's View > Axes
+SW_TOGGLE_DISPLAY_PLANES = 5       # swDisplayPlanes: a document's View > Planes
 # swMultiCAD_Enable3DInterconnect: with it on, an imported assembly arrives as ONE
 # wrapped sub-assembly, so its parts cannot be listed or mated (verified)
 SW_TOGGLE_3D_INTERCONNECT = 691
@@ -249,6 +251,6 @@ RAY_HIT_WIDTH = 9
 IMPORT_FORMATS = {"step", "stp", "iges", "igs", "x_t", "x_b"}
 
 # Formats SaveAs3 can write (by extension), allow-listed for `export`. Image
-# extensions (png/bmp/jpg/tif) are here because `screenshot` writes via the same
-# SaveAs3 path.
-EXPORT_FORMATS = {"step", "stp", "stl", "iges", "igs", "x_t", "x_b", "3mf", "png", "bmp", "jpg", "tif"}
+# extensions (png/jpg/tif) are here because `screenshot` writes via the same
+# SaveAs3 path; .bmp wrote nothing.
+EXPORT_FORMATS = {"step", "stp", "stl", "iges", "igs", "x_t", "x_b", "3mf", "png", "jpg", "tif"}

@@ -10,6 +10,7 @@ import math
 import pytest
 
 from solidworks_mcp import binding
+from solidworks_mcp.constants import SW_TOGGLE_DISPLAY_PLANES
 from solidworks_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
@@ -683,6 +684,28 @@ def test_screenshot_zooms_onto_a_detail(part, tmp_path):
     whole = shown_view(part).Scale2
     part.screenshot(str(tmp_path / "detail.png"), view="front", zoom_mm=[[0, 0, 10], [4, 2, 10]])
     assert shown_view(part).Scale2 > 5 * whole, "the zoomed screenshot shows the whole part"
+
+
+def test_screenshot_leaves_the_planes_out(part, tmp_path, monkeypatch):
+    """At the moment of the picture SolidWorks' View > Planes is off, unless
+    show_planes asks for it, and the part's own setting comes back afterwards.
+    (The pictures themselves are no proof: shown planes render differently
+    from shot to shot.)"""
+    part.add_box(40, 20, 10)
+    part.add_plane("front", offset_mm=5)
+    extension = binding.wrap(part._model.Extension, binding.module().IModelDocExtension)
+    extension.SetUserPreferenceToggle(SW_TOGGLE_DISPLAY_PLANES, 0, True)  # planes on, as a person may have them
+    at_capture, take = [], part._take_screenshot
+
+    def watched(*args):
+        at_capture.append(extension.GetUserPreferenceToggle(SW_TOGGLE_DISPLAY_PLANES, 0))
+        return take(*args)
+
+    monkeypatch.setattr(part, "_take_screenshot", watched)
+    part.screenshot(str(tmp_path / "plain.png"))
+    part.screenshot(str(tmp_path / "planes.png"), show_planes=True)
+    assert at_capture == [False, True], "planes should be hidden in the picture unless asked for"
+    assert extension.GetUserPreferenceToggle(SW_TOGGLE_DISPLAY_PLANES, 0) is True, "the part's setting changed"
 
 
 # --- fully defined sketches: the returned dimensions drive the geometry --------

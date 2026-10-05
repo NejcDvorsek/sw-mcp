@@ -391,6 +391,12 @@ def test_screenshot_rejects_an_unknown_view(s):
         s.screenshot("shot.png", view="side")
 
 
+def test_screenshot_refuses_bmp_which_solidworks_does_not_write(s):
+    """SaveAs3 to .bmp returned 256 and wrote nothing: say so before trying."""
+    with pytest.raises(SolidWorksError, match="'bmp' is not supported"):
+        s.screenshot("shot.bmp")
+
+
 @pytest.mark.parametrize("zoom", [[[0, 0, 0]], [[0, 0], [1, 1]], [[0, 0, 0], [1, 1, 1], [2, 2, 2]]])
 def test_screenshot_zoom_needs_two_3d_corners(s, zoom):
     with pytest.raises(SolidWorksError, match="two corners"):

@@ -5,7 +5,12 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Changed
+- `screenshot` leaves reference planes and axes out, so they do not cut
+  through the shape; `show_planes=True` keeps them.
+
 ### Fixed
+- `screenshot` no longer offers .bmp, which SolidWorks did not write.
 - `make_drawing` left its drawing open in SolidWorks, and with it the part
   after `close_part`: it closed the drawing by the title it had before it
   was saved.
