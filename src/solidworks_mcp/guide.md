@@ -138,8 +138,10 @@ stray drag in SolidWorks can change the part.
 - **Flowing outlines** (an S-bend in a leg, a hub running into a beam):
   `add_sketch(plane, start_mm, segments)` draws a chain on any plane:
   `{"line": [u, v]}`, `{"arc": [u, v], "through": [u, v]}`, `{"arc": [u, v],
-  "tangent": true}` (flowing on from the segment before) and `{"spline": [[u,
-  v], ...]}`; end on the start to close it. Points are [u, v] in the plane's
+  "center": [u, v]}` (the short way round), `{"arc": [u, v], "tangent": true}`
+  (flowing on from the segment before) and `{"spline": [[u, v], ...]}`; end on
+  the start to close it. A centre on the origin or on another arc's centre is
+  tied to it, also when rounded points put it a hair beside it. Points are [u, v] in the plane's
   axes, which the result gives: front (x, y), top (x, -z), right (-z, y).
   Where segments flow into each other the sketch gets tangent relations, and
   the rest is dimensioned from the origin (`x<i>`/`y<i>` for the i-th point,

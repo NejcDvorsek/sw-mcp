@@ -76,3 +76,21 @@ def test_an_s_bend_is_two_quarter_rings_between_straight_bars(part):
     assert sketch["fully_defined"] and sketch["closed"]
     leg = part.extrude_sketch(sketch["sketch"], 5)
     assert vol(leg) == pytest.approx((600 + 200 * math.pi) * 5)
+
+
+def test_a_ring_sector_from_rounded_points_shares_its_centre_with_the_origin(part):
+    """Through points rounded to 5 decimals: both arcs end up centred on the
+    origin, one quarter of a R10-R20 ring."""
+    c, d = 7.07107, 14.14214
+    sketch = part.add_sketch("front", [10, 0], [{"arc": [0, 10], "through": [c, c]}, {"line": [0, 20]},
+                                                {"arc": [20, 0], "through": [d, d]}, {"line": [10, 0]}])
+    ring = part.extrude_sketch(sketch["sketch"], 5)
+    assert vol(ring) == pytest.approx(math.pi * (20 ** 2 - 10 ** 2) / 4 * 5)
+
+
+def test_a_wedge_round_the_origin_takes_its_centre_as_given(part):
+    """An 8 degree wedge of R30 with its end rounded to 3 decimals."""
+    sketch = part.add_sketch("front", [0, 0], [{"line": [30, 0]}, {"arc": [29.708, 4.175], "center": [0, 0]},
+                                               {"line": [0, 0]}])
+    wedge = part.extrude_sketch(sketch["sketch"], 5)
+    assert vol(wedge) == pytest.approx(30 ** 2 * math.atan2(4.175, 29.708) / 2 * 5, rel=1e-9)

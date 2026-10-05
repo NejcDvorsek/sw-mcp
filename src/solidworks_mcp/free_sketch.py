@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from .errors import SolidWorksError
 
 EXACT_MM = 1e-9  # relations and origin ties only where the input is this exact
+MERGE_MM = 1e-4  # SolidWorks merged sketch points 1e-5 mm apart, not 1e-4 (verified): one point here too
 TANGENT_MM = 1e-3  # how far a "tangent" line's end may lie off the tangent; it is put on it
 _RANK_TOLERANCE = 1e-7
 _STEP_MM = 1e-6  # central differences: exact for the quadratic constraints, close for a radius
@@ -82,8 +83,11 @@ def _circumcentre(a, b, c):
 def build_chain(start_mm, segments) -> Chain:
     """The chain's geometry from a start point and segments, each running on
     from where the last ended: {"line": [u, v]}, {"arc": [u, v], "through":
-    [u, v]}, {"arc": [u, v], "tangent": true}, {"spline": [[u, v], ...]}. A
-    line may say "tangent": true too. Ending on the start closes the chain."""
+    [u, v]}, {"arc": [u, v], "center": [u, v]} (the short way round),
+    {"arc": [u, v], "tangent": true}, {"spline": [[u, v], ...]}. A line may say
+    "tangent": true too. Ending on the start closes the chain. Points closer
+    than MERGE_MM are one point, and an arc centre that close to the origin
+    goes onto it."""
     if not segments:
         raise SolidWorksError("A sketch needs at least one segment.")
     start = _point(start_mm, "start_mm")
@@ -93,7 +97,7 @@ def build_chain(start_mm, segments) -> Chain:
     def add_point(p, last: bool) -> int:
         nonlocal closed
         for index, known in enumerate(points):
-            if math.dist(known, p) <= EXACT_MM:
+            if math.dist(known, p) <= MERGE_MM:
                 if index == 0 and last:
                     closed = True
                     return 0
@@ -131,7 +135,7 @@ def build_chain(start_mm, segments) -> Chain:
             continue
 
         end = _point(segment[kind], f"Segment {k}'s end")
-        if math.dist(here, end) <= EXACT_MM:
+        if math.dist(here, end) <= MERGE_MM:
             raise SolidWorksError(f"Segment {k} has zero length: it ends where it starts, at {_fmt(end)}.")
         if kind == "line":
             if tangent:
@@ -144,6 +148,8 @@ def build_chain(start_mm, segments) -> Chain:
             index = add_point(end, last)
             entities.append(("line", current, index))
         else:
+            if tangent and "center" in segment:
+                raise SolidWorksError(f"Segment {k}: an arc takes a center or tangent: true, not both.")
             if tangent:
                 left = (-incoming[1], incoming[0])
                 d = (end[0] - here[0], end[1] - here[1])
@@ -152,6 +158,19 @@ def build_chain(start_mm, segments) -> Chain:
                     raise SolidWorksError(f"Segment {k}: a tangent arc to {_fmt(end)} would be straight; use a line.")
                 s = (d[0] ** 2 + d[1] ** 2) / across
                 centre, direction = (here[0] + s * left[0], here[1] + s * left[1]), 1 if s > 0 else -1
+            elif "center" in segment:
+                centre = _point(segment["center"], f"Segment {k}'s center")
+                radius, reach = math.dist(here, centre), math.dist(end, centre)
+                if abs(reach - radius) > TANGENT_MM or radius <= MERGE_MM:
+                    raise SolidWorksError(f"Segment {k}: {_fmt(here)} and {_fmt(end)} are not on one circle round "
+                                          f"{_fmt(centre)}: they lie {radius:g} and {reach:g} from it.")
+                out = _unit(end[0] - centre[0], end[1] - centre[1])
+                end = (centre[0] + radius * out[0], centre[1] + radius * out[1])  # onto the circle, as asked
+                turn = _cross((here[0] - centre[0], here[1] - centre[1]), (end[0] - centre[0], end[1] - centre[1]))
+                if abs(turn) <= EXACT_MM * radius ** 2:
+                    raise SolidWorksError(f"Segment {k}: round {_fmt(centre)} from {_fmt(here)} to {_fmt(end)} is a "
+                                          "half circle either way; give a \"through\" point instead.")
+                direction = 1 if turn > 0 else -1
             elif "through" in segment:
                 middle = _point(segment["through"], f"Segment {k}'s through point")
                 turn = _cross((middle[0] - here[0], middle[1] - here[1]), (end[0] - middle[0], end[1] - middle[1]))
@@ -160,7 +179,7 @@ def build_chain(start_mm, segments) -> Chain:
                                           "line; an arc needs a point off it.")
                 centre, direction = _circumcentre(here, middle, end), 1 if turn > 0 else -1
             else:
-                raise SolidWorksError(f"Segment {k}: an arc needs a \"through\" point or \"tangent\": true.")
+                raise SolidWorksError(f"Segment {k}: an arc needs a \"through\" point, a \"center\" or \"tangent\": true.")
             index = add_point(end, last)
             entities.append(("arc", current, index, None, direction))
             centres.append((len(entities) - 1, centre))
@@ -170,8 +189,10 @@ def build_chain(start_mm, segments) -> Chain:
 
     user = len(points)
     for entity, centre in centres:
-        match = next((i for i, p in enumerate(points) if math.dist(p, centre) <= EXACT_MM), None)
+        match = next((i for i, p in enumerate(points) if math.dist(p, centre) <= MERGE_MM), None)
         if match is None:
+            if math.hypot(*centre) <= MERGE_MM:
+                centre = (0.0, 0.0)  # on the origin: a relation there, not a hair beside it
             points.append(centre)
             match = len(points) - 1
         kind, a, b, _, direction = entities[entity]
@@ -309,7 +330,8 @@ def plan_chain(chain: Chain) -> ChainPlan:
             elif counts[axis]:
                 dimensions.append((("x", "y")[axis], i, pts[i][axis]))
 
-    origin = next((i for i in chain.user_points if math.hypot(*pts[i]) <= EXACT_MM), None)
+    # the point on the origin first, also an arc centre: tied there, it carries the intent
+    origin = next((i for i in range(len(pts)) if math.hypot(*pts[i]) <= EXACT_MM), None)
     if origin is not None:
         anchor(origin)
     for i in chain.user_points:

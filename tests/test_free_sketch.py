@@ -138,3 +138,40 @@ def test_roles_follow_the_points_and_segments_given():
                                  {"line": [0, 0]}])
     plan = plan_chain(chain)
     assert {plan.role(d) for d in plan.dimensions} == {"x1", "x2", "y2", "r1"}
+
+
+def test_an_arc_round_a_given_centre_goes_the_short_way():
+    left = build_chain([10, 0], [{"arc": [0, 10], "center": [0, 0]}, {"line": [10, 0]}])
+    _, _, _, centre, direction = left.entities[0]
+    assert left.points[centre] == (0.0, 0.0) and direction == 1
+    right = build_chain([0, 10], [{"arc": [10, 0], "center": [0, 0]}, {"line": [0, 10]}])
+    assert right.entities[0][4] == -1
+
+
+def test_an_arc_end_a_hair_off_its_circle_is_put_on_it():
+    """An 8 degree wedge with its end rounded to 3 decimals lies 0.07 um inside R30."""
+    chain = build_chain([30, 0], [{"arc": [29.708, 4.175], "center": [0, 0]}, {"line": [0, 0]}, {"line": [30, 0]}])
+    assert math.hypot(*chain.points[1]) == pytest.approx(30, abs=1e-12)
+
+
+@pytest.mark.parametrize("segments,match", [
+    ([{"arc": [0, 11], "center": [0, 0]}], "not on one circle"),
+    ([{"arc": [-10, 0], "center": [0, 0]}], "half circle"),
+    ([{"line": [20, 0]}, {"arc": [20, 10], "center": [20, 5], "tangent": True}], "center or tangent"),
+], ids=["off the circle", "half circle", "both"])
+def test_an_arc_round_a_centre_refuses_what_is_unclear(segments, match):
+    with pytest.raises(SolidWorksError, match=match):
+        build_chain([10, 0], segments)
+
+
+def test_centres_closer_than_solidworks_tells_apart_are_one_point():
+    """Through points rounded to 5 decimals put the two centres of a ring 2 um
+    off the origin and 0.02 um apart; SolidWorks merges such points, so the
+    chain does too, and a centre that close to the origin goes onto it."""
+    c, d = 7.07107, 14.14214  # 10 and 20 times cos 45, rounded
+    chain = build_chain([10, 0], [{"arc": [0, 10], "through": [c, c]}, {"line": [0, 20]},
+                                  {"arc": [20, 0], "through": [d, d]}, {"line": [10, 0]}])
+    centres = {e[3] for e in chain.entities if e[0] == "arc"}
+    assert len(centres) == 1 and chain.points[centres.pop()] == (0.0, 0.0)
+    plan = plan_chain(chain)
+    assert ("at_origin", 4) in plan.relations and plan.fully_defined

@@ -12,11 +12,17 @@ All notable changes to this project are documented here. This project follows
   undoes the list. `list_equations` lists them and marks the ones left
   broken by a deleted feature; `delete_equation` removes one. Their results
   name the features that fail to rebuild (`failing_features`).
+- `{"arc": [u, v], "center": [u, v]}` in `add_sketch`: an arc round a given
+  centre, the short way.
 
 ### Fixed
 - Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch
   inference moved a hole 0.75 mm below the x axis onto the axis, and its
   sketch got no y dimension. Circles are now drawn without inference.
+- `add_sketch` refused arcs whose centres lie a hair apart, or a hair off the
+  origin ("SolidWorks did not draw the points"): SolidWorks merges points
+  closer than a tenth of a micrometre. Such points are one point now, and a
+  centre that close to the origin goes onto it, as a relation.
 
 ## [0.10.0] — 2026-10-04
 
