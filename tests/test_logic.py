@@ -752,3 +752,28 @@ def test_a_full_round_needs_one_closest_pair_of_opposite_sides():
         SolidWorksSession._full_round_sides(square)
     with pytest.raises(SolidWorksError, match="two opposite flat side faces"):
         SolidWorksSession._full_round_sides([((-1, 0, 0), (0, 0, 0)), ((0, 1, 0), (0, 40, 0))])
+
+
+# --- equations -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("equation,lhs", [('"L_thigh" = 85', "L_thigh"), ('"D1@Sketch1"=2*"L"', "D1@Sketch1"),
+                                          ('  "shin_stretch" = ("L_shin" - 56) / 54', "shin_stretch")])
+def test_an_equation_is_named_by_its_left_hand_side(equation, lhs):
+    assert SolidWorksSession._equation_lhs(equation) == lhs
+
+
+@pytest.mark.parametrize("equation", ["L = 85", '"L" 85', "", '"" = 3'])
+def test_an_equation_needs_a_quoted_name_and_an_equals_sign(equation):
+    with pytest.raises(SolidWorksError, match='"name" = expression'):
+        SolidWorksSession._equation_lhs(equation)
+
+
+def test_an_equation_names_what_it_uses():
+    assert SolidWorksSession._equation_names('"D1@Boss" = ("L_shin" - 56) / "W"') == ["D1@Boss", "L_shin", "W"]
+
+
+def test_equations_compare_without_spacing_or_case():
+    """SolidWorks may respace an equation it keeps; a refused one keeps the old text."""
+    assert SolidWorksSession._same_equation('"L"=90', ' "l" = 90 ')
+    assert not SolidWorksSession._same_equation('"L" = 90', '"L" = 85')

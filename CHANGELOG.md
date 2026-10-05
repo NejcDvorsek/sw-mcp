@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `set_equation` replaces the equation that sets the same name, a global
+  variable (in any case) or a dimension, instead of refusing it.
+  `set_equations` takes a list with one rebuild at the end; a refused one
+  undoes the list. `list_equations` lists them and marks the ones left
+  broken by a deleted feature; `delete_equation` removes one. Their results
+  name the features that fail to rebuild (`failing_features`).
+
 ## [0.10.0] — 2026-10-04
 
 ### Added

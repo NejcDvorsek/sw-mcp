@@ -3716,33 +3716,139 @@ class SolidWorksSession:
         return "mm", mm_to_m, m_to_mm
 
     def set_equation(self, equation: str) -> dict:
-        """Add a global equation linking dimensions, then rebuild and remeasure.
+        """Add an equation, or replace the one that sets the same name, then
+        rebuild and remeasure (see set_equations).
 
         equation is a SolidWorks equation string, e.g.
         '"D1@BlockExtrude" = 25' or '"D1@BlockExtrude" = 2 * "D1@Sketch1"'.
         Unlike set_dimension (a one-off value), this persists a relation in the
         model. Returns the resulting mass properties.
         """
+        result = self.set_equations([equation])
+        [done] = result.pop("equations")
+        return {"ok": True, **done, **result}
+
+    def set_equations(self, equations: list) -> dict:
+        """Add or replace equations, then rebuild once. One that sets a name
+        already set (a global variable in any case, or a dimension) replaces it
+        in place. A refused equation undoes the whole list. Returns per equation
+        its index and whether it replaced one, the features that fail to
+        rebuild, and the mass properties."""
         model = self._require_model()
-        eqmgr = binding.wrap(model.GetEquationMgr(), self._mod.IEquationMgr)
+        if isinstance(equations, str) or not equations:
+            raise SolidWorksError('set_equations takes a list of equations, such as [\'"L" = 85\'].')
+        names = [self._equation_lhs(text) for text in equations]  # every one checked before any change
+        eqmgr = self._equation_mgr()
+        journal, done = [], []
+        try:
+            for text, name in zip(equations, names):
+                index = self._equation_index(eqmgr, name)
+                if index is None:
+                    index = eqmgr.Add2(eqmgr.GetCount(), text, False)  # solved by the rebuild below
+                    if index < 0:
+                        raise SolidWorksError(f"SolidWorks refused {text}: check the expression and the names in it.")
+                    journal.append((index, None))
+                else:
+                    before = eqmgr.Equation(index)
+                    eqmgr.SetEquation(index, text)
+                    if not self._same_equation(eqmgr.Equation(index), text):  # a refusal keeps the old text, silently
+                        raise SolidWorksError(f"SolidWorks refused {text}: check the expression and the names in it.")
+                    journal.append((index, before))
+                done.append({"equation": text, "index": index, "replaced": journal[-1][1] is not None})
+        except SolidWorksError:
+            for index, before in reversed(journal):
+                if before is None:
+                    eqmgr.Delete(index)
+                else:
+                    eqmgr.SetEquation(index, before)
+            model.ForceRebuild3(False)
+            raise
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        return {"ok": True, "equations": done, "rebuild_ok": rebuilt_ok,
+                "failing_features": self._failing_features(),
+                "mass_properties": self.get_mass_properties()["mass_properties"]}
+
+    def list_equations(self) -> dict:
+        """The equations and global variables in order: index, equation, the name
+        it sets, its value and whether it is a global variable. `broken` marks
+        one that names a dimension or variable that is gone, as one left behind
+        by delete_feature."""
+        model = self._require_model()
+        eqmgr = self._equation_mgr()
+        texts = [eqmgr.Equation(i) for i in range(eqmgr.GetCount())]
+        variables = {self._equation_names(t)[0].lower() for i, t in enumerate(texts)
+                     if eqmgr.GlobalVariable(i) and self._equation_names(t)}
+        out = []
+        for i, text in enumerate(texts):
+            names = self._equation_names(text)
+            out.append({"index": i, "equation": text, "name": names[0] if names else None,
+                        "value": round(eqmgr.Value(i), 6), "global": bool(eqmgr.GlobalVariable(i)),
+                        "broken": any(n.lower() not in variables and model.Parameter(n) is None for n in names)})
+        return {"ok": True, "count": len(out), "equations": out}
+
+    def delete_equation(self, equation) -> dict:
+        """Delete an equation by the name it sets ('L_thigh', 'D1@Boss') or by its
+        list_equations index, then rebuild and remeasure."""
+        model = self._require_model()
+        eqmgr = self._equation_mgr()
+        count = eqmgr.GetCount()
+        key = str(equation).strip()
+        if key.isdigit():
+            index = int(key)
+            if index >= count:
+                raise SolidWorksError(f"No equation {index}: there are {count} (0..{count - 1}).")
+        else:
+            index = self._equation_index(eqmgr, key.strip('"'))
+            if index is None:
+                listed = ", ".join(eqmgr.Equation(i) for i in range(count)) or "none"
+                raise SolidWorksError(f"No equation sets '{key}' (there are: {listed}).")
+        text = eqmgr.Equation(index)
+        if eqmgr.Delete(index) < 0:
+            raise SolidWorksError(f"SolidWorks refused to delete {text}.")
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        return {"ok": True, "deleted": text, "count": eqmgr.GetCount(), "rebuild_ok": rebuilt_ok,
+                "failing_features": self._failing_features(),
+                "mass_properties": self.get_mass_properties()["mass_properties"]}
+
+    def _equation_mgr(self):
+        eqmgr = binding.wrap(self._require_model().GetEquationMgr(), self._mod.IEquationMgr)
         if eqmgr is None:
             raise SolidWorksError("No EquationManager available.")
-        count = eqmgr.GetCount()
-        count = count() if callable(count) else count
-        index = eqmgr.Add2(int(count), equation, True)  # append, solve immediately
-        if index < 0:
-            raise SolidWorksError(
-                f"Adding the equation failed (Add2 returned {index}). Check the syntax, "
-                "e.g. '\"D1@BlockExtrude\" = 25'."
-            )
-        rebuilt_ok = bool(model.ForceRebuild3(False))
-        return {
-            "ok": True,
-            "equation": equation,
-            "index": index,
-            "rebuild_ok": rebuilt_ok,
-            "mass_properties": self.get_mass_properties()["mass_properties"],
-        }
+        return eqmgr
+
+    def _equation_index(self, eqmgr, name: str):
+        """The index of the equation that sets `name` (any case), or None."""
+        for i in range(eqmgr.GetCount()):
+            names = self._equation_names(eqmgr.Equation(i))
+            if names and names[0].lower() == name.lower():
+                return i
+        return None
+
+    @staticmethod
+    def _equation_lhs(equation) -> str:
+        """The name an equation sets: '"L" = 85' -> 'L'; pure, unit-tested."""
+        match = re.match(r'\s*"([^"]+)"\s*=', str(equation))
+        if not match:
+            raise SolidWorksError(f'An equation is "name" = expression, the name in double quotes (got {equation!r}).')
+        return match.group(1)
+
+    @staticmethod
+    def _equation_names(equation: str) -> list:
+        """Every quoted name in an equation, the one it sets first; pure, unit-tested."""
+        return re.findall(r'"([^"]+)"', str(equation))
+
+    @staticmethod
+    def _same_equation(a: str, b: str) -> bool:
+        return re.sub(r"\s+", "", a).lower() == re.sub(r"\s+", "", b).lower()
+
+    def _failing_features(self) -> list:
+        """The features that fail to rebuild (errors, not warnings), in tree order."""
+        failing = []
+        for feat in self._iter_features():
+            code, warning = feat.GetErrorCode2()
+            if code and not warning:
+                failing.append({"name": feat.Name, "type": feat.GetTypeName2(), "code": code})
+        return failing
 
     def list_dimensions(self) -> dict:
         """Every dimension in the part, feature by feature, as set_dimension takes it.

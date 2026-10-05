@@ -773,14 +773,46 @@ async def set_material(name: str, database: str = "") -> dict:
 
 @mcp.tool()
 async def set_equation(equation: str) -> dict:
-    """Add a global equation linking dimensions, then rebuild and remeasure.
+    """Add an equation, or replace the one that sets the same name; rebuild and remeasure.
 
     A SolidWorks equation string, e.g. '"D1@BlockExtrude" = 25' or
     '"D1@BlockExtrude" = 2 * "D1@Sketch1"'. A global variable is '"W" = 40';
-    link a dimension to it with '"width@Sketch1" = "W"'. Persists a relation
-    (unlike set_dimension). Returns mass properties.
+    link a dimension to it with '"width@Sketch1" = "W"', and set '"W" = 45'
+    again to change it. Persists a relation (unlike set_dimension). Returns
+    the index, whether it replaced one, the features that fail to rebuild
+    (failing_features) and mass properties.
     """
     return await _call(_session.set_equation, equation)
+
+
+@mcp.tool()
+async def set_equations(equations: list) -> dict:
+    """Add or replace a list of equations at once, with one rebuild at the end.
+
+    As set_equation for each, in order (later ones may use earlier ones). A
+    refused equation undoes the whole list. Returns per equation its index and
+    whether it replaced one, failing_features and mass properties.
+    """
+    return await _call(_session.set_equations, equations)
+
+
+@mcp.tool()
+async def list_equations() -> dict:
+    """List the equations and global variables: index, equation, name it sets, value, global.
+
+    `broken` marks an equation that names a dimension or variable that is gone,
+    as one left behind by delete_feature; delete_equation removes it.
+    """
+    return await _call(_session.list_equations)
+
+
+@mcp.tool()
+async def delete_equation(equation: str) -> dict:
+    """Delete an equation by the name it sets ("L_thigh", "D1@Boss") or its list_equations index.
+
+    Rebuilds and returns what was deleted, failing_features and mass properties.
+    """
+    return await _call(_session.delete_equation, equation)
 
 
 @mcp.tool()

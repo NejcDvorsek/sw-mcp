@@ -87,7 +87,12 @@ stray drag in SolidWorks can change the part.
   are not fully defined. A part drawn by hand may have those: their geometry
   can still move, so say so before you build on it.
 - Drive several dimensions from one number with a global variable:
-  `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`. An
+  `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`;
+  `set_equation('"W" = 45')` changes it again. `set_equations([...])` sets a
+  list with one rebuild, and every result names the features that fail to
+  rebuild (`failing_features`): set a variable over a range to find where a
+  part breaks. `list_equations` marks equations left broken by a deleted
+  feature; `delete_equation` removes them. An
   equation-driven dimension ignores `set_dimension` (`applied: false`). An
   angle (a revolve's, an angle mate's) is set in degrees; `list_dimensions`
   shows each dimension's unit.

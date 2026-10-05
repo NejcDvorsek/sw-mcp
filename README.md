@@ -228,7 +228,9 @@ The server speaks MCP over **stdio**.
 | `add_circular_pattern(count, center_x_mm, center_y_mm, feature_name)` | Repeat a feature N times around an axis (bolt circle) |
 | `add_mirror(plane, offset_mm, features, name)` | Mirror features (copies follow their seeds) or the whole body about the Front/Top/Right plane, or a plane by name, moved `offset_mm`; fails when a copy would land outside the part |
 | `set_dimension(dimension_name, value_mm)` | Change a named driving dim (e.g. `D1@BlockExtrude`, or any name a tool returned in `dimensions`), rebuild, remeasure; an angle in degrees |
-| `set_equation(equation)` | Add a global equation or variable linking dims (e.g. `"W" = 40`, then `"width@Sketch1" = "W"`) |
+| `set_equation(equation)` | Add a global equation or variable linking dims (e.g. `"W" = 40`, then `"width@Sketch1" = "W"`), or replace the one that sets the same name; names the features that fail to rebuild |
+| `set_equations(equations)` | Add or replace a list of equations with one rebuild |
+| `list_equations` / `delete_equation(equation)` | List the equations (value, global, broken) / delete one by name or index |
 | `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
 | `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `read_sketch(name)` | A sketch read back in model coordinates: lines, arcs, circles, splines, its dimensions, fully defined or not |
