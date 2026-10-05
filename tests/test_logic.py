@@ -403,6 +403,19 @@ def test_screenshot_zoom_needs_two_3d_corners(s, zoom):
         s.screenshot("shot.png", zoom_mm=zoom)
 
 
+def test_a_material_of_its_own_is_one_material_with_its_density():
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(SolidWorksSession._material_xml('TPU "95A" & more', 1210.5))
+    [material] = root.iter("material")
+    assert material.get("name") == 'TPU "95A" & more', "the name must survive XML intact"
+    assert material.find("physicalproperties/DENS").get("value") == "1210.5"
+
+
+def test_set_material_takes_a_database_or_a_density_not_both(s):
+    with pytest.raises(SolidWorksError, match="not both"):
+        s.set_material("TPU", database="mine.sldmat", density_kg_m3=1210)
+
+
 def test_a_zoom_region_turns_into_the_bottom_view():
     # from below the screen's x is the model's x, its y the model's z, and the
     # viewer looks along +y; the bottom view's Orientation3, as SolidWorks gives it

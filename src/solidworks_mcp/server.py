@@ -766,13 +766,15 @@ async def suppress_feature(name: str, suppress: bool = True) -> dict:
 
 
 @mcp.tool()
-async def set_material(name: str, database: str = "") -> dict:
+async def set_material(name: str, database: str = "", density_kg_m3: float | None = None) -> dict:
     """Assign a material by name (e.g. "6061 Alloy", "AISI 1020", "ABS").
 
     Makes mass and density reflect a real material instead of the 1000 kg/m³
-    default. Returns mass properties including density.
+    default. One SolidWorks does not have (say "TPU") comes with its density:
+    density_kg_m3=1210 makes it, by that name, carrying only the density.
+    Returns mass properties including density.
     """
-    return await _call(_session.set_material, name, database)
+    return await _call(_session.set_material, name, database, density_kg_m3)
 
 
 @mcp.tool()

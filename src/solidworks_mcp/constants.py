@@ -117,6 +117,8 @@ SW_START_SKETCH_PLANE = 0
 SW_PREF_DEFAULT_TEMPLATE_PART = 8
 SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY = 9
 SW_PREF_DEFAULT_TEMPLATE_DRAWING = 10
+SW_FILE_LOCATIONS_MATERIALS = 28   # swFileLocationsMaterialDatabases: the folders SolidWorks reads .sldmat from
+MCP_MATERIAL_DATABASE = "solidworks-mcp"  # where set_material(density_kg_m3=...) materials come from
 
 # A document's length unit (IModelDocExtension.GetUserPreferenceInteger with
 # swUnitsLinear, swUserPreferenceIntegerValue_e, and no option): the tools work

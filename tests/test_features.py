@@ -10,7 +10,7 @@ import math
 import pytest
 
 from solidworks_mcp import binding
-from solidworks_mcp.constants import SW_TOGGLE_DISPLAY_PLANES, VIEWS
+from solidworks_mcp.constants import SW_FILE_LOCATIONS_MATERIALS, SW_TOGGLE_DISPLAY_PLANES, VIEWS
 from solidworks_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
@@ -571,6 +571,24 @@ def test_material_bad_name_fails(part):
     part.add_box(40, 20, 10)
     with pytest.raises(Exception):
         part.set_material("Definitely Not A Material 1234")
+
+
+def test_a_material_of_its_own_by_its_density(part, tmp_path):
+    # TPU is in none of SolidWorks' libraries. The part shows it by name and
+    # keeps it when saved and opened again, while SolidWorks' material
+    # folders stay as they were; a second density for the name replaces the first
+    part.add_box(10, 10, 10)
+    folders = part._sw.GetUserPreferenceStringValue(SW_FILE_LOCATIONS_MATERIALS)
+    part.set_material("TPU", density_kg_m3=1100)
+    tpu = part.set_material("TPU", density_kg_m3=1210)
+    assert tpu["material"] == "TPU" and tpu["mass_properties"]["mass_kg"] == pytest.approx(1.21e-3)
+    assert part._sw.GetUserPreferenceStringValue(SW_FILE_LOCATIONS_MATERIALS) == folders, \
+        "set_material left SolidWorks' material folders changed"
+    saved = part.save_part(str(tmp_path / "tpu_block.sldprt"))["path"]
+    part.close_part()
+    part.open_part(saved)
+    assert part.get_mass_properties()["mass_properties"]["density_kg_m3"] == pytest.approx(1210), \
+        "the part lost its TPU density once the material file was gone"
 
 
 def test_inspect_counts(part):

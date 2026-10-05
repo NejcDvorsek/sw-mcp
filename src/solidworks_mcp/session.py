@@ -13,8 +13,10 @@ import itertools
 import math
 import os
 import re
+import shutil
 import tempfile
 import uuid
+from xml.sax.saxutils import quoteattr
 
 import pythoncom
 import win32com.client
@@ -28,6 +30,7 @@ from .constants import (
     IMPORT_FORMATS,
     LENGTH_UNITS,
     MATE_TYPES,
+    MCP_MATERIAL_DATABASE,
     RAY_HIT_WIDTH,
     SW_ANGULAR_DIMENSION,
     SW_DIMENSION_DRIVING,
@@ -55,6 +58,7 @@ from .constants import (
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
     SW_FEATURE_SCOPE_ALL_BODIES,
+    SW_FILE_LOCATIONS_MATERIALS,
     SW_FILLET_OPT_STRAIGHT_TRANSITION,
     SW_FILLET_OPT_UNIFORM_RADIUS,
     SW_FILLET_TYPE_FULL_ROUND,
@@ -4335,16 +4339,26 @@ class SolidWorksSession:
         return {"ok": True, "axis": axis, "sections": sections,
                 "worst_extent_diff_mm": round(worst_extent, 4), "worst_area_diff_mm2": round(worst_area, 4)}
 
-    def set_material(self, name: str, database: str = "") -> dict:
+    def set_material(self, name: str, database: str = "", density_kg_m3: float | None = None) -> dict:
         """Assign a material by name so mass/density reflect a real material.
 
         name: a material in the SolidWorks database, e.g. '6061 Alloy',
         'AISI 1020', 'ABS', 'Plain Carbon Steel'. database: path to a .sldmat, or
-        '' for the default databases. Returns mass properties (with density).
+        '' for the default databases. density_kg_m3 makes a material of its own
+        under that name instead (say TPU at 1210) that carries only its density;
+        the part keeps it, also where the material is unknown. Returns mass
+        properties (with density).
         """
+        if density_kg_m3 is not None and database:
+            raise SolidWorksError("Give a database or a density_kg_m3, not both.")
+        if density_kg_m3 is not None and density_kg_m3 <= 0:
+            raise SolidWorksError(f"density_kg_m3 must be > 0 (got {density_kg_m3}).")
         model = self._require_model()
         part = self._require_part()
-        part.SetMaterialPropertyName2("", database, name)
+        if density_kg_m3 is None:
+            part.SetMaterialPropertyName2("", database, name)
+        else:
+            self._assign_own_material(part, name, density_kg_m3)
         rebuilt_ok = bool(model.ForceRebuild3(False))
         # Verify by reading the applied name back (robust to re-assignment and to
         # materials near 1000 kg/m^3, where a density heuristic would lie).
@@ -4361,6 +4375,36 @@ class SolidWorksSession:
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def _assign_own_material(self, part, name: str, density_kg_m3: float) -> None:
+        """SolidWorks reads a .sldmat only from its material folders, so one is
+        written to a temporary folder that joins them while the material is
+        assigned. The part keeps the material's properties once it is gone."""
+        folder = tempfile.mkdtemp(prefix="solidworks_mcp_")
+        path = os.path.join(folder, f"{MCP_MATERIAL_DATABASE}.sldmat")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self._material_xml(name, density_kg_m3))
+        folders = self._sw.GetUserPreferenceStringValue(SW_FILE_LOCATIONS_MATERIALS)
+        try:
+            self._sw.SetUserPreferenceStringValue(SW_FILE_LOCATIONS_MATERIALS, f"{folders};{folder}" if folders else folder)
+            part.SetMaterialPropertyName2("", path, name)
+        finally:
+            self._sw.SetUserPreferenceStringValue(SW_FILE_LOCATIONS_MATERIALS, folders)
+            shutil.rmtree(folder, ignore_errors=True)
+
+    @staticmethod
+    def _material_xml(name: str, density_kg_m3: float) -> str:
+        """A .sldmat with one material that carries only a density; pure, unit-tested."""
+        return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials" version="2008.03">\n'
+                f'  <classification name="{MCP_MATERIAL_DATABASE}">\n'
+                f'    <material name={quoteattr(name)}>\n'
+                '      <physicalproperties>\n'
+                f'        <DENS displayname="Density" value="{float(density_kg_m3)!r}"/>\n'
+                '      </physicalproperties>\n'
+                '    </material>\n'
+                '  </classification>\n'
+                '</mstns:materials>\n')
 
     def rebuild(self, top_only: bool = False) -> dict:
         model = self._require_model()

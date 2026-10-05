@@ -9,6 +9,10 @@ All notable changes to this project are documented here. This project follows
 - `delete_feature` names the equations it leaves broken
   (`broken_equations`); `with_equations=True` deletes them along, keeping
   the global variables.
+- `set_material(name, density_kg_m3=...)` assigns a material SolidWorks
+  does not have, such as TPU, by its density. The part shows it by name and
+  keeps it when opened elsewhere; SolidWorks' material settings stay as they
+  were.
 
 ### Changed
 - `screenshot` leaves reference planes and axes out, so they do not cut
