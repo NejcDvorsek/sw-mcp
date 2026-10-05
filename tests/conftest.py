@@ -26,7 +26,9 @@ def sw():
         session.connect()
     except SolidWorksError as exc:
         pytest.skip(f"SolidWorks not reachable: {exc}")
-    return session
+    before = session._command_in_progress(True)  # as within every tool call the server makes
+    yield session
+    session._command_in_progress(before)
 
 
 @pytest.fixture

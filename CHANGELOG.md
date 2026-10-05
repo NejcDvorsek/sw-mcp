@@ -18,6 +18,11 @@ All notable changes to this project are documented here. This project follows
   title, also a new one that was never saved.
 - `delete_component` removes a component from an assembly, with its mates.
 
+### Changed
+- Tool calls run with SolidWorks' CommandInProgress set, which makes its COM
+  calls up to a hundred times faster: `list_edges` on 144 edges took 18 s,
+  now 0.6 s.
+
 ### Fixed
 - Holes and discs placed just off an axis snapped onto it: SolidWorks' sketch
   inference moved a hole 0.75 mm below the x axis onto the axis, and its
