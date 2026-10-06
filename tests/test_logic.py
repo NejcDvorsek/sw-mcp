@@ -6,6 +6,7 @@ direction parsing, axis classification, polygon cleaning) without SolidWorks.
 
 import math
 
+import pythoncom
 import pytest
 
 from solidworks_mcp.errors import SolidWorksError
@@ -414,6 +415,37 @@ def test_a_material_of_its_own_is_one_material_with_its_density():
 def test_set_material_takes_a_database_or_a_density_not_both(s):
     with pytest.raises(SolidWorksError, match="not both"):
         s.set_material("TPU", database="mine.sldmat", density_kg_m3=1210)
+
+
+class _GoneSolidWorks:
+    """A link into a SolidWorks that was restarted: every call fails."""
+
+    def __init__(self, hresult):
+        self.hresult = hresult
+
+    def __getattr__(self, name):
+        raise pythoncom.com_error(self.hresult, "De RPC-server is niet beschikbaar.", None, None)
+
+
+class _RunningSolidWorks:
+    CommandInProgress = False
+
+
+def test_a_restarted_solidworks_is_attached_again(s, monkeypatch):
+    """After SolidWorks was restarted the old link answered every call with
+    'RPC server unavailable', until the MCP server itself was restarted. The
+    call now runs on the new SolidWorks; the old document went with the old one."""
+    s._sw, s._model = _GoneSolidWorks(-2147023174), _GoneSolidWorks(-2147023174)
+    monkeypatch.setattr(s, "connect", lambda: setattr(s, "_sw", _RunningSolidWorks()))
+    assert s.run_guarded(lambda: "ran") == "ran"
+    assert isinstance(s._sw, _RunningSolidWorks) and s._model is None
+
+
+def test_other_com_errors_do_not_attach_again(s, monkeypatch):
+    s._sw = _GoneSolidWorks(-2147467259)  # E_FAIL: SolidWorks is there, the call failed
+    monkeypatch.setattr(s, "connect", lambda: pytest.fail("attached again on an ordinary COM error"))
+    with pytest.raises(pythoncom.com_error):
+        s.run_guarded(lambda: "ran")
 
 
 def test_a_zoom_region_turns_into_the_bottom_view():

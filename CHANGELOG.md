@@ -38,6 +38,9 @@ All notable changes to this project are documented here. This project follows
 - `add_sketch` refused concentric arcs whose chords share one bisector, a bent
   slot, as "under- or over-defined": their ends barely held the shared centre,
   and SolidWorks saw it free. A radius holds it now.
+- After SolidWorks was restarted, every call failed with "the RPC server is
+  unavailable" until the MCP server was restarted too. It now attaches to the
+  running SolidWorks by itself.
 
 ## [0.11.0] — 2026-10-05
 

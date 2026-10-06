@@ -3711,6 +3711,7 @@ class SolidWorksSession:
         the part as it was: no stray sketch, which would also count in the
         bounding box. A tool that switched documents is not rolled back.
         """
+        self._reattach_if_gone()
         snapshot = self._history_snapshot()
         busy = self._command_in_progress(True)
         try:
@@ -3725,6 +3726,24 @@ class SolidWorksSession:
             raise
         finally:
             self._command_in_progress(busy)
+
+    # A link into a SolidWorks that is gone (restarted or closed): RPC server
+    # unavailable, RPC call failed, object disconnected from its clients
+    _GONE_HRESULTS = {-2147023174, -2147023170, -2147417848}
+
+    def _reattach_if_gone(self) -> None:
+        """Attach to the running SolidWorks when the one this server held was
+        restarted: the old link answers every call with an RPC error. The
+        current document went with the old SolidWorks."""
+        if self._sw is None:
+            return
+        try:
+            self._sw.CommandInProgress
+        except pythoncom.com_error as exc:
+            if exc.hresult not in self._GONE_HRESULTS:
+                raise
+            self._sw = self._model = None
+            self.connect()
 
     def _command_in_progress(self, flag):
         """Set ISldWorks.CommandInProgress; return what it was when this changed
