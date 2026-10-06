@@ -810,6 +810,9 @@ async def list_equations() -> dict:
 
     `broken` marks an equation that names a dimension or variable that is gone,
     as one left behind by delete_feature; delete_equation removes it.
+    automatic_solve_order False means SolidWorks solves them as listed: one
+    above the line that sets its variable then warns and lags a rebuild. Any
+    set_equation turns it on.
     """
     return await _call(_session.list_equations)
 

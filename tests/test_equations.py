@@ -65,6 +65,19 @@ def test_delete_feature_names_the_equations_it_breaks_or_takes_them_along(part):
     assert sorted(by_name(part)) == ["D1@Old", "W"]
 
 
+def test_a_variable_set_below_the_equations_that_use_it_leaves_no_warning(part):
+    """The depth's equation is replaced in place to use W, and W comes in below
+    it. SolidWorks solved in listed order, so the Equations folder warned and a
+    new W needed two rebuilds to reach the depth. SolidWorks orders them now."""
+    part.add_box(40, 20, 10)
+    part.set_equation('"D1@BlockExtrude" = 10')
+    part.set_equations(['"W" = 6', '"D1@BlockExtrude" = 2 * "W"'])
+    assert part.list_equations()["automatic_solve_order"] is True
+    folder = next(f for f in part._iter_features() if f.GetTypeName2() == "EqnFolder")
+    assert folder.GetErrorCode2()[0] == 0, "the Equations folder warns: W is used above the line that sets it"
+    assert vol(part.set_equation('"W" = 7')) == pytest.approx(40 * 20 * 14)
+
+
 def test_a_refused_equation_leaves_the_others_as_they_were(part):
     block = part.add_box(40, 20, 10)
     part.set_equations(['"L" = 85', f'"{block["dimensions"]["depth"]}" = "L" / 5'])

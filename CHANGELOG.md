@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- An equation replaced in place that used a variable added below it made the
+  Equations folder warn, and a new value of the variable took two rebuilds:
+  SolidWorks solved the equations as listed. `set_equations` now lets
+  SolidWorks order them; `list_equations` reports `automatic_solve_order`.
+
 ## [0.12.0] — 2026-10-06
 
 ### Added

@@ -3918,14 +3918,17 @@ class SolidWorksSession:
     def set_equations(self, equations: list) -> dict:
         """Add or replace equations, then rebuild once. One that sets a name
         already set (a global variable in any case, or a dimension) replaces it
-        in place. A refused equation undoes the whole list. Returns per equation
-        its index and whether it replaced one, the features that fail to
-        rebuild, and the mass properties."""
+        in place. A refused equation undoes the whole list. SolidWorks solves
+        them in the order they need, not as listed: a variable added below the
+        equations that use it would otherwise take two rebuilds and warn.
+        Returns per equation its index and whether it replaced one, the features
+        that fail to rebuild, and the mass properties."""
         model = self._require_model()
         if isinstance(equations, str) or not equations:
             raise SolidWorksError('set_equations takes a list of equations, such as [\'"L" = 85\'].')
         names = [self._equation_lhs(text) for text in equations]  # every one checked before any change
         eqmgr = self._equation_mgr()
+        eqmgr.AutomaticSolveOrder = True
         journal, done = [], []
         try:
             for text, name in zip(equations, names):
@@ -3959,9 +3962,12 @@ class SolidWorksSession:
         """The equations and global variables in order: index, equation, the name
         it sets, its value and whether it is a global variable. `broken` marks
         one that names a dimension or variable that is gone, as one left behind
-        by delete_feature."""
+        by delete_feature. automatic_solve_order False: SolidWorks solves them
+        as listed, so one above the line that sets its variable warns and lags
+        a rebuild; any set_equation turns it on."""
         out = self._equation_entries()
-        return {"ok": True, "count": len(out), "equations": out}
+        return {"ok": True, "count": len(out), "equations": out,
+                "automatic_solve_order": bool(self._equation_mgr().AutomaticSolveOrder)}
 
     def _equation_entries(self) -> list:
         model = self._require_model()
