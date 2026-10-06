@@ -903,8 +903,9 @@ async def list_faces(component: str | None = None) -> dict:
     a hole: its centre), so hole patterns can be read off. component: a
     component of the current assembly, listed in its own frame (e.g. an
     imported servo); for a sub-assembly, every part's faces in the
-    sub-assembly's frame, each naming its part. Indices are positional and
-    shift as features are added; add_mate takes them as '#5'.
+    sub-assembly's frame, each naming its part. A part's indices shift as
+    features are added; a component's are ordered by part, type, centre and
+    area, so they stay while its shape does. add_mate takes them as '#5'.
     """
     return await _call(_session.list_faces, component)
 
@@ -1088,10 +1089,12 @@ async def add_mate(comp_a: str, face_a: str, comp_b: str, face_b: str,
                    angle_deg: float = 0.0, flip: bool = False) -> dict:
     """Mate a face of one component to a face of another.
 
-    comp_a/comp_b are component names ('Bed' or 'Bed-1'). face_a/face_b select a
-    face in that component's OWN frame: by direction "+x"/"-x"/"+y"/...
-    (optionally "+y:inner" for the cavity side of a hollow part), or by its
-    list_faces(component=...) index, "#5". mate_type between planar faces:
+    comp_a/comp_b are component names ('Bed' or 'Bed-1'; 'Leg-1/Thigh-1' inside
+    a sub-assembly). face_a/face_b select a face in that component's OWN frame:
+    by direction "+x"/"-x"/"+y"/... (optionally "+y:inner" for the cavity side
+    of a hollow part), by its list_faces(component=...) index, "#5", or by a
+    point on it, "@x,y,z" (a hole's wall: its centre plus the radius along x).
+    mate_type between planar faces:
     "coincident", "distance" (distance_mm), "parallel", "perpendicular" or
     "angle" (angle_deg between the faces' normals, 0..180); "concentric" between
     two cylindrical faces (a pin in a hole, a hinge axis), leaving the turn
@@ -1126,7 +1129,7 @@ async def measure_distance(component_a: str, component_b: str | None = None,
     in its material; or axis_mm = [[x, y, z], [dx, dy, dz]], the endless line
     through that point along that direction, such as a bolt's axis. 0 means they
     touch or overlap; check_interference tells which. Sub-assemblies count with
-    all their parts.
+    all their parts; one part inside is 'Leg-1/Thigh-1'.
     """
     return await _call(_session.measure_distance, component_a, component_b, point_mm, axis_mm)
 

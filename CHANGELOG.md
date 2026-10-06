@@ -5,6 +5,12 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
+### Added
+- `add_mate` picks a face by a point on it, `"@x,y,z"` in the component's own
+  coordinates: a hole by a point on its wall, whatever the face numbers.
+- A part inside a sub-assembly by its path, such as `"Leg-1/Thigh-1"`, in
+  every assembly tool; a joint inside one steps as `"D1@Angle1@Leg-1"`.
+
 ### Fixed
 - An equation replaced in place that used a variable added below it made the
   Equations folder warn, and a new value of the variable took two rebuilds:
@@ -14,6 +20,12 @@ All notable changes to this project are documented here. This project follows
   across the origin but read back 5, "not applied", and a later 3 kept it on
   that side, at -3, reported as applied. A coordinate now takes its sign;
   any other length below 0 is refused, the part as it was.
+- A component's face numbers could come in another order after a mate, and
+  `add_mate` took the wrong faces; they are now ordered by part, type, centre
+  and area.
+- The distance to a whole sub-assembly, in `measure_distance` and in
+  `check_motion(distances=...)`, failed: it is measured through its parts.
+- `check_motion` on a joint inside a sub-assembly said nothing moved.
 
 ## [0.12.0] — 2026-10-06
 

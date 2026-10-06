@@ -144,9 +144,37 @@ def test_a_sub_assembly_is_inserted_and_mated_on_a_parts_hole(sw, linkage_parts,
         assert mated["axis_offset_mm"] == pytest.approx(0, abs=1e-4)
         probe = sw.measure_distance("pair", point_mm=[5, 5, 22.5])  # the thigh's hole axis, through the shin's hole
         assert probe["inside"] is False and probe["distance_mm"] == pytest.approx(2, abs=1e-4), probe
+        # a part inside the sub-assembly by its path: the shin sits at z 20..25, the thigh's top at 5
+        gap = sw.measure_distance("pair-1/link_shin-1", "link_thigh")
+        assert gap["distance_mm"] == pytest.approx(15, abs=1e-4), gap
+        whole = sw.measure_distance("pair", "link_thigh")  # SolidWorks would not measure to it as a whole
+        assert whole["distance_mm"] == pytest.approx(15, abs=1e-4), whole
     finally:
         sw.close_part()
         for path in (pair, linkage_parts["link_thigh"], linkage_parts["link_shin"]):
+            sw._sw.CloseDoc(path)
+
+
+def test_a_joint_inside_a_sub_assembly_is_stepped_from_the_top(sw, linkage_parts, tmp_path):
+    """The knee lives in the leg's own assembly, the leg sits in a bigger one:
+    its angle is reached as D1@Angle1@leg-1, and stepping it moves the shin
+    inside the leg, which check_motion took for nothing moving."""
+    sw.new_assembly()
+    sw.insert_component(linkage_parts["link_thigh"], 0, 0, 0)
+    sw.insert_component(linkage_parts["link_shin"], 30, 40, 20)
+    angle = knee(sw, 90)["dimension"]
+    leg = sw.save_assembly(str(tmp_path / "knee_leg.sldasm"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        sw.insert_component(leg, 0, 0, 0)
+        turned = sw.set_dimension(f"{angle}@knee_leg-1", 30)
+        assert turned["applied"], turned
+        motion = sw.check_motion(f"{angle}@knee_leg-1", [60, 90])
+        assert motion["moving"] == ["knee_leg-1/link_shin-1"], motion["moving"]
+    finally:
+        sw.close_part()
+        for path in (leg, linkage_parts["link_thigh"], linkage_parts["link_shin"]):
             sw._sw.CloseDoc(path)
 
 
@@ -172,6 +200,17 @@ def test_a_deleted_mate_is_gone(linkage):
     assert gone["deleted"] == angle["mate"] and angle["mate"] not in gone["mates"] and len(gone["mates"]) == 2
     with pytest.raises(SolidWorksError, match=rf"No mate '{angle['mate']}'"):
         linkage.delete_mate(angle["mate"])
+
+
+def test_a_face_is_picked_by_a_point_on_it(linkage):
+    """Face numbers came out in another order after a mate, and add_mate took
+    the wrong faces. A point on a hole's wall, in the part's own coordinates,
+    picks that hole whatever the order: Ø4 at (55, 5) in the shin, at (5, 5)
+    in the thigh, both 5 thick."""
+    mated = linkage.add_mate("link_shin", "@57, 5, 2.5", "link_thigh", "@7, 5, 2.5", "concentric")
+    assert mated["axis_offset_mm"] == pytest.approx(0, abs=1e-4)
+    with pytest.raises(SolidWorksError, match="nearest lies 1 mm away"):
+        linkage.add_mate("link_shin", "@56, 5, 2.5", "link_thigh", "@7, 5, 2.5", "concentric")
 
 
 def test_swept_region_outlines_what_the_shin_covers(linkage):

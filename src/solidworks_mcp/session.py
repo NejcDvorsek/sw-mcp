@@ -5341,7 +5341,8 @@ class SolidWorksSession:
         return [binding.wrap(c, self._mod.IComponent2) for c in self._component_dispatches(asm)]
 
     def _component_by_name(self, asm, name: str):
-        """Resolve a component by instance name ('Bed-1') or part name ('Bed').
+        """Resolve a component by instance name ('Bed-1') or part name ('Bed'),
+        or one inside a sub-assembly by its path ('Leg-1/Thigh-1').
 
         The short form is accepted only while it is unambiguous; with two copies
         inserted it raises and lists the instance names instead of guessing.
@@ -5349,6 +5350,13 @@ class SolidWorksSession:
         key = (name or "").strip().lower()
         if not key:
             raise SolidWorksError("Give a component name.")
+        if "/" in key:  # SolidWorks names a component inside a sub-assembly by its path
+            inside = self._nested_components(self._components(asm))
+            found = [c for c in inside if c.Name2.lower() == key]
+            if len(found) == 1:
+                return found[0]
+            raise SolidWorksError(f"Component '{name}' not found. Inside the sub-assemblies: "
+                                  f"{[c.Name2 for c in inside if '/' in c.Name2]}.")
         comps = self._components(asm)
         exact = [c for c in comps if c.Name2.lower() == key]
         if len(exact) == 1:
@@ -5402,6 +5410,14 @@ class SolidWorksSession:
         low = [min(box["min_mm"][axis] for box in boxes) for axis in range(3)]
         high = [max(box["max_mm"][axis] for box in boxes) for axis in range(3)]
         return {"min_mm": low, "max_mm": high, "size_mm": [round(h - l, 4) for l, h in zip(low, high)]}
+
+    def _nested_components(self, comps) -> list:
+        """The components and everything inside them, at any depth."""
+        out = []
+        for comp in comps:
+            out.append(comp)
+            out += self._nested_components([binding.wrap(c, self._mod.IComponent2) for c in comp.GetChildren() or ()])
+        return out
 
     def _part_components(self, comp) -> list:
         """comp itself when it is a part, else the parts inside it at any depth.
@@ -5610,14 +5626,23 @@ class SolidWorksSession:
     def _component_faces(self, comp) -> list:
         """Every face of every solid body of the component as (face, part): a
         part component's own faces, or those of every part in a sub-assembly.
-        Faces keep their part's coordinates."""
+        Faces keep their part's coordinates. They come in a fixed order, by
+        part, planar first, then centre and area, so an index stays the same
+        face while the shape stays: SolidWorks' own order changed between two
+        calls in one assembly, after a mate."""
         faces = []
         for part in self._solid_parts(comp):
             for body in self._solid_bodies(part):
-                faces.extend((face, part) for face in body.GetFaces() or ())
+                faces.extend((binding.wrap(face, self._mod.IFace2), part) for face in body.GetFaces() or ())
         if not faces:
             raise SolidWorksError(f"Component '{comp.Name2}' has no solid body to pick a face on.")
-        return faces
+        return sorted(faces, key=lambda found: (found[1].Name2, *self._face_order(found[0])))
+
+    def _face_order(self, face) -> tuple:
+        surface = binding.wrap(face.GetSurface(), self._mod.ISurface)
+        box = face.GetBox()
+        centre = tuple(round(m_to_mm((box[j] + box[j + 3]) / 2), 3) for j in range(3))
+        return (0 if surface is not None and surface.IsPlane() else 1, *centre, round(face.GetArea() * 1e6, 3))
 
     def _part_frame_in(self, comp, part) -> tuple:
         """(rotation rows, shift mm) taking `part` coordinates into the coordinates
@@ -5639,17 +5664,20 @@ class SolidWorksSession:
         return rotation, shift
 
     def _component_face(self, comp, selector: str):
-        """Face '+x' / '-z:inner' of a component, or face '#5' by its
-        list_faces(component=...) index; returns (IFace2, the part it is on).
+        """Face '+x' / '-z:inner' of a component, face '#5' by its
+        list_faces(component=...) index, or face '@x,y,z' through that point;
+        returns (IFace2, the part it is on).
 
         The direction is read in the COMPONENT's own coordinate system (verified:
         a component's faces keep part coordinates however the component is
         turned), so '-x' is always the part's own -X face; in a sub-assembly, the
         sub-assembly's -X. ':inner' picks the cavity side of a hollow part -- the
         inside of a room wall, not its skin. An index reaches any face, such as a
-        hole for a concentric mate.
+        hole for a concentric mate; so does a point on it, in the same coordinates.
         """
         faces = self._component_faces(comp)
+        if str(selector).strip().startswith("@"):
+            return self._component_face_at(comp, faces, self._point_selector(selector))
         index = self._face_index(selector)
         if index is not None:
             if index >= len(faces):
@@ -5673,6 +5701,35 @@ class SolidWorksSession:
                 f"Component '{comp.Name2}' has no planar face pointing {selector}."
             )
         face, _, part = (max if side == "outer" else min)(facing, key=lambda found: found[1])
+        return face, part
+
+    @staticmethod
+    def _point_selector(selector) -> list:
+        """'@0, 0, 20.2' -> [0.0, 0.0, 20.2]; pure, unit-tested."""
+        try:
+            point = [float(c) for c in str(selector).strip()[1:].split(",")]
+        except ValueError:
+            point = []
+        if len(point) != 3:
+            raise SolidWorksError(f"A face by a point on it is '@x,y,z', in mm (got {selector!r}).")
+        return point
+
+    _ON_COMPONENT_FACE_MM = 0.01
+
+    def _component_face_at(self, comp, faces, point_mm):
+        """The component's face through point_mm, in the component's own coordinates."""
+        best = None
+        for face, part in faces:
+            rotation, shift = self._part_frame_in(comp, part)
+            local = [sum(rotation[k][i] * (point_mm[k] - shift[k]) for k in range(3)) for i in range(3)]  # R^T
+            nearest = face.GetClosestPointOn(*(mm_to_m(c) for c in local))
+            gap = math.dist(local, [m_to_mm(c) for c in nearest[:3]])
+            if best is None or gap < best[0]:
+                best = (gap, face, part)
+        gap, face, part = best
+        if gap > self._ON_COMPONENT_FACE_MM:
+            raise SolidWorksError(f"No face of '{comp.Name2}' goes through ({', '.join(f'{c:g}' for c in point_mm)}) "
+                                  f"in its own coordinates: the nearest lies {gap:.3g} mm away.")
         return face, part
 
     def _face_plane_in_assembly(self, comp, face):
@@ -6026,6 +6083,13 @@ class SolidWorksSession:
         return {"ok": True, "from": comp.Name2, "axis_mm": [point, direction], "distance_mm": round(m_to_mm(distance), 4)}
 
     def _distance_between(self, first, second) -> dict:
+        """The smallest distance between the parts of the two: SolidWorks would
+        not measure to a sub-assembly as a whole."""
+        distance = min(self._measured_apart(a, b) for a in self._solid_parts(first) for b in self._solid_parts(second))
+        return {"ok": True, "between": [first.Name2, second.Name2], "distance_mm": round(m_to_mm(distance), 4)}
+
+    def _measured_apart(self, first, second) -> float:
+        """IMeasure between two part components, in m."""
         model = self._require_model()
         selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
         model.ClearSelection2(True)
@@ -6038,10 +6102,9 @@ class SolidWorksSession:
             if measure is None or not measure.Calculate(None) or not (measure.IsIntersect or measure.Distance >= 0):
                 raise SolidWorksError(f"SolidWorks could not measure between '{first.Name2}' and '{second.Name2}'.")
             # touching or overlapping: SolidWorks reports no distance then, only the meeting (verified)
-            distance = 0.0 if measure.IsIntersect else measure.Distance
+            return 0.0 if measure.IsIntersect else measure.Distance
         finally:
             model.ClearSelection2(True)
-        return {"ok": True, "between": [first.Name2, second.Name2], "distance_mm": round(m_to_mm(distance), 4)}
 
     def _distance_to_point(self, comp, point_mm) -> dict:
         """Nearest point on the faces of the component's parts, each searched in
@@ -6102,7 +6165,8 @@ class SolidWorksSession:
         dim = self._dimension(dimension_name)
         unit, to_system, from_system = self._dimension_unit(dim)
         original = dim.SystemValue
-        start = {c.Name2: self._transform_data(c) for c in self._components(asm)}
+        everything = self._nested_components(self._components(asm))  # a joint inside a sub-assembly moves its parts
+        start = {c.Name2: self._transform_data(c) for c in everything}
         moving, steps = set(), []
         try:
             for value in values:
@@ -6112,7 +6176,7 @@ class SolidWorksSession:
                 if abs(applied - value) > 1e-6:
                     raise SolidWorksError(f"'{dimension_name}' did not take {value:g} {unit} (it reads "
                                           f"{applied:g}): is it a driven dimension?")
-                moving |= {c.Name2 for c in self._components(asm) if self._moved(start.get(c.Name2), c)}
+                moving |= {c.Name2 for c in everything if self._moved(start.get(c.Name2), c)}
                 steps.append({
                     f"value_{unit}": value,
                     "rebuild_ok": rebuilt,
@@ -6125,6 +6189,8 @@ class SolidWorksSession:
         if not moving and any(abs(to_system(value) - original) > 1e-12 for value in values):
             raise SolidWorksError(f"Stepping '{dimension_name}' through {values} moved no component: its mate holds "
                                   "nothing any more (suppressed, or a face it used is gone); list_components shows it.")
+        # what moved inside a sub-assembly that moved as a whole goes with it
+        moving = {name for name in moving if not any(name.startswith(other + "/") for other in moving)}
         for step in steps:
             step["distances"] = [{"between": d["between"], "distance_mm": d["distance_mm"]} for d in step["distances"]]
         smallest = []

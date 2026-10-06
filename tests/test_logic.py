@@ -479,6 +479,13 @@ def test_extrude_sketch_ends_at_a_depth_or_the_next_face(s, kwargs, match):
         s.extrude_sketch("Sketch1", **kwargs)
 
 
+def test_a_face_by_a_point_on_it_reads_three_numbers():
+    assert SolidWorksSession._point_selector("@0, -2.5, 20.2") == [0.0, -2.5, 20.2]
+    for wrong in ("@1,2", "@a,b,c", "@"):
+        with pytest.raises(SolidWorksError, match="@x,y,z"):
+            SolidWorksSession._point_selector(wrong)
+
+
 def test_a_zoom_region_turns_into_the_bottom_view():
     # from below the screen's x is the model's x, its y the model's z, and the
     # viewer looks along +y; the bottom view's Orientation3, as SolidWorks gives it
