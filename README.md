@@ -40,7 +40,7 @@ it "looks about right".
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
   agent can only do what the tools allow.
-- **Tested against real SolidWorks.** 641 tests; each feature's integration test
+- **Tested against real SolidWorks.** 645 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
   makes no network calls.
@@ -235,7 +235,7 @@ The server speaks MCP over **stdio**.
 | `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `read_sketch(name)` | A sketch read back in model coordinates: lines, arcs, circles, splines, its dimensions, fully defined or not |
 | `add_sketch(plane, start_mm, segments, name)` | Sketch an outline of lines, arcs and splines on any plane, fully defined: tangent where it flows, dimensioned from the origin |
-| `extrude_sketch(sketch, depth_mm, reverse, name)` / `cut_sketch(sketch, depth_mm, reverse, name)` | Build on an existing sketch by name (one a person drew): extrude it, or cut it blind or through all |
+| `extrude_sketch(sketch, depth_mm, reverse, name, up_to)` / `cut_sketch(sketch, depth_mm, reverse, name)` | Build on an existing sketch by name (one a person drew): extrude it blind or up to the next face, or cut it blind or through all |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
 | `list_features()` | The part's history in tree order (name, type, suppressed); flags features that fail to rebuild and sketches that are not fully defined |
 | `delete_feature(name, with_children, with_equations)` | Undo a step: delete a feature with its sketch; refuses (and names them) while other features depend on it, unless `with_children`; names the equations it breaks, or deletes them with `with_equations` |

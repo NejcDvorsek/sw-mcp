@@ -469,6 +469,16 @@ def test_screenshot_needs_a_direction_to_look_from(s):
         s.screenshot("shot.png", from_dir=[0, 0, 0])
 
 
+@pytest.mark.parametrize("kwargs,match", [
+    ({"depth_mm": 5, "up_to": "next"}, "not both"),
+    ({}, "depth_mm or up_to"),
+    ({"up_to": "wall"}, "Unknown up_to 'wall'"),
+], ids=["both", "neither", "unknown"])
+def test_extrude_sketch_ends_at_a_depth_or_the_next_face(s, kwargs, match):
+    with pytest.raises(SolidWorksError, match=match):
+        s.extrude_sketch("Sketch1", **kwargs)
+
+
 def test_a_zoom_region_turns_into_the_bottom_view():
     # from below the screen's x is the model's x, its y the model's z, and the
     # viewer looks along +y; the bottom view's Orientation3, as SolidWorks gives it

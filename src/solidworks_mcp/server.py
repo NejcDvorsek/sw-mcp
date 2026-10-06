@@ -542,15 +542,17 @@ async def add_extruded_slot(start_mm: list, end_mm: list, width_mm: float, depth
 
 
 @mcp.tool()
-async def extrude_sketch(sketch: str, depth_mm: float, reverse: bool = False, name: str = "Extrude") -> dict:
+async def extrude_sketch(sketch: str, depth_mm: float | None = None, reverse: bool = False,
+                         name: str = "Extrude", up_to: str | None = None) -> dict:
     """Extrude an existing sketch of the current part by name, e.g. one a person drew.
 
     depth_mm along the sketch's normal (reverse=True: the other way), merged
-    with the body. The sketch keeps its own dimensions and relations, so the
-    person's design stays in charge; read_sketch shows it first. Returns mass
-    properties.
+    with the body. Or up_to='next': up to the next face of the part, ending on
+    its shape (a post into a curved wall) and following it when it changes.
+    The sketch keeps its own dimensions and relations, so the person's design
+    stays in charge; read_sketch shows it first. Returns mass properties.
     """
-    return await _call(_session.extrude_sketch, sketch, depth_mm, reverse, name)
+    return await _call(_session.extrude_sketch, sketch, depth_mm, reverse, name, up_to)
 
 
 @mcp.tool()

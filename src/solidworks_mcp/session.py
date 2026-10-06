@@ -57,6 +57,7 @@ from .constants import (
     SW_END_COND_BLIND,
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
+    SW_END_COND_UP_TO_NEXT,
     SW_FEATURE_SCOPE_ALL_BODIES,
     SW_FILE_LOCATIONS_MATERIALS,
     SW_FILLET_OPT_STRAIGHT_TRANSITION,
@@ -722,12 +723,13 @@ class SolidWorksSession:
             result["dimensions"]["depth"] = f"D1@{result['feature']}"
         return result
 
-    def _extrude_sketch(self, depth_mm: float, name: str, sketch: dict, hint: str = "",
+    def _extrude_sketch(self, depth_mm: float | None, name: str, sketch: dict, hint: str = "",
                         role: str = "depth", reverse: bool = False, draft_deg: float = 0.0,
                         merge: bool = True) -> dict:
         """Extrude the sketch just closed (it stays selected) depth_mm along its
         normal (reverse: the other way), merged with the body; finish the
-        feature and name its depth.
+        feature and name its depth. depth_mm None runs up to the next face of
+        the part instead, ending on its shape, with no depth to name.
 
         Shared by every boss. `sketch` is the _define_sketch result, `role` the
         depth's name among the dimensions, `hint` what to check when it fails.
@@ -737,10 +739,11 @@ class SolidWorksSession:
         """
         bodies_before = {body.Name for body in self._part_bodies()}
         feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
+        up_to_next = depth_mm is None
         extrude = feat_mgr.FeatureExtrusion3(
             True, False, reverse,      # Sd (single dir), Flip, Dir
-            SW_END_COND_BLIND, 0,      # T1, T2 (end conditions)
-            mm_to_m(depth_mm), 0.0,    # D1 (depth), D2
+            SW_END_COND_UP_TO_NEXT if up_to_next else SW_END_COND_BLIND, 0,  # T1, T2 (end conditions)
+            0.0 if up_to_next else mm_to_m(depth_mm), 0.0,  # D1 (depth), D2
             bool(draft_deg), False,    # Dchk1 (draft), Dchk2
             draft_deg < 0, False,      # Ddir1 (outward), Ddir2
             math.radians(abs(draft_deg)), 0.0,  # Dang1, Dang2 (draft, radians)
@@ -756,7 +759,8 @@ class SolidWorksSession:
         if extrude is None:
             raise SolidWorksError(f"FeatureExtrusion3 failed (None). {hint}".strip())
         result = self._finish_feature(extrude, name, **sketch)
-        result["dimensions"][role] = f"D1@{result['feature']}"
+        if not up_to_next:
+            result["dimensions"][role] = f"D1@{result['feature']}"
         if draft_deg:
             feature = binding.wrap(extrude, self._mod.IFeature)
             result["dimensions"]["draft"] = next(d["name"] for d in self._dimension_entries(feature)
@@ -4137,14 +4141,26 @@ class SolidWorksSession:
                              self._mod.IMathPoint)
         return [round(m_to_mm(c), 4) + 0.0 for c in moved.ArrayData]
 
-    def extrude_sketch(self, sketch: str, depth_mm: float, reverse: bool = False, name: str = "Extrude") -> dict:
+    def extrude_sketch(self, sketch: str, depth_mm: float | None = None, reverse: bool = False,
+                       name: str = "Extrude", up_to: str | None = None) -> dict:
         """Extrude an existing sketch of the current part, by name (one a person
         drew), depth_mm along its normal (reverse=True: the other way), merged
-        with the body. The sketch's own dimensions come back."""
-        if depth_mm <= 0:
+        with the body; or with up_to='next' up to the next face of the part,
+        ending on its shape, such as a post into a curved wall, and following
+        it when the wall changes. The sketch's own dimensions come back."""
+        if depth_mm is not None and up_to is not None:
+            raise SolidWorksError("Give depth_mm or up_to, not both.")
+        if depth_mm is None and up_to is None:
+            raise SolidWorksError("extrude_sketch needs depth_mm or up_to='next'.")
+        if up_to not in (None, "next"):
+            raise SolidWorksError(f"Unknown up_to '{up_to}'. Use 'next': up to the next face of the part.")
+        if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
         defined = self._select_person_sketch(sketch)
-        return self._extrude_sketch(depth_mm, name, defined, f"Is '{sketch}' a closed profile?", reverse=reverse)
+        hint = f"Is '{sketch}' a closed profile?" if up_to is None else (
+            f"Is '{sketch}' a closed profile with a face of the part ahead of it"
+            f"{'' if reverse else ' (or behind it: reverse=True)'}?")
+        return self._extrude_sketch(depth_mm, name, defined, hint, reverse=reverse)
 
     def cut_sketch(self, sketch: str, depth_mm: float | None = None, reverse: bool = False,
                    name: str = "Cut") -> dict:

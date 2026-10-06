@@ -108,3 +108,18 @@ def test_a_bent_slot_of_concentric_arcs_is_fully_defined(part):
     d = 2.2015  # the line's distance from the centre
     outer, inner = (segment_area(r, 2 * math.sqrt(r ** 2 - d ** 2)) for r in (14.5, 9.7))
     assert vol(slot) == pytest.approx((outer - inner) * 5, rel=1e-4)
+
+
+def test_a_post_up_to_the_next_face_ends_on_its_curve(part):
+    """A 5 x 10 post from a plane at z = 30 down onto a lying R10 cylinder: its
+    end follows the curve, from 10 high at the crown to 9.68 at its sides,
+    which no single depth can."""
+    part.add_cylinder(20, 40)  # its axis along y, y 0..40
+    plane = part.add_plane("front", offset_mm=30)["plane"]
+    sketch = part.add_sketch(plane, [-2.5, 15], [{"line": [2.5, 15]}, {"line": [2.5, 25]}, {"line": [-2.5, 25]},
+                                                 {"line": [-2.5, 15]}])
+    before = vol(part.get_mass_properties())
+    post = part.extrude_sketch(sketch["sketch"], up_to="next", reverse=True)
+    under = 2 * (1.25 * math.sqrt(100 - 2.5 ** 2) + 50 * math.asin(0.25))  # the circle's height over x -2.5..2.5
+    assert vol(post) - before == pytest.approx(10 * (30 * 5 - under), rel=1e-6)
+    assert "depth" not in post["dimensions"], "an end up to a face has no depth to change"

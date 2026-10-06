@@ -15,6 +15,9 @@ All notable changes to this project are documented here. This project follows
   were.
 - `screenshot(from_dir=[x, y, z])` looks from any direction, such as from
   behind and below, which no standard view shows; the model's +y stays up.
+- `extrude_sketch(up_to="next")` extrudes up to the next face of the part:
+  a post into a curved wall ends on its shape and follows it when the wall
+  changes, where no single depth fits.
 
 ### Changed
 - `screenshot` leaves reference planes and axes out, so they do not cut
