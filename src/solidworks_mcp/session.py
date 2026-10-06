@@ -60,6 +60,7 @@ from .constants import (
     SW_END_COND_UP_TO_NEXT,
     SW_FEATURE_SCOPE_ALL_BODIES,
     SW_FILE_LOCATIONS_MATERIALS,
+    SW_FILLET_OPT_PROPAGATE,
     SW_FILLET_OPT_STRAIGHT_TRANSITION,
     SW_FILLET_OPT_UNIFORM_RADIUS,
     SW_FILLET_TYPE_FULL_ROUND,
@@ -2887,7 +2888,8 @@ class SolidWorksSession:
         return self._with_depth(self._finish_feature(cut, name, **sketch), depth_mm)
 
     def add_fillet(self, radius_mm: float, edges: str = "all", name: str = "Fillet",
-                   radii_at_mm: list | None = None, skip_shorter_mm: float | None = None) -> dict:
+                   radii_at_mm: list | None = None, skip_shorter_mm: float | None = None,
+                   tangent_propagation: bool = False) -> dict:
         """Round edges of the part's solid body with one constant radius.
 
         edges: 'all' (default); a world axis 'x'|'y'|'z' (straight edges parallel
@@ -2898,10 +2900,14 @@ class SolidWorksSession:
         vary: r at the edge end at each point (list_edges gives the ends),
         radius_mm at the other ends, straight in between; 'vertex_radii' names
         each end's radius dimension. skip_shorter_mm leaves out the edges shorter
-        than that (slivers a radius cannot follow). When SolidWorks refuses, each
-        edge is tried alone and the error names the ones that do not fit. Returns
-        how many edges were filleted and the resulting mass properties (volume
-        drops as convex edges are rounded off).
+        than that (slivers a radius cannot follow). tangent_propagation=True
+        carries the round on along the edges that run on smoothly from the given
+        ones, as SolidWorks' own default does: an edge that ends where it runs
+        into another tangentially, such as round a fillet, rounds only so. When
+        SolidWorks refuses, each edge is tried alone, also with propagation, and
+        the error names the ones that do not fit. Returns how many edges were
+        filleted and the resulting mass properties (volume drops as convex edges
+        are rounded off).
         """
         model = self._require_model()
         if radius_mm <= 0:
@@ -2921,19 +2927,19 @@ class SolidWorksSession:
             return self._variable_fillet(radius_mm, radii_at_mm, edge_count, name)
 
         selected = self._selected_objects()
-        fillet = self._uniform_fillet(radius_mm)
+        fillet = self._uniform_fillet(radius_mm, tangent_propagation)
         if fillet is None:
-            raise SolidWorksError(self._fillet_refusal(radius_mm, selected))
+            raise SolidWorksError(self._fillet_refusal(radius_mm, selected, tangent_propagation))
         result = self._finish_feature(fillet, name, edges_filleted=edge_count)
         if skip_shorter_mm is not None:
             result["edges_skipped"] = skipped
         return result
 
-    def _uniform_fillet(self, radius_mm: float):
+    def _uniform_fillet(self, radius_mm: float, propagate: bool = False):
         """FeatureFillet3 on the selected edges with one radius; None when refused."""
         feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
         return feat_mgr.FeatureFillet3(
-            SW_FILLET_OPT_UNIFORM_RADIUS,      # Options (uniform R1; no propagation)
+            SW_FILLET_OPT_UNIFORM_RADIUS | (SW_FILLET_OPT_PROPAGATE if propagate else 0),  # Options
             mm_to_m(radius_mm),                # R1 (uniform radius)
             0.0, 0.0,                          # R2, Rho
             SW_FILLET_TYPE_SIMPLE,             # Ftyp
@@ -2957,21 +2963,22 @@ class SolidWorksSession:
 
     _MAX_FILLET_TRIALS = 200
 
-    def _fillet_refusal(self, radius_mm: float, edges: list) -> str:
+    def _fillet_refusal(self, radius_mm: float, edges: list, propagate: bool = False) -> str:
         """Why a fillet was refused. The edges are added one at a time to a
         trial fillet (removed again each time): an edge that breaks the group
-        is left out, and tried alone to tell which fail on their own."""
-        if len(edges) < 2 or len(edges) > self._MAX_FILLET_TRIALS:
+        is left out, and tried alone to tell which fail on their own; one that
+        does is tried with tangent propagation too, when that was off."""
+        if len(edges) > self._MAX_FILLET_TRIALS:
             return f"SolidWorks could not round {len(edges)} edge(s) with R{radius_mm:g}: is the radius too large?"
         model = self._model
         extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
         index_of = {ref: i for i, ref in enumerate(self._persist_refs(self._solid_body().GetEdges() or ()))}
 
-        def rounds(refs) -> bool:
+        def rounds(refs, chain=propagate) -> bool:
             model.ClearSelection2(True)
             for ref in refs:
                 binding.wrap(extension.GetObjectByPersistReference3(ref)[0], self._mod.IEntity).Select4(True, None)
-            trial = self._uniform_fillet(radius_mm)
+            trial = self._uniform_fillet(radius_mm, chain)
             model.ClearSelection2(True)
             if trial is None:
                 return False
@@ -2986,19 +2993,26 @@ class SolidWorksSession:
                 fits.append(ref)
             else:
                 (together if rounds([ref]) else alone).append(ref)
+        chained = [ref for ref in alone if not propagate and rounds([ref], True)]
+        alone = [ref for ref in alone if ref not in chained]
 
         def named(refs) -> str:
             return ", ".join(f"{index_of.get(ref, -1)} ({self._edge_entry(0, extension.GetObjectByPersistReference3(ref)[0])['length_mm']:g} mm)"
                              for ref in refs)
 
         parts = []
+        if chained:
+            parts.append(f"edge(s) {named(chained)} fail alone but round with tangent_propagation=True: they end where "
+                         "they run on smoothly into further edges, such as round a fillet, which the round must follow")
         if alone:
-            parts.append(f"edge(s) {named(alone)} fail even alone")
+            parts.append(f"edge(s) {named(alone)} fail even alone{'' if propagate else ', also with tangent propagation'}")
         if together:
             parts.append(f"edge(s) {named(together)} round alone but not with the others")
-        keep = ",".join(str(index_of.get(ref, -1)) for ref in fits)
-        return (f"R{radius_mm:g} does not round all {len(edges)} edges: {'; '.join(parts)}. The other {len(fits)} "
-                f"round together: edges=\"{keep}\" (list_edges indices), a smaller radius, or skip_shorter_mm.")
+        message = f"R{radius_mm:g} does not round all {len(edges)} edge(s): {'; '.join(parts)}."
+        if fits:
+            keep = ",".join(str(index_of.get(ref, -1)) for ref in fits)
+            message += f" The other {len(fits)} round together: edges=\"{keep}\" (list_edges indices)."
+        return message + " Else a smaller radius, or skip_shorter_mm for slivers."
 
     _VERTEX_TOLERANCE_MM = 0.01
 

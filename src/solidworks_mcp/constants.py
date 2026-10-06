@@ -44,6 +44,7 @@ SW_FILLET_TYPE_FULL_ROUND = 3
 # array and returns None. Tangent propagation is intentionally NOT enabled, so
 # the explicit edge selection equals exactly what gets filleted.
 SW_FILLET_OPT_UNIFORM_RADIUS = 2
+SW_FILLET_OPT_PROPAGATE = 1        # swFeatureFilletPropagate: on along edges that run on tangentially
 # swFeatureFilletVarRadiusType: a variable radius runs straight from end to end
 # (without it, along a smooth curve that misses the hand calculation)
 SW_FILLET_OPT_STRAIGHT_TRANSITION = 4

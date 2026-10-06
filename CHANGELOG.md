@@ -10,6 +10,8 @@ All notable changes to this project are documented here. This project follows
   coordinates: a hole by a point on its wall, whatever the face numbers.
 - A part inside a sub-assembly by its path, such as `"Leg-1/Thigh-1"`, in
   every assembly tool; a joint inside one steps as `"D1@Angle1@Leg-1"`.
+- `add_fillet(tangent_propagation=True)` carries a round on along the edges
+  that run on smoothly from the given ones, as SolidWorks does by default.
 
 ### Fixed
 - An equation replaced in place that used a variable added below it made the
@@ -30,6 +32,10 @@ All notable changes to this project are documented here. This project follows
 - The distance to a whole sub-assembly, in `measure_distance` and in
   `check_motion(distances=...)`, failed: it is measured through its parts.
 - `check_motion` on a joint inside a sub-assembly said nothing moved.
+- A fillet edge that ends where it runs on into another tangentially, such as
+  round a fillet, was refused as failing "even alone", with no reason; the
+  refusal now says that it rounds with `tangent_propagation=True`. A single
+  refused edge is looked into too.
 
 ## [0.12.0] — 2026-10-06
 

@@ -590,7 +590,8 @@ async def cut_sketch(sketch: str, depth_mm: float | None = None, reverse: bool =
 
 @mcp.tool()
 async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
-                     radii_at_mm: list | None = None, skip_shorter_mm: float | None = None) -> dict:
+                     radii_at_mm: list | None = None, skip_shorter_mm: float | None = None,
+                     tangent_propagation: bool = False) -> dict:
     """Round edges of the current part with one constant radius (mm).
 
     edges: "all" (default), "x"/"y"/"z" for edges parallel to that world axis,
@@ -600,11 +601,15 @@ async def add_fillet(radius_mm: float, edges: str = "all", name: str = "Fillet",
     list_edges. radii_at_mm = [[x, y, z, r], ...] makes the radius vary: r at
     the edge end at each point (list_edges gives the ends), radius_mm at the
     other ends, straight in between; 'vertex_radii' gives each end's dimension.
-    skip_shorter_mm leaves out edges shorter than that. A refusal names the
-    edges the radius does not fit (each tried alone). Returns the number of
-    edges filleted and the mass properties.
+    skip_shorter_mm leaves out edges shorter than that. tangent_propagation=True
+    carries the round on along edges that run on smoothly from the given ones,
+    as SolidWorks does by default: an edge ending where it runs into another
+    tangentially, such as round a fillet, only rounds so. A refusal names the
+    edges the radius does not fit (each tried alone, and with propagation).
+    Returns the number of edges filleted and the mass properties.
     """
-    return await _call(_session.add_fillet, radius_mm, edges, name, radii_at_mm, skip_shorter_mm)
+    return await _call(_session.add_fillet, radius_mm, edges, name, radii_at_mm, skip_shorter_mm,
+                       tangent_propagation)
 
 
 @mcp.tool()

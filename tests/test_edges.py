@@ -43,6 +43,21 @@ def test_a_refused_fillet_names_the_edges_and_offers_the_ones_that_round(part):
     assert part.add_fillet(1, keep)["edges_filleted"] == len(keep.split(","))
 
 
+def test_an_edge_that_runs_on_into_a_fillet_rounds_with_tangent_propagation(part):
+    """An L block with its inner corner rounded R2: the top edge along y = 10
+    ends where it runs on smoothly round that round. Alone it could not be
+    rounded, 'fail even alone' without a reason; carried on along the tangent
+    edges, as SolidWorks does by default, it can."""
+    part.add_extruded_profile([[0, 0], [40, 0], [40, 10], [10, 10], [10, 40], [0, 40]], 10)
+    [corner] = part.list_edges(within_mm=[[9.9, 9.9, -0.1], [10.1, 10.1, 10.1]])["edges"]
+    part.add_fillet(2, str(corner["index"]), name="Corner")
+    [top] = part.list_edges(within_mm=[[11.9, 9.9, 9.9], [40.1, 10.1, 10.1]])["edges"]
+    with pytest.raises(SolidWorksError, match="round with tangent_propagation=True"):
+        part.add_fillet(1, str(top["index"]))
+    rounded = part.add_fillet(1, str(top["index"]), tangent_propagation=True)
+    assert rounded["edges_filleted"] == 1 and rounded["rebuild_ok"]
+
+
 def test_short_edges_can_be_left_out(part):
     """The wall's 0.5 mm end is the only outline edge shorter than 1 mm."""
     part.add_extruded_profile(L_PLATE, 10)
