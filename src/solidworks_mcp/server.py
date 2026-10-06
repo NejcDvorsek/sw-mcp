@@ -1141,6 +1141,25 @@ async def check_motion(dimension_name: str, values: list, distances: list | None
 
 
 @mcp.tool()
+async def swept_region(component: str, dimension: str, values: list, heights_mm: list, axis: str = "z",
+                       margin_mm: float = 0.0, tolerance_mm: float = 0.2, frame: str | None = None) -> dict:
+    """Outline what a component covers in a plane while a joint moves, to keep
+    clear of it or cut it away.
+
+    Steps the joint's dimension through values (as check_motion, e.g. every
+    5 degrees over 30..150), cuts the component at axis = each of heights_mm
+    (a few heights inside a layer, not on its faces) and joins all of it, made
+    margin_mm wider, within about tolerance_mm. frame: the component to give the
+    coordinates in, such as the part to cut from; else the assembly's. Each
+    region's outline runs counter-clockwise in the plane's other two axes,
+    (x, y) across z: give it to add_sketch as a spline. count says how many
+    separate regions there are.
+    """
+    return await _call(_session.swept_region, component, dimension, values, heights_mm, axis,
+                       margin_mm, tolerance_mm, frame)
+
+
+@mcp.tool()
 async def get_assembly_bounding_box() -> dict:
     """Get the bounding box of the whole assembly (min/max/size in mm)."""
     return await _call(_session.get_assembly_bounding_box)

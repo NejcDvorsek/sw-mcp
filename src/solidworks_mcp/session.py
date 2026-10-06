@@ -131,6 +131,7 @@ from .constants import (
 )
 from .errors import SolidWorksError
 from .mesh_tools import area, compare_sections, extents, load_mesh, section, simplify
+from .region_tools import swept_outline
 from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
@@ -6095,6 +6096,86 @@ class SolidWorksSession:
         now = self._transform_data(comp)
         return (any(abs(a - b) > self._ROTATION_TOLERANCE for a, b in zip(before[:9], now[:9]))
                 or any(abs(a - b) > mm_to_m(self._TRANSFORM_TOLERANCE_MM) for a, b in zip(before[9:12], now[9:12])))
+
+    def swept_region(self, component: str, dimension: str, values: list, heights_mm: list,
+                     axis: str = "z", margin_mm: float = 0.0, tolerance_mm: float = 0.2,
+                     frame: str | None = None) -> dict:
+        """What a component covers in a plane while a joint moves.
+
+        Steps `dimension` through `values` (as check_motion), cuts the component
+        at every step where `axis` = each of heights_mm, and outlines all of it
+        together, margin_mm wider and within about tolerance_mm. Give a layer a
+        few heights inside it, not on its faces. Coordinates are those of the
+        `frame` component (the part to cut it from), else the assembly's; each
+        region's outline runs counter-clockwise in the plane's other two axes,
+        (x, y) across z, ready for add_sketch as a spline. The dimension goes
+        back to its value afterwards.
+        """
+        if not values:
+            raise SolidWorksError("Give the values to step through, e.g. [30, 60, 90].")
+        if not heights_mm:
+            raise SolidWorksError("Give the heights to cut at, e.g. [-19.2] or a few inside a layer.")
+        key = str(axis).lower()
+        if key not in ("x", "y", "z"):
+            raise SolidWorksError(f"Unknown axis '{axis}'. Use 'x', 'y' or 'z'.")
+        asm = self._require_assembly()
+        model = self._model
+        comp = self._component_by_name(asm, component)
+        framer = self._component_by_name(asm, frame) if frame else None
+        pieces = [(part, [tri[:3] for body in self._solid_bodies(part) for face in self._body_faces(body)
+                          for tri in self._face_triangles(binding.wrap(face, self._mod.IFace2))])
+                  for part in self._solid_parts(comp)]  # in each part's own coordinates, read once
+        dim = self._dimension(dimension)
+        unit, to_system, from_system = self._dimension_unit(dim)
+        original = dim.SystemValue
+        start = {part.Name2: self._transform_data(part) for part, _ in pieces}
+        sections, moved = [], False
+        try:
+            for value in values:
+                dim.SystemValue = to_system(value)
+                model.ForceRebuild3(False)
+                applied = from_system(dim.SystemValue)
+                if abs(applied - value) > 1e-6:
+                    raise SolidWorksError(f"'{dimension}' did not take {value:g} {unit} (it reads {applied:g}): "
+                                          "is it a driven dimension?")
+                for part, triangles in pieces:
+                    moved = moved or self._moved(start[part.Name2], part)
+                    place = self._placement_into(part, framer)
+                    placed = [tuple(place(p) for p in tri) for tri in triangles]
+                    sections += [loops for height in heights_mm if (loops := section(placed, key, height))]
+        finally:
+            dim.SystemValue = original
+            model.ForceRebuild3(False)
+        if not moved and any(abs(to_system(value) - original) > 1e-12 for value in values):
+            raise SolidWorksError(f"Stepping '{dimension}' through {values} moved no part of '{comp.Name2}': its "
+                                  "mate holds nothing (suppressed, or a face it used is gone), or it moves something else.")
+        if not sections:
+            raise SolidWorksError(f"'{comp.Name2}' does not reach {key} = {', '.join(f'{h:g}' for h in heights_mm)} "
+                                  f"mm in {framer.Name2 if framer else 'the assembly'}'s coordinates at any step.")
+        regions = swept_outline(sections, tolerance_mm, margin_mm)
+        return {"ok": True, "component": comp.Name2, "frame": framer.Name2 if framer else "assembly",
+                "dimension": dimension, f"values_{unit}": list(values), "axis": key, "heights_mm": list(heights_mm),
+                "plane_axes": [a for a in ("x", "y", "z") if a != key], "margin_mm": margin_mm,
+                "tolerance_mm": tolerance_mm, "count": len(regions),
+                "regions": [{**r, "outline_mm": [list(p) for p in r["outline_mm"]],
+                             "holes_mm": [[list(p) for p in hole] for hole in r["holes_mm"]]} for r in regions]}
+
+    def _placement_into(self, part, framer):
+        """A function taking a point of the part (mm, its own coordinates) to
+        the frame component's coordinates, or the assembly's without one."""
+        rotation, shift, scale = self._frame(part)
+        shift = [m_to_mm(s) for s in shift]
+        if framer is None:
+            back, origin, size = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0] * 3, 1.0
+        else:
+            back, origin, size = self._frame(framer)
+            origin = [m_to_mm(s) for s in origin]
+
+        def place(p):
+            world = [scale * sum(rotation[row][i] * p[i] for i in range(3)) + shift[row] for row in range(3)]
+            offset = [w - o for w, o in zip(world, origin)]
+            return tuple(sum(back[i][row] * offset[i] for i in range(3)) / size for row in range(3))  # R^T: the inverse
+        return place
 
     def get_assembly_bounding_box(self) -> dict:
         """Bounding box of the whole assembly (min/max/size in mm)."""

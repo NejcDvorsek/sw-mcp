@@ -18,6 +18,9 @@ All notable changes to this project are documented here. This project follows
 - `extrude_sketch(up_to="next")` extrudes up to the next face of the part:
   a post into a curved wall ends on its shape and follows it when the wall
   changes, where no single depth fits.
+- `swept_region` outlines what a component covers in a plane while a joint
+  moves through its range, with a margin, in the coordinates of the part to
+  cut from: an ordered outline per region, ready for a spline.
 
 ### Changed
 - `screenshot` leaves reference planes and axes out, so they do not cut

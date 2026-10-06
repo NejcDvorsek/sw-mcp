@@ -174,6 +174,24 @@ def test_a_deleted_mate_is_gone(linkage):
         linkage.delete_mate(angle["mate"])
 
 
+def test_swept_region_outlines_what_the_shin_covers(linkage):
+    """The shin, 60 x 10, turns about its hole 5 mm from one end. At 90 and at
+    180 degrees it lies as two bars at right angles over one 10 x 10 square
+    round the hole: 600 + 600 - 100. Cut at z 7.5, inside it (z 5..10)."""
+    angle = knee(linkage, 90)
+    swept = linkage.swept_region("link_shin", angle["dimension"], [90, 180], [7.5])
+    [region] = swept["regions"]
+    assert region["area_mm2"] == pytest.approx(1100, rel=0.03)
+    assert shin_size(linkage) == pytest.approx([10, 60, 5], abs=1e-3), "the knee was not put back at 90"
+    # in the coordinates of the stop, turned 90 degrees about z at (20, -30, 5):
+    # the same outline, moved back and turned back
+    linkage.set_component_transform("link_stop", 20, -30, 5, rz_deg=90)
+    seen = linkage.swept_region("link_shin", angle["dimension"], [90, 180], [2.5], frame="link_stop")
+    expected = sorted((round(y + 30, 4), round(20 - x, 4)) for x, y in region["outline_mm"])
+    got = sorted((round(x, 4), round(y, 4)) for x, y in seen["regions"][0]["outline_mm"])
+    assert got == expected, "the outline is not in the stop's coordinates"
+
+
 def test_a_coincident_mate_holds_on_slanted_faces(sw, tmp_path):
     """A drafted wedge's slanted face is a trapezoid whose box centre lies 0.87
     mm off its plane. Measured from that centre a block's face mated onto it

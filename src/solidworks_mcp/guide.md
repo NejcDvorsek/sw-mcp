@@ -270,6 +270,10 @@ stray drag in SolidWorks can change the part.
   fights; `list_components` lists the mates and their errors, in words.
   `check_motion` fails when nothing moves: then the mate lost a face, or is
   suppressed. `delete_mate` and `suppress_mate` take the name add_mate returns.
+  What a moving part sweeps over, to keep another part clear of it:
+  `swept_region(part, dimension, values, heights_mm, margin_mm=..., frame=
+  "Cover-1")` outlines it in a plane, in the cover's coordinates, as points for
+  an `add_sketch` spline to cut with.
 - **A person's part**: `list_features` names their sketches and planes.
   `read_sketch` reads a sketch back in model coordinates, so you can check it
   against the points that must fit before building on it. `extrude_sketch` and
