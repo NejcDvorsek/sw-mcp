@@ -5542,10 +5542,35 @@ class SolidWorksSession:
         dimensions = self._dimension_entries(mate)
         if dimensions:
             entry["dimensions"] = [{key: d[key] for key in ("name", "value", "unit")} for d in dimensions]
+        trouble = self._mate_trouble(mate)
+        if trouble:
+            entry["error"] = trouble
+        return entry
+
+    def _mate_trouble(self, mate) -> dict | None:
+        """What is wrong with a mate: the error SolidWorks flags, or a face or
+        edge it lost without one (a mate entity left without its reference)."""
         code, warning = mate.GetErrorCode2()
         if code:
-            entry["error"] = self._error_entry(code, warning)
-        return entry
+            return self._error_entry(code, warning)
+        details = binding.wrap(mate.GetSpecificFeature2(), self._mod.IMate2)
+        if details is None or mate.IsSuppressed():  # suppressed, it holds nothing on purpose
+            return None
+        entities = [binding.wrap(details.MateEntity(i), self._mod.IMateEntity2) for i in range(details.GetMateEntityCount())]
+        if any(entity is None or entity.Reference is None for entity in entities):
+            return {"code": None, "warning": False, "cause": "broken: a face or edge it used is gone"}
+        return None
+
+    def _refuse_broken_mates(self) -> None:
+        """Stepping a joint while a mate is broken lets the parts it should hold
+        drift: a concentric mate on a hole that was made again held nothing,
+        and a part slid off its axis through the next one."""
+        self._model.ForceRebuild3(False)
+        broken = [f"{mate.Name} ({trouble['cause']})" for mate in self._mates()
+                  if (trouble := self._mate_trouble(mate)) and not trouble["warning"]]
+        if broken:
+            raise SolidWorksError(f"Mate(s) {', '.join(broken)}: the parts they should hold can drift, so stepping "
+                                  "the joint means nothing. Repair them, or delete_mate and add them again.")
 
     def _mate_by_name(self, name: str):
         mates = self._mates()
@@ -6162,6 +6187,7 @@ class SolidWorksSession:
         model = self._model
         for name in {name for pair in pairs for name in pair}:
             self._component_by_name(asm, name)  # a wrong name fails before anything moves
+        self._refuse_broken_mates()
         dim = self._dimension(dimension_name)
         unit, to_system, from_system = self._dimension_unit(dim)
         original = dim.SystemValue
@@ -6233,6 +6259,7 @@ class SolidWorksSession:
         model = self._model
         comp = self._component_by_name(asm, component)
         framer = self._component_by_name(asm, frame) if frame else None
+        self._refuse_broken_mates()
         pieces = [(part, [tri[:3] for body in self._solid_bodies(part) for face in self._body_faces(body)
                           for tri in self._face_triangles(binding.wrap(face, self._mod.IFace2))])
                   for part in self._solid_parts(comp)]  # in each part's own coordinates, read once

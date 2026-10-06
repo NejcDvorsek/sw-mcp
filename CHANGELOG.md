@@ -23,6 +23,10 @@ All notable changes to this project are documented here. This project follows
 - A component's face numbers could come in another order after a mate, and
   `add_mate` took the wrong faces; they are now ordered by part, type, centre
   and area.
+- `check_motion` stepped a joint while a mate was broken, a concentric mate
+  on a hole made again, and the part slid off its axis. It and
+  `swept_region` now refuse and name the mate; `list_components` also flags a
+  mate that lost a face without an error from SolidWorks.
 - The distance to a whole sub-assembly, in `measure_distance` and in
   `check_motion(distances=...)`, failed: it is measured through its parts.
 - `check_motion` on a joint inside a sub-assembly said nothing moved.

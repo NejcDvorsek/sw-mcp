@@ -202,6 +202,41 @@ def test_a_deleted_mate_is_gone(linkage):
         linkage.delete_mate(angle["mate"])
 
 
+def test_stepping_a_joint_with_a_broken_mate_is_refused(sw, tmp_path):
+    """The arm's hole was deleted and made again: the concentric mate on it
+    held nothing, and check_motion let the part slide off its axis through
+    the next one. Two 60 x 20 x 5 bars, Ø6 holes at (10, 10) and (50, 10)."""
+    paths = {}
+    for name, x in (("pivot_base", 10), ("pivot_arm", 50)):
+        sw.new_part()
+        sw.add_box(60, 20, 5)
+        sw.add_hole(6, x, 10, name="PivotHole")
+        paths[name] = sw.save_part(str(tmp_path / f"{name}.sldprt"))["path"]
+        sw.close_part()
+    sw.new_assembly()
+    try:
+        sw.insert_component(paths["pivot_base"], 0, 0, 0)
+        sw.insert_component(paths["pivot_arm"], 10, 40, 5)
+        held = sw.add_mate("pivot_arm", "@53, 10, 2.5", "pivot_base", "@13, 10, 2.5", "concentric")["mate"]
+        sw.add_mate("pivot_arm", "-z", "pivot_base", "+z", "coincident")
+        angle = sw.add_mate("pivot_arm", "-y", "pivot_base", "-y", "angle", angle_deg=90)
+        assembly = sw._model.GetTitle()
+        sw.open_part(paths["pivot_arm"])
+        sw.delete_feature("PivotHole")
+        sw.add_hole(6, 50, 10, name="PivotHole")
+        sw.save_part(paths["pivot_arm"])
+        sw.close_part()
+        sw.activate_document(assembly)
+        [entry] = [m for m in sw.list_components()["mates"] if m["name"] == held]
+        assert "broken" in entry["error"]["cause"], entry
+        with pytest.raises(SolidWorksError, match=rf"{held} \(broken"):
+            sw.check_motion(angle["dimension"], [60, 90])
+    finally:
+        sw.close_part()
+        for path in paths.values():
+            sw._sw.CloseDoc(path)
+
+
 def test_a_face_is_picked_by_a_point_on_it(linkage):
     """Face numbers came out in another order after a mate, and add_mate took
     the wrong faces. A point on a hole's wall, in the part's own coordinates,

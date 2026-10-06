@@ -1143,7 +1143,9 @@ async def check_motion(dimension_name: str, values: list, distances: list | None
     150]. Each step gives the overlapping pairs with their volume and the
     distance between each pair in distances ([["Rod", "Bolt"], ...]); the
     summary gives clash_free and each pair's smallest distance with the value
-    where it occurs. The dimension goes back to its value afterwards.
+    where it occurs. The dimension goes back to its value afterwards. A joint
+    inside a sub-assembly is 'D1@Angle1@Leg-1'. Refused while a mate is broken:
+    the parts it should hold would drift and the result mean nothing.
     """
     return await _call(_session.check_motion, dimension_name, values, distances)
 
