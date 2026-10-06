@@ -100,6 +100,10 @@ SW_ISO_TAPPED_HOLE = 147
 SW_COSMETIC_THREAD_WITH_CALLOUT = 1  # swWzdHoleCosmeticThreadTypes_e
 SCREW_FITS = {"close": 0, "normal": 1, "loose": 2}  # swWzdHoleScrewClearanceTypes_e
 SW_SEL_FACES = 2                   # swSelectType_e, for IModelDocExtension.SelectByRay
+SW_SEL_SKETCH_POINTS = 11          # swSelectType_e: a sketch point a dimension is attached to
+SW_SEL_EXT_SKETCH_POINTS = 25      # swSelectType_e: an external one, such as the origin's
+SW_HOR_LINEAR_DIMENSION = 11       # swDimensionType_e of a display dimension
+SW_VERT_LINEAR_DIMENSION = 12
 
 # STL/3MF tessellation, set as ISldWorks user preferences BEFORE SaveAs3 (the mesh
 # translator reads them at save time). These are GLOBAL/application prefs, so the

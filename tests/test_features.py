@@ -38,6 +38,28 @@ def test_set_dimension(part):
     assert abs(vol(part.set_dimension(box["depth_dimension"], 25)) - 20000) < 0.01
 
 
+def test_a_points_coordinate_takes_its_sign(part):
+    """x3 is the top-left corner's x, to SolidWorks a distance from the origin:
+    -5 put the corner at x = -5 but read back 5, 'not applied', and a later 3
+    left it on that side, at -3, reported as applied. A trapezoid 10 high,
+    20 along the bottom, its top from the corner to x = 20, 5 deep."""
+    x3 = part.add_extruded_profile([[0, 0], [20, 0], [20, 10], [8, 10]], 5)["dimensions"]["x3"]
+    across = part.set_dimension(x3, -5)
+    assert across["applied"] and across["new_value_mm"] == pytest.approx(-5) and across["old_value_mm"] == 8
+    assert vol(across) == pytest.approx((20 + 25) / 2 * 10 * 5)
+    # on the negative side already, -4 must not send it across to +4
+    assert part.set_dimension(x3, -4)["new_value_mm"] == pytest.approx(-4)
+    back = part.set_dimension(x3, 3)
+    assert back["applied"] and back["new_value_mm"] == pytest.approx(3)
+    assert vol(back) == pytest.approx((20 + 17) / 2 * 10 * 5), "the corner stayed at x = -3"
+
+
+def test_a_negative_size_is_refused(part):
+    box = part.add_box(40, 20, 10)
+    with pytest.raises(SolidWorksError, match="cannot be negative"):
+        part.set_dimension(box["depth_dimension"], -7)
+
+
 def test_cylinder(part):
     assert abs(vol(part.add_cylinder(20, 20)) - math.pi * 100 * 20) < 0.1
 

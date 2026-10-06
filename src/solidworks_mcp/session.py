@@ -77,6 +77,7 @@ from .constants import (
     SW_PREF_DEFAULT_TEMPLATE_PART,
     SW_FM_SWEEP_THREAD,
     SW_FULLY_CONSTRAINED,
+    SW_HOR_LINEAR_DIMENSION,
     SW_IMPORT_ENTIRE_MODEL,
     SW_INSERT_DIMENSIONS,
     SW_ISO_SCREW_CLEARANCES,
@@ -97,7 +98,9 @@ from .constants import (
     SW_SKETCH_TEXT,
     SW_SAVE_AS_CURRENT_VERSION,
     SW_SAVE_AS_OPTIONS_SILENT,
+    SW_SEL_EXT_SKETCH_POINTS,
     SW_SEL_FACES,
+    SW_SEL_SKETCH_POINTS,
     SW_SLOT_CREATION_LINE,
     SW_SLOT_LENGTH_CENTER,
     SW_START_SKETCH_PLANE,
@@ -120,6 +123,7 @@ from .constants import (
     SW_TOGGLE_STL_ONE_FILE,
     SW_UNITS_LINEAR,
     SW_UNSUPPRESS_DEPENDENT,
+    SW_VERT_LINEAR_DIMENSION,
     SW_WZD_COUNTERBORE,
     SW_WZD_COUNTERSINK,
     SW_WZD_HOLE,
@@ -3862,18 +3866,27 @@ class SolidWorksSession:
         """Set a named driving dimension (e.g. 'D1@BlockExtrude'), rebuild, remeasure.
 
         value_mm is in degrees for an angle (a revolve, an angle mate); the
-        result's keys then end in _deg.
+        result's keys then end in _deg. A point's coordinate (a sketch's 'x3'
+        or 'y2', from the origin) takes a sign, -5 being the other side of
+        the origin; any other dimension is a size and cannot be negative.
         """
         model = self._require_model()
         dim = self._dimension(dimension_name)
         unit, to_system, from_system = self._dimension_unit(dim)
-        old = from_system(dim.SystemValue)
-        dim.SystemValue = to_system(value_mm)
+        coordinate = self._coordinate_of(dimension_name)
+        if coordinate is None and unit == "mm" and value_mm < 0:
+            raise SolidWorksError(f"'{dimension_name}' is a size and cannot be negative (got {value_mm:g}); only a "
+                                  "point's coordinate from the origin takes a sign. The part is as it was.")
+        old = from_system(dim.SystemValue) if coordinate is None else coordinate()
+        # A coordinate is a distance to SolidWorks: a negative value puts the
+        # point on the other side, a positive one keeps the side it is on.
+        crosses = coordinate is not None and (value_mm < 0) != (old < 0)
+        dim.SystemValue = to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate else value_mm)
         rebuilt_ok = bool(model.ForceRebuild3(False))
         # Read the value back: a driven/reference or equation-controlled dimension
         # ignores the write silently, so the applied value can differ from the
         # request. Report the actual value so the agent's loop sees a no-op.
-        applied = from_system(dim.SystemValue)
+        applied = from_system(dim.SystemValue) if coordinate is None else self._coordinate_of(dimension_name)()
         return {
             "ok": True,
             "dimension": dimension_name,
@@ -3884,6 +3897,32 @@ class SolidWorksSession:
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def _coordinate_of(self, dimension_name: str):
+        """For a sketch point's horizontal or vertical distance from the origin
+        (an external sketch point), a function giving the point's coordinate
+        along it in mm, with its sign; None for any other dimension."""
+        dim_name, _, rest = dimension_name.partition("@")
+        if not rest or int(self._model.GetType()) != SW_DOC_PART:
+            return None
+        sketch_name = rest.split("@")[0]
+        feature = next((candidate for feat in self._iter_features() for candidate in [feat, *self._sub_features(feat)]
+                        if candidate.Name == sketch_name and candidate.GetTypeName2() == "ProfileFeature"), None)
+        if feature is None:
+            return None
+        display = binding.wrap(feature.GetFirstDisplayDimension(), self._mod.IDisplayDimension)
+        while display is not None and binding.wrap(display.GetDimension2(0), self._mod.IDimension).Name != dim_name:
+            display = binding.wrap(feature.GetNextDisplayDimension(display), self._mod.IDisplayDimension)
+        if display is None or display.Type2 not in (SW_HOR_LINEAR_DIMENSION, SW_VERT_LINEAR_DIMENSION):
+            return None
+        annotation = binding.wrap(display.GetAnnotation(), self._mod.IAnnotation)
+        attached = list(zip(annotation.GetAttachedEntities3() or (), annotation.GetAttachedEntityTypes() or ()))
+        points = [binding.wrap(e, self._mod.ISketchPoint) for e, t in attached if t == SW_SEL_SKETCH_POINTS]
+        origins = [binding.wrap(e, self._mod.ISketchPoint) for e, t in attached if t == SW_SEL_EXT_SKETCH_POINTS]
+        if len(points) != 1 or len(origins) != 1:
+            return None
+        axis = "X" if display.Type2 == SW_HOR_LINEAR_DIMENSION else "Y"
+        return lambda: m_to_mm(getattr(points[0], axis) - getattr(origins[0], axis))
 
     def _dimension(self, dimension_name: str):
         dim = binding.wrap(self._require_model().Parameter(dimension_name), self._mod.IDimension)

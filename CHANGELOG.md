@@ -10,6 +10,10 @@ All notable changes to this project are documented here. This project follows
   Equations folder warn, and a new value of the variable took two rebuilds:
   SolidWorks solved the equations as listed. `set_equations` now lets
   SolidWorks order them; `list_equations` reports `automatic_solve_order`.
+- `set_dimension` on a point's coordinate from the origin: -5 put the point
+  across the origin but read back 5, "not applied", and a later 3 kept it on
+  that side, at -3, reported as applied. A coordinate now takes its sign;
+  any other length below 0 is refused, the part as it was.
 
 ## [0.12.0] — 2026-10-06
 

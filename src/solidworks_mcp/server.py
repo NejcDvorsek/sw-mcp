@@ -685,7 +685,9 @@ async def set_dimension(dimension_name: str, value_mm: float) -> dict:
 
     This is the parametric edit at the heart of the correction loop. Every
     modelling tool returns its dimensions by role in `dimensions`. An angle (a
-    revolve, an angle mate) takes degrees; list_dimensions shows the unit.
+    revolve, an angle mate) takes degrees; list_dimensions shows the unit. A
+    point's coordinate from the origin (a sketch's 'x3', 'y2') takes a sign,
+    -5 being across the origin; any other length is a size, refused below 0.
     """
     return await _call(_session.set_dimension, dimension_name, value_mm)
 
