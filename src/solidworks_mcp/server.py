@@ -950,16 +950,18 @@ async def export(path: str, file_format: str | None = None, quality: str = "fine
 
 @mcp.tool()
 async def screenshot(path: str, view: str = "iso", zoom_mm: list | None = None,
-                     show_planes: bool = False) -> dict:
+                     show_planes: bool = False, from_dir: list | None = None) -> dict:
     """Save a screenshot of the current part or assembly (PNG/JPG/TIF).
 
-    view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or 'bottom'.
+    view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or 'bottom';
+    or from_dir = [x, y, z], the direction to look from, e.g. [-1, 1, -1] to
+    see from behind and below what iso hides (the model's +y stays up).
     Zoomed to fit, or onto a detail: zoom_mm = [[x1, y1, z1], [x2, y2, z2]], the
     corners of the region to fill the image (model mm, in any view). Reference
     planes and axes are left out, so they do not cut through the shape;
     show_planes=True keeps them.
     """
-    return await _call(_session.screenshot, path, view, zoom_mm, show_planes)
+    return await _call(_session.screenshot, path, view, zoom_mm, show_planes, from_dir)
 
 
 @mcp.tool()

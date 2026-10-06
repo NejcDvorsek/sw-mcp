@@ -696,6 +696,17 @@ def test_screenshot_looks_from_the_chosen_side(part, tmp_path, view):
     assert facing == pytest.approx([0, 0, 1], abs=1e-3), f"the '{view}' screenshot looks from another side"
 
 
+def test_screenshot_looks_from_any_direction(part, tmp_path):
+    # iso looks only from +x+y+z: what sits underneath, behind, needs another corner
+    part.add_box(40, 20, 10)
+    below = [-1, 1, -1]
+    assert part.screenshot(str(tmp_path / "below.png"), from_dir=below)["bytes"] > 0
+    data = binding.wrap(shown_view(part).Orientation3, binding.module().IMathTransform).ArrayData
+    unit = [c / 3 ** 0.5 for c in below]
+    facing = [sum(data[col * 3 + row] * unit[col] for col in range(3)) for row in range(3)]
+    assert facing == pytest.approx([0, 0, 1], abs=1e-3), "the screenshot does not look from -x, +y, -z"
+
+
 def test_screenshot_zooms_onto_a_detail(part, tmp_path):
     # a 4 x 2 mm region of the 40 x 20 mm front fills the image: about 10 times larger
     part.add_box(40, 20, 10)

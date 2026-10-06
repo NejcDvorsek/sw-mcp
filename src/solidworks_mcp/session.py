@@ -4974,11 +4974,13 @@ class SolidWorksSession:
         return written
 
     def screenshot(self, path: str, view: str = "iso", zoom_mm: list | None = None,
-                   show_planes: bool = False) -> dict:
+                   show_planes: bool = False, from_dir: list | None = None) -> dict:
         """Screenshot of the current part or assembly to PNG/JPG/TIF.
 
         view: 'iso' (default), 'front', 'back', 'left', 'right', 'top' or
-        'bottom'. Zoomed to fit, or onto the box zoom_mm = [[x1, y1, z1],
+        'bottom'; or from_dir = [x, y, z], the direction to look from (model
+        axes), e.g. [-1, 1, -1] for an iso view from behind and below, with the
+        model's +y kept up. Zoomed to fit, or onto the box zoom_mm = [[x1, y1, z1],
         [x2, y2, z2]] (model mm) to judge a detail. Reference planes and axes
         are left out unless show_planes=True; the part's own setting comes back
         afterwards. Writes via the same SaveAs3 path as `export`, so the return
@@ -4993,6 +4995,7 @@ class SolidWorksSession:
             raise SolidWorksError(f"Unknown view '{view}'. Use {', '.join(VIEWS)}.")
         if zoom_mm is not None and (len(zoom_mm) != 2 or any(len(corner) != 3 for corner in zoom_mm)):
             raise SolidWorksError(f"zoom_mm needs two corners [[x1, y1, z1], [x2, y2, z2]] (got {zoom_mm}).")
+        rotation = None if from_dir is None else self._view_rotation(from_dir)
         model = self._require_model()
         busy = self._command_in_progress(False)  # the view must redraw for the picture
         extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
@@ -5003,7 +5006,7 @@ class SolidWorksSession:
                     shown[toggle] = bool(extension.GetUserPreferenceToggle(toggle, 0))
                     extension.SetUserPreferenceToggle(toggle, 0, False)
                 model.GraphicsRedraw2()
-            return self._take_screenshot(model, path, ext, key, zoom_mm)
+            return self._take_screenshot(model, path, ext, key, zoom_mm, rotation)
         finally:
             for toggle, value in shown.items():
                 extension.SetUserPreferenceToggle(toggle, 0, value)
@@ -5011,8 +5014,15 @@ class SolidWorksSession:
                 model.GraphicsRedraw2()
             self._command_in_progress(busy)
 
-    def _take_screenshot(self, model, path, ext, key, zoom_mm) -> dict:
-        model.ShowNamedView2("", VIEWS[key])
+    def _take_screenshot(self, model, path, ext, key, zoom_mm, rotation=None) -> dict:
+        if rotation is None:
+            model.ShowNamedView2("", VIEWS[key])
+        else:
+            mathutil = binding.wrap(self._sw.GetMathUtility(), self._mod.IMathUtility)
+            data = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_R8,
+                                           [*rotation, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])  # no shift, scale 1
+            view = binding.wrap(model.ActiveView, self._mod.IModelView)
+            view.Orientation3 = binding.wrap(mathutil.CreateTransform(data), self._mod.IMathTransform)
         if zoom_mm is None:
             model.ViewZoomtofit2()
         else:
@@ -5022,6 +5032,23 @@ class SolidWorksSession:
             low, high = self._box_along_screen(zoom_mm, rotation)
             model.ViewZoomTo2(*(mm_to_m(c) for c in low), *(mm_to_m(c) for c in high))
         return self.export(path, ext)
+
+    @staticmethod
+    def _view_rotation(from_dir) -> tuple:
+        """The Orientation3 rotation of a view looking from from_dir: its columns
+        are the screen's x, y and z in model axes, z towards the viewer and the
+        model's +y up; looking along y, -z or +z is up, as in SolidWorks' top
+        and bottom views. Pure, unit-tested."""
+        if len(from_dir) != 3 or not math.hypot(*from_dir):
+            raise SolidWorksError(f"from_dir needs a direction [x, y, z] that is not zero (got {from_dir}).")
+        length = math.hypot(*from_dir)
+        z = [c / length for c in from_dir]
+        up = [0.0, 1.0, 0.0] if abs(z[1]) < 1 - 1e-9 else [0.0, 0.0, -1.0 if z[1] > 0 else 1.0]
+        along = sum(u * c for u, c in zip(up, z))
+        y = [u - along * c for u, c in zip(up, z)]
+        y = [c / math.hypot(*y) for c in y]
+        x = [y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]]
+        return tuple(axis[row] for row in range(3) for axis in (x, y, z))
 
     @staticmethod
     def _box_along_screen(corners_mm, rotation) -> tuple:

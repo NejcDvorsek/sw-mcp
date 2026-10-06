@@ -448,6 +448,27 @@ def test_other_com_errors_do_not_attach_again(s, monkeypatch):
         s.run_guarded(lambda: "ran")
 
 
+@pytest.mark.parametrize("from_dir,orientation", [
+    ((1, 1, 1), (0.70711, -0.40825, 0.57735, 0, 0.8165, 0.57735, -0.70711, -0.40825, 0.57735)),  # SolidWorks' iso
+    ((0, -3, 0), (1, 0, 0, 0, 0, -1, 0, 1, 0)),  # its bottom view: +z up
+    ((0, 1, 0), (1, 0, 0, 0, 0, 1, 0, -1, 0)),  # its top view: -z up
+], ids=["iso", "bottom", "top"])
+def test_a_view_from_a_direction_matches_solidworks_own(from_dir, orientation):
+    """The columns are the screen's x, y and z; the model's +y stays up where it can."""
+    assert SolidWorksSession._view_rotation(from_dir) == pytest.approx(orientation, abs=1e-5)
+
+
+def test_a_view_from_a_free_direction_looks_from_it_with_y_up():
+    x, y, z = (SolidWorksSession._view_rotation((-1, 1, -1))[col::3] for col in range(3))
+    assert z == pytest.approx([-3 ** -0.5, 3 ** -0.5, -3 ** -0.5]), "the screen's z must point at the viewer"
+    assert y[1] > 0 and sum(a * b for a, b in zip(x, y)) == pytest.approx(0, abs=1e-12)
+
+
+def test_screenshot_needs_a_direction_to_look_from(s):
+    with pytest.raises(SolidWorksError, match="from_dir"):
+        s.screenshot("shot.png", from_dir=[0, 0, 0])
+
+
 def test_a_zoom_region_turns_into_the_bottom_view():
     # from below the screen's x is the model's x, its y the model's z, and the
     # viewer looks along +y; the bottom view's Orientation3, as SolidWorks gives it

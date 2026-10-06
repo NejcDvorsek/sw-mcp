@@ -13,6 +13,8 @@ All notable changes to this project are documented here. This project follows
   does not have, such as TPU, by its density. The part shows it by name and
   keeps it when opened elsewhere; SolidWorks' material settings stay as they
   were.
+- `screenshot(from_dir=[x, y, z])` looks from any direction, such as from
+  behind and below, which no standard view shows; the model's +y stays up.
 
 ### Changed
 - `screenshot` leaves reference planes and axes out, so they do not cut
