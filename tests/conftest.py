@@ -10,7 +10,6 @@ Run only the fast layer with:  pytest -m "not solidworks"
 
 import pytest
 
-from solidworks_mcp import binding
 from solidworks_mcp.errors import SolidWorksError
 from solidworks_mcp.session import SolidWorksSession
 
@@ -81,20 +80,19 @@ def assembly(sw, blocks):
     """A fresh empty assembly for one test; it and its components close afterwards."""
     sw.new_assembly()
     yield sw
-    _close_documents(sw, {"block_a.sldprt", "block_b.sldprt"})
+    _close_documents(sw, blocks.values())
 
 
-def _close_documents(sw, component_files):
+def _close_documents(sw, component_paths):
     """Close the current assembly plus the component windows it opened.
 
     Inserting a component opens its part document, so without this the suite
-    would accumulate open documents across tests.
+    would accumulate open documents across tests. By full path: a person's own
+    document may carry the same title.
     """
     try:
         sw.close_part()
     except SolidWorksError:
         pass
-    for document in (sw._sw.GetDocuments() or []):
-        title = binding.wrap(document, binding.module().IModelDoc2).GetTitle()
-        if title.lower() in component_files:
-            sw._sw.CloseDoc(title)
+    for path in component_paths:
+        sw._sw.CloseDoc(path)

@@ -76,5 +76,5 @@ def test_a_mate_whose_face_is_gone_says_so(sw, tmp_path):
     finally:
         sw.activate_document(title)
         sw.close_part()
-        for name in ("lower.sldprt", "upper.sldprt"):
-            sw._sw.CloseDoc(name)
+        for path in paths.values():
+            sw._sw.CloseDoc(path)

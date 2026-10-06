@@ -20,10 +20,12 @@ pytestmark = pytest.mark.solidworks
 
 @pytest.fixture(scope="module")
 def linkage_parts(sw, tmp_path_factory):
+    # "link_": a person's open thigh.sldprt would stand in for one of the same
+    # name, and closing by title closed theirs
     directory = tmp_path_factory.mktemp("linkage")
     paths = {}
-    for name, size, hole_at in (("thigh", (60, 10, 5), (5, 5)), ("shin", (60, 10, 5), (55, 5)),
-                                ("stop", (20, 70, 20), None)):
+    for name, size, hole_at in (("link_thigh", (60, 10, 5), (5, 5)), ("link_shin", (60, 10, 5), (55, 5)),
+                                ("link_stop", (20, 70, 20), None)):
         sw.new_part()
         sw.add_box(*size)
         if hole_at:
@@ -37,16 +39,16 @@ def linkage_parts(sw, tmp_path_factory):
 def linkage(sw, linkage_parts):
     """The thigh fixed at the origin, the shin loose elsewhere, the stop fixed at x 20..40."""
     sw.new_assembly()
-    sw.insert_component(linkage_parts["thigh"], 0, 0, 0)
-    sw.insert_component(linkage_parts["shin"], 30, 40, 20)
-    sw.insert_component(linkage_parts["stop"], 20, -30, 5, fixed=True)
+    sw.insert_component(linkage_parts["link_thigh"], 0, 0, 0)
+    sw.insert_component(linkage_parts["link_shin"], 30, 40, 20)
+    sw.insert_component(linkage_parts["link_stop"], 20, -30, 5, fixed=True)
     yield sw
     try:
         sw.close_part()
     except SolidWorksError:
         pass
-    for title in ("thigh.sldprt", "shin.sldprt", "stop.sldprt"):
-        sw._sw.CloseDoc(title)
+    for path in linkage_parts.values():
+        sw._sw.CloseDoc(path)
 
 
 def hole(session, component):
@@ -57,28 +59,28 @@ def hole(session, component):
 
 def knee(session, angle_deg):
     """The shin on the thigh's hole axis, stacked on it, at angle_deg; returns the angle mate."""
-    session.add_mate("shin", hole(session, "shin"), "thigh", hole(session, "thigh"), "concentric")
-    session.add_mate("shin", "-z", "thigh", "+z", "coincident")
-    return session.add_mate("shin", "-y", "thigh", "-y", "angle", angle_deg=angle_deg)
+    session.add_mate("link_shin", hole(session, "link_shin"), "link_thigh", hole(session, "link_thigh"), "concentric")
+    session.add_mate("link_shin", "-z", "link_thigh", "+z", "coincident")
+    return session.add_mate("link_shin", "-y", "link_thigh", "-y", "angle", angle_deg=angle_deg)
 
 
 def shin_size(session):
-    [shin] = [c for c in session.list_components()["components"] if c["name"].startswith("shin")]
+    [shin] = [c for c in session.list_components()["components"] if c["name"].startswith("link_shin")]
     return shin["bounding_box_mm"]["size_mm"]
 
 
 def test_concentric_mate_puts_the_hole_on_the_other_holes_axis(linkage):
-    mated = linkage.add_mate("shin", hole(linkage, "shin"), "thigh", hole(linkage, "thigh"), "concentric")
+    mated = linkage.add_mate("link_shin", hole(linkage, "link_shin"), "link_thigh", hole(linkage, "link_thigh"), "concentric")
     assert mated["axis_offset_mm"] == pytest.approx(0, abs=1e-4)
     # checked apart from the mate's own measurement: the thigh's hole axis
     # (x 5, y 5) now runs through the shin's hole, 2 mm from its wall
-    probe = linkage.measure_distance("shin", point_mm=[5, 5, 22.5])
+    probe = linkage.measure_distance("link_shin", point_mm=[5, 5, 22.5])
     assert probe["inside"] is False and probe["distance_mm"] == pytest.approx(2, abs=1e-4), probe
 
 
 def test_concentric_mate_takes_cylindrical_faces(linkage):
     with pytest.raises(SolidWorksError, match="takes cylindrical faces"):
-        linkage.add_mate("shin", "-z", "thigh", hole(linkage, "thigh"), "concentric")
+        linkage.add_mate("link_shin", "-z", "link_thigh", hole(linkage, "link_thigh"), "concentric")
 
 
 def test_an_angle_mate_sets_the_joint_angle_as_one_number(linkage):
@@ -99,14 +101,14 @@ def test_check_motion_steps_the_knee_and_finds_the_clash(linkage):
     # at 150 the shin swings out over x 20..40 through the stop; at 90 it hangs
     # along the y axis, x 0..10, 10 mm short of it
     mate = knee(linkage, 90)
-    motion = linkage.check_motion(mate["dimension"], [30, 90, 150], distances=[["shin", "stop"]])
+    motion = linkage.check_motion(mate["dimension"], [30, 90, 150], distances=[["link_shin", "link_stop"]])
 
     by_angle = {step["value_deg"]: step for step in motion["steps"]}
-    assert [i["components"] for i in by_angle[150]["interferences"]] == [["shin-1", "stop-1"]]
+    assert [i["components"] for i in by_angle[150]["interferences"]] == [["link_shin-1", "link_stop-1"]]
     assert by_angle[30]["interferences"] == [] and by_angle[90]["interferences"] == []
     assert by_angle[90]["distances"][0]["distance_mm"] == pytest.approx(10, abs=1e-3)
     assert motion["clash_free"] is False
-    assert motion["smallest_distances"] == [{"between": ["shin-1", "stop-1"], "distance_mm": 0, "at_deg": 150}]
+    assert motion["smallest_distances"] == [{"between": ["link_shin-1", "link_stop-1"], "distance_mm": 0, "at_deg": 150}]
     assert shin_size(linkage) == pytest.approx([10, 60, 5], abs=1e-3), "the knee was not put back at 90"
 
 
@@ -116,7 +118,7 @@ def test_a_refused_mate_leaves_the_assembly_as_it_was(linkage):
     knee(linkage, 90)
     before = linkage.list_components()
     with pytest.raises(SolidWorksError, match="contradicts Angle1"):
-        linkage.add_mate("shin", "-y", "thigh", "-y", "parallel")  # against the 90 degrees
+        linkage.add_mate("link_shin", "-y", "link_thigh", "-y", "parallel")  # against the 90 degrees
     after = linkage.list_components()
     assert after["mates"] == before["mates"], f"the refused mate stayed: {after['mates']}"
     assert not any("error" in mate for mate in after["mates"])
@@ -127,25 +129,25 @@ def test_a_sub_assembly_is_inserted_and_mated_on_a_parts_hole(sw, linkage_parts,
     """The real servo arrives as an assembly: inserted whole, its parts' holes
     are listed in its own frame and take a concentric mate."""
     sw.new_assembly()
-    sw.insert_component(linkage_parts["shin"], 10, 0, 0)  # the shin's hole (55, 5) lands at (65, 5)
+    sw.insert_component(linkage_parts["link_shin"], 10, 0, 0)  # the shin's hole (55, 5) lands at (65, 5)
     pair = sw.save_assembly(str(tmp_path / "pair.sldasm"))["path"]
     sw.close_part()
     sw.new_assembly()
     try:
-        sw.insert_component(linkage_parts["thigh"], 0, 0, 0)
+        sw.insert_component(linkage_parts["link_thigh"], 0, 0, 0)
         inserted = sw.insert_component(pair, 30, 40, 20)
         assert inserted["component"]["name"].startswith("pair")
         [shin_hole] = [f for f in sw.list_faces(component="pair")["faces"] if "cylinder" in f]
-        assert shin_hole["part"].endswith("shin-1")
+        assert shin_hole["part"].endswith("link_shin-1")
         assert shin_hole["cylinder"]["point_mm"][:2] == pytest.approx([65, 5], abs=1e-4), "not in the pair's frame"
-        mated = sw.add_mate("pair", f"#{shin_hole['index']}", "thigh", hole(sw, "thigh"), "concentric")
+        mated = sw.add_mate("pair", f"#{shin_hole['index']}", "link_thigh", hole(sw, "link_thigh"), "concentric")
         assert mated["axis_offset_mm"] == pytest.approx(0, abs=1e-4)
         probe = sw.measure_distance("pair", point_mm=[5, 5, 22.5])  # the thigh's hole axis, through the shin's hole
         assert probe["inside"] is False and probe["distance_mm"] == pytest.approx(2, abs=1e-4), probe
     finally:
         sw.close_part()
-        for title in ("pair.sldasm", "thigh.sldprt", "shin.sldprt"):
-            sw._sw.CloseDoc(title)
+        for path in (pair, linkage_parts["link_thigh"], linkage_parts["link_shin"]):
+            sw._sw.CloseDoc(path)
 
 
 def test_add_mate_names_the_mate_it_made(linkage):
@@ -161,7 +163,7 @@ def test_a_suppressed_angle_mate_moves_nothing_and_check_motion_says_so(linkage)
     with pytest.raises(SolidWorksError, match="moved no component"):
         linkage.check_motion(angle["dimension"], [30, 60])
     assert not linkage.suppress_mate(angle["mate"], suppress=False)["suppressed"]
-    assert linkage.check_motion(angle["dimension"], [30, 60])["moving"] == ["shin-1"]
+    assert linkage.check_motion(angle["dimension"], [30, 60])["moving"] == ["link_shin-1"]
 
 
 def test_a_deleted_mate_is_gone(linkage):

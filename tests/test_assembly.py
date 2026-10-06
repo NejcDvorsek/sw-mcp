@@ -53,7 +53,7 @@ def test_list_faces_reads_a_components_hole_in_its_own_frame(sw, tmp_path):
         assert holes[0]["point_mm"] == pytest.approx([10, 12, 5], abs=1e-4), "not in the component's own frame"
     finally:
         sw.close_part()
-        sw._sw.CloseDoc("holed.sldprt")
+        sw._sw.CloseDoc(path)
 
 
 # --- documents ----------------------------------------------------------------
@@ -250,7 +250,7 @@ def test_a_turned_round_part_keeps_its_own_box(sw, disc):
         whole = sw.get_assembly_bounding_box()["bounding_box_mm"]
     finally:
         sw.close_part()
-        sw._sw.CloseDoc("disc.sldprt")
+        sw._sw.CloseDoc(disc)
     for label, box in (("set_component_transform", turned["bounding_box_mm"]),
                        ("list_components", listed["bounding_box_mm"]), ("get_assembly_bounding_box", whole)):
         assert box["min_mm"] == pytest.approx([-10, -10, 0], abs=1e-4), f"{label} boxes the turned disc too big: {box}"
@@ -276,8 +276,8 @@ def test_a_sub_assembly_is_measured_through_its_parts(sw, blocks, tmp_path):
         measured = sw.measure_distance("sub", point_mm=[-10, 160, 5])
     finally:
         sw.close_part()
-        sw._sw.CloseDoc("sub.sldasm")
-        sw._sw.CloseDoc("block_a.sldprt")
+        sw._sw.CloseDoc(sub)
+        sw._sw.CloseDoc(blocks["block_a"])
     # block_a (x 0..40, y 0..20) sits at x = 10 in the sub-assembly, which is
     # turned 90 degrees about Z and moved to y = 100: x -20..0, y 110..150
     assert box is not None, "the sub-assembly got no box: its parts were not searched"
