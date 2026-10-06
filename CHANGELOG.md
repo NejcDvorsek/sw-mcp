@@ -32,6 +32,9 @@ All notable changes to this project are documented here. This project follows
 - `screenshot(zoom_mm=...)` in any view but the front zoomed onto another
   region, or showed only the background: the region is now turned into the
   view first.
+- `add_mate` refused a coincident or distance mate on a slanted face that is
+  not symmetric ("gives 0.0158 mm instead of 0 mm"): it measured from the
+  face's box centre, which lies off such a face's plane.
 
 ## [0.11.0] — 2026-10-05
 

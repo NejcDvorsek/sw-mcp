@@ -5541,11 +5541,14 @@ class SolidWorksSession:
         return face, part
 
     def _face_plane_in_assembly(self, comp, face):
-        """A component face as (point, normal) in ASSEMBLY coordinates, in metres.
+        """A planar component face as (point on its plane, normal) in ASSEMBLY
+        coordinates, in metres.
 
         The face is reported in component coordinates, so both are pushed through
         the component transform: p' = R*p + t for the point, R*n for the normal
-        (R is orthonormal here -- components are never scaled).
+        (R is orthonormal here -- components are never scaled). The point is the
+        plane's own root point: the box centre of a slanted face that is not
+        symmetric lies off its plane (0.87 mm on a drafted wedge, measured).
         """
         data = self._transform_data(comp)
         rot, trans = data[:9], data[9:12]
@@ -5554,9 +5557,8 @@ class SolidWorksSession:
             # ArrayData is COLUMN-major: rot[3*col + row] is row `row` of column `col`.
             return [sum(rot[3 * col + row] * v[col] for col in range(3)) for row in range(3)]
 
-        box = face.GetBox()
-        centre = rotate([(box[i] + box[i + 3]) / 2.0 for i in range(3)])
-        point = [centre[i] + trans[i] for i in range(3)]
+        root = rotate(list(binding.wrap(face.GetSurface(), self._mod.ISurface).PlaneParams)[3:6])
+        point = [root[i] + trans[i] for i in range(3)]
         return point, rotate(list(face.Normal))
 
     # --- mates ----------------------------------------------------------------

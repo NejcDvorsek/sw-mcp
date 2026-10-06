@@ -172,3 +172,28 @@ def test_a_deleted_mate_is_gone(linkage):
     assert gone["deleted"] == angle["mate"] and angle["mate"] not in gone["mates"] and len(gone["mates"]) == 2
     with pytest.raises(SolidWorksError, match=rf"No mate '{angle['mate']}'"):
         linkage.delete_mate(angle["mate"])
+
+
+def test_a_coincident_mate_holds_on_slanted_faces(sw, tmp_path):
+    """A drafted wedge's slanted face is a trapezoid whose box centre lies 0.87
+    mm off its plane. Measured from that centre a block's face mated onto it
+    looked 0.87 mm away, and the mate was refused although the faces met."""
+    sw.new_part()
+    sw.add_extruded_profile([[0, 0], [40, 0], [0, 20]], 10, draft_deg=10)
+    [slanted] = [f["index"] for f in sw.list_faces()["faces"] if 0.1 < abs(f["normal"][0]) < 0.9]
+    wedge = sw.save_part(str(tmp_path / "slanted_wedge.sldprt"))["path"]
+    sw.close_part()
+    sw.new_part()
+    sw.add_box(20, 20, 20)
+    block = sw.save_part(str(tmp_path / "mate_block.sldprt"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        first = sw.insert_component(wedge, 0, 0, 0)["component"]["name"]
+        second = sw.insert_component(block, 50, 50, 0)["component"]["name"]
+        mate = sw.add_mate(second, "+x", first, f"#{slanted}", "coincident")
+        assert mate["ok"] and mate["mate"] in [m["name"] for m in sw.list_components()["mates"]]
+    finally:
+        sw.close_part()
+        for path in (wedge, block):
+            sw._sw.CloseDoc(path)
