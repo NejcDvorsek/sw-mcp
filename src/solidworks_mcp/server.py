@@ -926,6 +926,8 @@ async def check_printability(up: str = "+z", overhang_deg: float = 45.0,
     the bed contact area and the print height. With min_wall_mm (e.g. two
     nozzle widths) also the walls thinner than that, measured straight through
     the material from points spread over every face, with where each is thinnest.
+    A spot right beside an edge where faces meet at a sharp angle reads as thin
+    as the wedge of material there is: that is the edge, not a wall.
     """
     return await _call(_session.check_printability, up, overhang_deg, min_wall_mm)
 

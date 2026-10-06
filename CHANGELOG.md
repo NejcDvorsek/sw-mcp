@@ -41,6 +41,12 @@ All notable changes to this project are documented here. This project follows
 - After SolidWorks was restarted, every call failed with "the RPC server is
   unavailable" until the MCP server was restarted too. It now attaches to the
   running SolidWorks by itself.
+- `check_printability(min_wall_mm=...)` on a part with curved faces could hang
+  SolidWorks: the long slivers of their facets got samples by the square of
+  their length, over a million rays in one batch. They now get as many as
+  their size needs, at most 100 000 in all.
+- `check_printability(min_wall_mm=...)` read the hollow side of a curved wall
+  as 0.001 mm thin: it now measures to where a ray leaves the material.
 
 ## [0.11.0] — 2026-10-05
 

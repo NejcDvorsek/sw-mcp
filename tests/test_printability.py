@@ -52,6 +52,18 @@ def test_thin_walls_are_found_where_they_are_thin(part):
     assert loose["faces"] == [] and loose["thinnest_mm"] == pytest.approx(5, abs=1e-3)
 
 
+def test_a_hollow_face_is_measured_through_its_wall(part):
+    """A ring 10 wide every way. Its hole's facets cut the curve, so samples on
+    them start in the air: the first hit is where the ray enters the material,
+    a hair away, and a curved cover read as walls of 0.001 mm. The wall runs to
+    where the ray leaves the material."""
+    part.add_disc(40, 10)
+    part.add_hole(20, 0, 0)
+    walls = part.check_printability(min_wall_mm=2)["thin_walls"]
+    assert walls["faces"] == [], f"no wall of the ring is thin: {walls['faces']}"
+    assert walls["thinnest_mm"] == pytest.approx(10, abs=0.1)
+
+
 def test_a_thin_skin_over_a_pocket_is_found_inside_a_big_face(part):
     """Only a corner of the top face is thin: the samples must reach it, not
     just the centres of the two big triangles the face is drawn with (at x 20

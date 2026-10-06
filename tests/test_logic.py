@@ -602,16 +602,32 @@ def test_tool_forwards_its_arguments_in_order(tool, params, target, passed):
 # --- 3D printing and drawings (pure parts) --------------------------------------
 
 
-@pytest.mark.parametrize("spacing,count", [(30, 1), (7.5, 4), (5, 9)])
-def test_triangle_samples_spread_over_the_whole_triangle(spacing, count):
-    # the longest edge, 14.1 mm, sets how finely the triangle is divided
+@pytest.mark.parametrize("spacing", [30, 7.5, 2])
+def test_triangle_samples_cover_the_whole_triangle(spacing):
     a, b, c = (0, 0, 0), (10, 0, 0), (0, 10, 0)
     points = SolidWorksSession._triangle_samples(a, b, c, spacing)
-    assert len(points) == count
     assert all(x >= 0 and y >= 0 and x + y <= 10 + 1e-9 and z == 0 for x, y, z in points), "a sample left the triangle"
-    if count == 9:  # the corners are reached, not just the middle
-        assert min(math.dist(p, (0, 0, 0)) for p in points) < 2.5
-        assert min(math.dist(p, (10, 0, 0)) for p in points) < 2.5
+    if spacing < 10:  # every spot, corners too, lies within the spacing of a sample
+        spots = [(x / 4, y / 4, 0) for x in range(41) for y in range(41 - x)]
+        assert max(min(math.dist(s, p) for p in points) for s in spots) <= spacing
+
+
+def test_a_sliver_triangle_gets_samples_for_its_size():
+    """A curved face tessellates into long slivers; this one is 67.6 mm long and
+    0.2 mm wide. Divided by its longest edge it got 7225 samples, and the thin-
+    wall check on a cable cover fired over a million rays and hung SolidWorks.
+    It needs one row along its length."""
+    points = SolidWorksSession._triangle_samples((0, 0, 0), (67.6, 0, 0), (30, 0.2, 0), 0.8)
+    assert len(points) <= 67.6 / 0.8 + 1, f"{len(points)} samples for a 67.6 x 0.2 mm sliver"
+    assert max(p[0] for p in points) - min(p[0] for p in points) > 60, "the row does not run its length"
+
+
+def test_wall_samples_never_exceed_the_ray_limit():
+    # 400 000 tiny triangles: one sample each would already be four times the limit
+    tiny = [(0, (x, 0, 0), (x + 0.01, 0, 0), (x, 0.01, 0), [0, 0, 1]) for x in range(400_000)]
+    samples, spacing = SolidWorksSession._wall_samples(tiny, 0.8)
+    assert len(samples) <= SolidWorksSession._MAX_WALL_SAMPLES
+    assert spacing > 0.8, "fewer samples than asked for must show in the spacing reported"
 
 
 def _quad(index, corners, normal):

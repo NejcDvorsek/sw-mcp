@@ -83,6 +83,7 @@ from .constants import (
     SW_ISO_SOCKET_HEAD_CAP,
     SW_ISO_TAPPED_HOLE,
     SW_PREF_DEFAULT_TEMPLATE_DRAWING,
+    SW_RAY_HIT_EXIT,
     SW_RAY_NORMALS_ENTRY_EXIT,
     SW_REF_PLANE_ANGLE,
     SW_REF_PLANE_COINCIDENT,
@@ -4726,7 +4727,8 @@ class SolidWorksSession:
         Overhangs: downward faces leaning more than overhang_deg from vertical
         (90 = a flat ceiling) need support; faces resting on the bed do not
         count. With min_wall_mm, also the walls thinner than that, measured
-        straight through the material from points spread over every face.
+        straight through the material from points spread over every face; a
+        spot right beside a sharp edge reads as thin as the wedge there is.
         Faces are list_faces indexes, so a finding can be selected and fixed.
         """
         direction = self._parse_direction(up)
@@ -4792,29 +4794,52 @@ class SolidWorksSession:
 
     @staticmethod
     def _triangle_samples(a, b, c, spacing) -> list:
-        """Points spread over triangle abc at most about `spacing` apart: the
-        centres of its n x n sub-triangles. Pure, unit-tested."""
-        n = max(1, math.ceil(max(math.dist(a, b), math.dist(b, c), math.dist(c, a)) / spacing))
+        """Points inside triangle abc such that every spot of it lies within
+        `spacing` of one: columns across its longest edge, each filled up to the
+        triangle's height there. As many as its size needs, so a long sliver of
+        a curved face gets one row, not a grid of its length squared (7225
+        points for a 67.6 x 0.2 mm sliver). Pure, unit-tested."""
+        a, b, c = max(((a, b, c), (b, c, a), (c, a, b)), key=lambda t: math.dist(t[0], t[1]))  # a-b longest
+        length = math.dist(a, b)
+        along = [(q - p) / length for p, q in zip(a, b)] if length else None
+        foot = sum((r - p) * e for p, r, e in zip(a, c, along)) if along else 0.0  # within a-b: it is the longest
+        up = [r - p - foot * e for p, r, e in zip(a, c, along)] if along else [0.0] * 3
+        height = math.hypot(*up)
+        if not height:
+            return [[(p + q + r) / 3 for p, q, r in zip(a, b, c)]]
+        up = [u / height for u in up]
+        columns = math.ceil(length / spacing)
         points = []
-        for i in range(n):
-            for j in range(n - i):
-                # the upright sub-triangle at (i, j), and the inverted one beside it
-                for di, dj in ((1 / 3, 1 / 3), (2 / 3, 2 / 3)) if i + j < n - 1 else ((1 / 3, 1 / 3),):
-                    u, v = (i + di) / n, (j + dj) / n
-                    points.append([p + u * (q - p) + v * (r - p) for p, q, r in zip(a, b, c)])
+        for j in range(columns):
+            x = (j + 0.5) * length / columns
+            top = height * (x / foot if x <= foot else (length - x) / (length - foot))
+            rows = max(1, math.ceil(top / spacing))
+            for k in range(rows):
+                y = (k + 0.5) * top / rows
+                points.append([p + x * e + y * u for p, e, u in zip(a, along, up)])
         return points
+
+    @classmethod
+    def _wall_samples(cls, triangles, min_wall_mm) -> tuple:
+        """(index, point, normal) spread over every face about min_wall_mm apart,
+        at most _MAX_WALL_SAMPLES of them, and the spacing they keep: one batch
+        of over a million rays hung SolidWorks. Pure, unit-tested."""
+        area = sum(cls._triangle_area(a, b, c) for _, a, b, c, _ in triangles)
+        spacing = max(min_wall_mm, math.sqrt(2 * area / cls._MAX_WALL_SAMPLES))
+        samples = [(index, point, normal) for index, a, b, c, normal in triangles
+                   for point in cls._triangle_samples(a, b, c, spacing)]
+        stride = math.ceil(len(samples) / cls._MAX_WALL_SAMPLES)  # every stride-th: still spread over all faces
+        return samples[::stride], spacing * math.sqrt(stride)
 
     def _thin_walls(self, body, triangles, min_wall_mm) -> dict:
         """Wall thickness straight through the material from sample points on
         every face (one batch of rays), and the faces thinner than min_wall_mm."""
-        area = sum(self._triangle_area(a, b, c) for _, a, b, c, _ in triangles)
-        spacing = max(min_wall_mm, math.sqrt(2 * area / self._MAX_WALL_SAMPLES))
+        samples, spacing = self._wall_samples(triangles, min_wall_mm)
         starts, directions, owners = [], [], []
-        for index, a, b, c, normal in triangles:
-            for point in self._triangle_samples(a, b, c, spacing):
-                starts += [mm_to_m(p - 1e-4 * n) for p, n in zip(point, normal)]  # just inside the material
-                directions += [-n for n in normal]
-                owners.append((index, point))
+        for index, point, normal in samples:
+            starts += [mm_to_m(p - 1e-4 * n) for p, n in zip(point, normal)]  # just inside the material
+            directions += [-n for n in normal]
+            owners.append((index, point))
         model = self._model
         hits = model.RayIntersections(
             win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [body._oleobj_]),
@@ -4826,6 +4851,8 @@ class SolidWorksSession:
         for h in range(hits):
             row = points[h * RAY_HIT_WIDTH:(h + 1) * RAY_HIT_WIDTH]
             ray = int(row[1])
+            if not int(row[2]) & SW_RAY_HIT_EXIT:
+                continue  # a sample on a hollow face's facet starts in the air and enters first
             depth = m_to_mm(math.dist(row[3:6], starts[3 * ray:3 * ray + 3]))
             if depth > 1e-3 and depth < through.get(ray, math.inf):
                 through[ray] = depth
