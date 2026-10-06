@@ -28,7 +28,8 @@ All notable changes to this project are documented here. This project follows
 - `check_motion` stepped a joint while a mate was broken, a concentric mate
   on a hole made again, and the part slid off its axis. It and
   `swept_region` now refuse and name the mate; `list_components` also flags a
-  mate that lost a face without an error from SolidWorks.
+  mate that lost a face without an error from SolidWorks, and `rebuild` of an
+  assembly names such mates in `mate_errors`.
 - The distance to a whole sub-assembly, in `measure_distance` and in
   `check_motion(distances=...)`, failed: it is measured through its parts.
 - `check_motion` on a joint inside a sub-assembly said nothing moved.

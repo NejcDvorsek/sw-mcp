@@ -229,6 +229,8 @@ def test_stepping_a_joint_with_a_broken_mate_is_refused(sw, tmp_path):
         sw.activate_document(assembly)
         [entry] = [m for m in sw.list_components()["mates"] if m["name"] == held]
         assert "broken" in entry["error"]["cause"], entry
+        rebuilt = sw.rebuild()
+        assert held in [m["name"] for m in rebuilt["mate_errors"]], f"rebuild kept quiet about a mate that holds nothing: {rebuilt}"
         with pytest.raises(SolidWorksError, match=rf"{held} \(broken"):
             sw.check_motion(angle["dimension"], [60, 90])
     finally:

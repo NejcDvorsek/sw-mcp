@@ -4505,7 +4505,11 @@ class SolidWorksSession:
     def rebuild(self, top_only: bool = False) -> dict:
         model = self._require_model()
         rebuilt_ok = bool(model.ForceRebuild3(top_only))
-        return {"ok": True, "rebuild_ok": rebuilt_ok}
+        result = {"ok": True, "rebuild_ok": rebuilt_ok}
+        if int(model.GetType()) == SW_DOC_ASSEMBLY:  # a mate that lost its face holds nothing, yet rebuilds fine
+            result["mate_errors"] = [{"name": mate.Name, "error": trouble} for mate in self._mates()
+                                     if (trouble := self._mate_trouble(mate))]
+        return result
 
     # --- measurement ----------------------------------------------------------
 

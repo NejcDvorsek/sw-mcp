@@ -884,7 +884,11 @@ async def delete_component(component: str) -> dict:
 
 @mcp.tool()
 async def rebuild(top_only: bool = False) -> dict:
-    """Force a rebuild of the current part and report whether it rebuilt without errors."""
+    """Force a rebuild of the current part or assembly and report whether it rebuilt without errors.
+
+    In an assembly, mate_errors names each mate SolidWorks flags, and each
+    mate that lost a face or edge it used (it rebuilds fine, but holds nothing).
+    """
     return await _call(_session.rebuild, top_only)
 
 
