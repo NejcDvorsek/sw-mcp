@@ -96,7 +96,7 @@ stray drag in SolidWorks can change the part.
   rebuild (`failing_features`): set a variable over a range to find where a
   part breaks. `list_equations` marks equations left broken by a deleted
   feature; `delete_equation` removes them. An
-  equation-driven dimension ignores `set_dimension` (`applied: false`). An
+  equation-driven dimension refuses `set_dimension` and names its equation. An
   angle (a revolve's, an angle mate's) is set in degrees; `list_dimensions`
   shows each dimension's unit.
 

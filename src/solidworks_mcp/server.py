@@ -693,6 +693,8 @@ async def set_dimension(dimension_name: str, value_mm: float) -> dict:
     revolve, an angle mate) takes degrees; list_dimensions shows the unit. A
     point's coordinate from the origin (a sketch's 'x3', 'y2') takes a sign,
     -5 being across the origin; any other length is a size, refused below 0.
+    A value SolidWorks does not take (a dimension an equation drives, a size
+    of 0) is refused with the reason, and the part is left as it was.
     """
     return await _call(_session.set_dimension, dimension_name, value_mm)
 

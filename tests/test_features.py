@@ -6,6 +6,7 @@ by hand. Volumes are in mm^3.
 """
 
 import math
+import re
 
 import pytest
 
@@ -58,6 +59,29 @@ def test_a_negative_size_is_refused(part):
     box = part.add_box(40, 20, 10)
     with pytest.raises(SolidWorksError, match="cannot be negative"):
         part.set_dimension(box["depth_dimension"], -7)
+
+
+def test_a_dimension_an_equation_drives_is_refused_by_its_equation(part):
+    """SolidWorks ignores the write: set_dimension said ok, applied false, and
+    an agent read on as if the part had changed. A 20 x 10 box whose depth
+    follows the width: 5."""
+    box = part.add_box(20, 10, 5)
+    width, depth = box["dimensions"]["width"], box["dimensions"]["depth"]
+    part.set_equation(f'"{depth}" = "{width}" / 4')
+    [equation] = [e["equation"] for e in part.list_equations()["equations"]]
+    with pytest.raises(SolidWorksError, match=re.escape(equation)):
+        part.set_dimension(depth, 9)
+    assert vol(part.get_mass_properties()) == pytest.approx(1000), "the refused write changed the part"
+
+
+def test_a_value_solidworks_keeps_out_is_refused(part):
+    """SolidWorks ignores a width of 0 without a word: set_dimension said ok
+    with applied false, and the sketch was left 'invalid solution' (the part
+    fixture fails on that). A 20 x 10 x 5 box."""
+    box = part.add_box(20, 10, 5)
+    with pytest.raises(SolidWorksError, match="stays at 20 mm"):
+        part.set_dimension(box["dimensions"]["width"], 0)
+    assert vol(part.get_mass_properties()) == pytest.approx(1000), "the refused write changed the part"
 
 
 def test_cylinder(part):

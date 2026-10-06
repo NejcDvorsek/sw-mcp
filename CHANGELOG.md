@@ -30,6 +30,10 @@ All notable changes to this project are documented here. This project follows
   `swept_region` now refuse and name the mate; `list_components` also flags a
   mate that lost a face without an error from SolidWorks, and `rebuild` of an
   assembly names such mates in `mate_errors`.
+- `set_dimension` answered ok with `applied: false` when SolidWorks ignored
+  the value: an equation drives the dimension, or a size of 0, which also left
+  its sketch "invalid solution". It now refuses with the reason (naming the
+  equation) and puts the old value back.
 - The distance to a whole sub-assembly, in `measure_distance` and in
   `check_motion(distances=...)`, failed: it is measured through its parts.
 - `check_motion` on a joint inside a sub-assembly said nothing moved.

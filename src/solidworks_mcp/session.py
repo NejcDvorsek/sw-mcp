@@ -3883,6 +3883,7 @@ class SolidWorksSession:
         result's keys then end in _deg. A point's coordinate (a sketch's 'x3'
         or 'y2', from the origin) takes a sign, -5 being the other side of
         the origin; any other dimension is a size and cannot be negative.
+        A value SolidWorks does not take is refused, the part left as it was.
         """
         model = self._require_model()
         dim = self._dimension(dimension_name)
@@ -3891,26 +3892,48 @@ class SolidWorksSession:
         if coordinate is None and unit == "mm" and value_mm < 0:
             raise SolidWorksError(f"'{dimension_name}' is a size and cannot be negative (got {value_mm:g}); only a "
                                   "point's coordinate from the origin takes a sign. The part is as it was.")
-        old = from_system(dim.SystemValue) if coordinate is None else coordinate()
+
+        def current() -> float:
+            return from_system(dim.SystemValue) if coordinate is None else self._coordinate_of(dimension_name)()
+
+        old, original = current(), dim.SystemValue
         # A coordinate is a distance to SolidWorks: a negative value puts the
         # point on the other side, a positive one keeps the side it is on.
         crosses = coordinate is not None and (value_mm < 0) != (old < 0)
         dim.SystemValue = to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate else value_mm)
         rebuilt_ok = bool(model.ForceRebuild3(False))
-        # Read the value back: a driven/reference or equation-controlled dimension
-        # ignores the write silently, so the applied value can differ from the
-        # request. Report the actual value so the agent's loop sees a no-op.
-        applied = from_system(dim.SystemValue) if coordinate is None else self._coordinate_of(dimension_name)()
+        # A driven or equation-controlled dimension, or a value SolidWorks keeps
+        # out (a width of 0), ignores the write without a word, yet a width of 0
+        # left its sketch 'invalid solution': write the old value back.
+        applied = current()
+        if abs(applied - value_mm) >= 1e-6:
+            dim.SystemValue = original
+            model.ForceRebuild3(False)
+            if abs(current() - old) >= 1e-6:
+                raise SolidWorksError(f"'{dimension_name}' did not take {value_mm:g} {unit}, and putting back "
+                                      f"{old:g} failed: it reads {current():g}. Check the part.")
+            raise SolidWorksError(f"'{dimension_name}' stays at {old:g} {unit}: SolidWorks did not take "
+                                  f"{value_mm:g}, as {self._why_not_taken(dimension_name, dim)}. The part is as it was.")
         return {
             "ok": True,
             "dimension": dimension_name,
             f"old_value_{unit}": round(old, 6),
             f"requested_value_{unit}": value_mm,
             f"new_value_{unit}": round(applied, 6),
-            "applied": abs(applied - value_mm) < 1e-6,
+            "applied": True,
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def _why_not_taken(self, dimension_name: str, dim) -> str:
+        """Why SolidWorks kept a dimension at its value."""
+        equation = next((e["equation"] for e in self._equation_entries()
+                         if (e["name"] or "").lower() == dimension_name.lower()), None)
+        if equation:
+            return f"it follows the equation {equation}: change that with set_equation, or delete_equation"
+        if dim.DrivenState != SW_DIMENSION_DRIVING:
+            return "it is a reference (driven) dimension, which follows the geometry"
+        return "it refuses such a value (a size of 0, a negative angle)"
 
     def _coordinate_of(self, dimension_name: str):
         """For a sketch point's horizontal or vertical distance from the origin
