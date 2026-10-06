@@ -35,6 +35,9 @@ All notable changes to this project are documented here. This project follows
 - `add_mate` refused a coincident or distance mate on a slanted face that is
   not symmetric ("gives 0.0158 mm instead of 0 mm"): it measured from the
   face's box centre, which lies off such a face's plane.
+- `add_sketch` refused concentric arcs whose chords share one bisector, a bent
+  slot, as "under- or over-defined": their ends barely held the shared centre,
+  and SolidWorks saw it free. A radius holds it now.
 
 ## [0.11.0] — 2026-10-05
 

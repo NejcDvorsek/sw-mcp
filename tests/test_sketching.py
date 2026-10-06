@@ -94,3 +94,17 @@ def test_a_wedge_round_the_origin_takes_its_centre_as_given(part):
                                                {"line": [0, 0]}])
     wedge = part.extrude_sketch(sketch["sketch"], 5)
     assert vol(wedge) == pytest.approx(30 ** 2 * math.atan2(4.175, 29.708) / 2 * 5, rel=1e-9)
+
+
+def test_a_bent_slot_of_concentric_arcs_is_fully_defined(part):
+    """Arcs of R14.5 and R9.7 round one centre, joined by lines on one straight
+    line 2.2 mm beside it: the outer arc's segment less the inner one's. Both
+    chords share a bisector, which once left the centre free in SolidWorks."""
+    sketch = part.add_sketch("front", [97.8839, 9.2771], [
+        {"line": [99.4276, 13.9118]}, {"arc": [90.3697, -13.2832], "through": [107.31, 1.01]},
+        {"line": [91.9134, -8.6485]}, {"arc": [97.8839, 9.2771], "through": [102.51, 1.01]}])
+    assert "r1" in sketch["dimensions"]
+    slot = part.extrude_sketch(sketch["sketch"], 5)
+    d = 2.2015  # the line's distance from the centre
+    outer, inner = (segment_area(r, 2 * math.sqrt(r ** 2 - d ** 2)) for r in (14.5, 9.7))
+    assert vol(slot) == pytest.approx((outer - inner) * 5, rel=1e-4)

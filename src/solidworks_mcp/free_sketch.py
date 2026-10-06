@@ -19,7 +19,10 @@ from .errors import SolidWorksError
 EXACT_MM = 1e-9  # relations and origin ties only where the input is this exact
 MERGE_MM = 1e-4  # SolidWorks merged sketch points 1e-5 mm apart, not 1e-4 (verified): one point here too
 TANGENT_MM = 1e-3  # how far a "tangent" line's end may lie off the tangent; it is put on it
-_RANK_TOLERANCE = 1e-7
+# A row that adds less than this to the rank holds nothing SolidWorks counts:
+# concentric arcs whose chords share a bisector held their centre by 2e-6, and
+# SolidWorks saw it free
+_RANK_TOLERANCE = 1e-4
 _STEP_MM = 1e-6  # central differences: exact for the quadratic constraints, close for a radius
 
 

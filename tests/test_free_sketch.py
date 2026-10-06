@@ -97,6 +97,20 @@ def test_a_free_arc_gets_a_radius():
     assert plan.fully_defined
 
 
+def test_concentric_arcs_whose_chords_share_a_bisector_get_a_radius():
+    """A bent slot: two concentric arcs joined by lines on one straight line.
+    Both chords then share one bisector, so the arcs' ends barely hold their
+    shared centre (a rank residual of 2e-6, from the inputs' rounding), and
+    SolidWorks saw it free. A radius holds it instead of the last coordinate."""
+    chain = build_chain([97.8839, 9.2771], [{"line": [99.4276, 13.9118]},
+                                            {"arc": [90.3697, -13.2832], "through": [107.31, 1.01]},
+                                            {"line": [91.9134, -8.6485]},
+                                            {"arc": [97.8839, 9.2771], "through": [102.51, 1.01]}])
+    plan = plan_chain(chain)
+    assert [d[0] for d in plan.dimensions].count("radius") == 1 and len(plan.dimensions) == 8
+    assert plan.fully_defined
+
+
 def test_a_relation_that_follows_from_others_is_left_out():
     """A straight continuation is collinear with the line before it; its own
     horizontal relation would then over-define the sketch."""
