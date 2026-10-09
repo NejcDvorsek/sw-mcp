@@ -19,6 +19,9 @@ All notable changes to this project are documented here. This project follows
 - `delete_feature` named only the features built directly on the one to
   delete, while `with_children=True` also took what was built on those; the
   refusal now names everything that goes.
+- A STEP import that SolidWorks refused ("error 1") could leave the parts it
+  had made open, hidden and unsaved; a failed or refused import now closes
+  every document it opened.
 
 ## [0.13.0] — 2026-10-06
 

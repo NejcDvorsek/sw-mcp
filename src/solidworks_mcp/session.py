@@ -416,20 +416,42 @@ class SolidWorksSession:
         interconnect = sw.GetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT)
         if doc_type == SW_DOC_ASSEMBLY:
             sw.SetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT, False)
+        before = {d.GetTitle() for d in self._open_documents()}
         try:
-            doc, errors = sw.LoadFile4(abs_path, "r", sw.GetImportFileData(abs_path), 0)
+            doc, errors = self._load_file(sw, abs_path)
         finally:
             sw.SetUserPreferenceToggle(SW_TOGGLE_3D_INTERCONNECT, interconnect)
         model = binding.wrap(doc, self._mod.IModelDoc2)
+        name = os.path.basename(abs_path)
         if model is None:
-            raise SolidWorksError(f"SolidWorks could not import {abs_path} (error {errors}).")
+            # error 1 came with the parts it had made left open, hidden and unsaved
+            raise SolidWorksError(f"SolidWorks could not import {abs_path} (error {errors}"
+                                  f"{', no reason given' if errors == 1 else ''}).{self._close_new_documents(before)}")
         if int(model.GetType()) != doc_type:
-            sw.CloseDoc(model.GetTitle())  # closes the component documents it opened too
-            name = os.path.basename(abs_path)
-            raise SolidWorksError(f"{name} holds an assembly, not a part: open it with open_assembly."
-                                  if doc_type == SW_DOC_PART else
-                                  f"{name} holds a single part, not an assembly: open it with open_part.")
+            raise SolidWorksError((f"{name} holds an assembly, not a part: open it with open_assembly."
+                                   if doc_type == SW_DOC_PART else
+                                   f"{name} holds a single part, not an assembly: open it with open_part.")
+                                  + self._close_new_documents(before))
         return model
+
+    def _close_new_documents(self, before: set) -> str:
+        """Close every document not open before, assemblies first (a part an
+        open assembly holds stays); '' when all went, else what stayed."""
+        for _ in range(3):
+            # titles first: closing an assembly closes its parts, whose objects then answer nothing
+            new = sorted((int(d.GetType()) != SW_DOC_ASSEMBLY, d.GetTitle()) for d in self._open_documents()
+                         if d.GetTitle() not in before)
+            if not new:
+                return ""
+            for _, title in new:
+                self._sw.CloseDoc(title)
+        stayed = sorted(d.GetTitle() for d in self._open_documents() if d.GetTitle() not in before)
+        return f" It left open: {', '.join(stayed)}; close each with activate_document and close_part." if stayed else ""
+
+    @staticmethod
+    def _load_file(sw, abs_path: str) -> tuple:
+        """LoadFile4 with the format's own import settings: (document or None, errors)."""
+        return sw.LoadFile4(abs_path, "r", sw.GetImportFileData(abs_path), 0)
 
     # --- geometry -------------------------------------------------------------
 

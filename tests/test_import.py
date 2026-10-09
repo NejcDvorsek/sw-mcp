@@ -87,6 +87,29 @@ def test_open_assembly_refuses_a_part_file_and_closes_it(part, tmp_path):
 
 
 @pytest.mark.solidworks
+def test_a_failed_import_closes_what_it_opened(assembly, blocks, tmp_path, monkeypatch):
+    """SolidWorks answered a STEP import with error 1, yet left the parts it
+    had made open, hidden and unsaved, next to the user's own documents.
+    Played here by an import that runs and then reports error 1."""
+    assembly.insert_component(blocks["block_a"], 0, 0, 0)
+    assembly.insert_component(blocks["block_b"], 100, 0, 0)
+    step = assembly.export(str(tmp_path / "pair.step"))["path"]
+    assembly.close_part()
+    before = {d.GetTitle() for d in assembly._open_documents()}
+    load = assembly._load_file
+
+    def load_then_fail(*args):
+        load(*args)
+        return None, 1
+
+    monkeypatch.setattr(assembly, "_load_file", load_then_fail)
+    with pytest.raises(SolidWorksError, match="error 1"):
+        assembly.open_assembly(step)
+    left = {d.GetTitle() for d in assembly._open_documents()} - before
+    assert not left, f"the failed import left documents open: {sorted(left)}"
+
+
+@pytest.mark.solidworks
 def test_an_assembly_step_is_refused_and_leaves_nothing_open(assembly, blocks, tmp_path):
     assembly.insert_component(blocks["block_a"], 0, 0, 0)
     assembly.insert_component(blocks["block_b"], 100, 0, 0)
