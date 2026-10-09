@@ -308,9 +308,9 @@ stray drag in SolidWorks can change the part.
   a common floor), with where they are thinnest. Try another `up` to find the
   orientation with the least overhang; the bed contact area tells how well it
   sticks.
-- Export for slicing with `export(..., quality="fine")` as 3MF or STL. **STL
-  output is moved into positive space** by SolidWorks: compare geometry in the
-  model frame, not in raw STL coordinates.
+- Export for slicing with `export(..., quality="fine")` as 3MF or STL. Both
+  keep the model's own coordinates (`frame` in the result), so a mesh
+  measures back where the part is; the slicer places it on the bed.
 
 ## 6. Reverse-engineering from a mesh (STL/3MF)
 

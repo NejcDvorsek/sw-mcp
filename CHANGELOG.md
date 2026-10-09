@@ -9,6 +9,12 @@ All notable changes to this project are documented here. This project follows
 - `delete_feature(dry_run=True)` lists what a delete would take along
   (`would_delete`) and leaves the part as it is.
 
+### Changed
+- STL exports keep the part's or assembly's own coordinates, also one file
+  per component, where SolidWorks moved them into positive space; the
+  result names the `frame`. A mesh measured back now lines up with the
+  model, and slicers place the part on the bed anyway.
+
 ### Fixed
 - `delete_feature` named only the features built directly on the one to
   delete, while `with_children=True` also took what was built on those; the

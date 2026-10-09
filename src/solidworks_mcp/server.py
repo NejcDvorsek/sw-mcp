@@ -965,6 +965,8 @@ async def export(path: str, file_format: str | None = None, quality: str = "fine
     for a reproducible custom resolution (overrides quality). Ignored for other formats.
     An assembly goes to STL as one file, or one file per component with
     per_component=True (SolidWorks names them); `files` lists what was written.
+    STL/3MF keep the part's or assembly's own coordinates (`frame`), also per
+    component, so a mesh measures back where the model is; slicers place it anyway.
     """
     return await _call(_session.export, path, file_format, quality, deviation_mm, angle_deg, per_component)
 

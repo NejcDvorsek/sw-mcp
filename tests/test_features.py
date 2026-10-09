@@ -713,6 +713,20 @@ def test_export_stl_resolution(part, tmp_path):
     assert fine > coarse
 
 
+def test_an_stl_keeps_the_parts_coordinates(part, tmp_path):
+    """SolidWorks moved an STL into positive space: a part measured back from
+    its STL was off by the shift. A Ø40 disc centred on the origin, 10 thick."""
+    from solidworks_mcp.constants import SW_TOGGLE_STL_DONT_TRANSLATE
+    from solidworks_mcp.mesh_tools import load_mesh
+    setting = part._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE)
+    part.add_disc(40, 10)
+    exported = part.export(str(tmp_path / "disc.stl"))
+    xs = [p[0] for triangle in load_mesh(exported["path"]) for p in triangle]
+    assert (min(xs), max(xs)) == pytest.approx((-20, 20), abs=1e-3), "the STL was moved off the part's origin"
+    assert exported["frame"] == "part"
+    assert part._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE) == setting, "SolidWorks' own setting changed"
+
+
 def test_export_restores_stl_prefs(part, tmp_path):
     # the global STL quality pref must be unchanged after an export (save/restore)
     from solidworks_mcp.constants import SW_STL_QUALITY

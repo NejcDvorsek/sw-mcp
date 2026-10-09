@@ -12,6 +12,7 @@ import pytest
 
 from solidworks_mcp.constants import SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT
 from solidworks_mcp.errors import SolidWorksError
+from solidworks_mcp.mesh_tools import load_mesh
 
 pytestmark = pytest.mark.solidworks
 
@@ -350,6 +351,19 @@ def test_an_assembly_goes_to_one_stl_or_one_per_component(assembly, blocks, tmp_
     names = sorted(os.path.basename(f).lower() for f in apart["files"])
     assert len(names) == 2 and "block_a" in names[0] and "block_b" in names[1], names
     assert all(os.path.getsize(f) > 0 for f in apart["files"])
+
+
+def test_stls_of_an_assembly_keep_its_coordinates(assembly, blocks, tmp_path):
+    """Moved into positive space, the files per component no longer lined up
+    with the assembly. block_b (20 cube) at x = -50, block_a at the origin."""
+    two_blocks(assembly, blocks, b_at=(-50.0, 0.0, 0.0))
+    whole = assembly.export(str(tmp_path / "whole.stl"))
+    assert min(p[0] for t in load_mesh(whole["path"]) for p in t) == pytest.approx(-50, abs=1e-3)
+    apart = assembly.export(str(tmp_path / "apart" / "asm.stl"), per_component=True)
+    [b_file] = [f for f in apart["files"] if "block_b" in os.path.basename(f).lower()]
+    xs = [p[0] for t in load_mesh(b_file) for p in t]
+    assert (min(xs), max(xs)) == pytest.approx((-50, -30), abs=1e-3), "block_b's file is not where it sits"
+    assert whole["frame"] == apart["frame"] == "assembly"
 
 
 def test_one_stl_per_component_is_for_assemblies(part, tmp_path):

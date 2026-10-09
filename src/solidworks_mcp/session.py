@@ -4443,13 +4443,10 @@ class SolidWorksSession:
     def _part_triangles(self) -> list:
         """The current part as triangles in its own model frame (mm), via a fine STL export."""
         path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_{uuid.uuid4().hex}.stl")
-        keep = self._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE)
-        self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, True)  # no shift to positive space
         try:
             self.export(path, quality="fine")
             return load_mesh(path)
         finally:
-            self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, keep)
             if os.path.exists(path):
                 os.remove(path)
 
@@ -5046,7 +5043,9 @@ class SolidWorksSession:
         deviation_mm (+ optional angle_deg) for a reproducible Custom resolution
         (overrides quality). Ignored for STEP/IGES/Parasolid/images. An
         assembly goes to STL as one file, or with per_component=True as one file
-        per component next to `path`; `files` lists what was written.
+        per component next to `path`; `files` lists what was written. A mesh
+        keeps the document's coordinates (`frame`: 'part' or 'assembly', also
+        per component), where SolidWorks would move an STL to positive space.
         """
         model = self._require_model()
         fmt = (file_format or os.path.splitext(path)[1].lstrip(".")).lower()
@@ -5063,7 +5062,10 @@ class SolidWorksSession:
         if fmt in self._MESH_EXPORT_FORMATS:
             old = self._apply_stl_resolution(quality, deviation_mm, angle_deg)
             together = self._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE)
+            in_place = self._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE)
             try:
+                # a mesh measured back, or files per component, must line up with the model
+                self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, True)
                 if assembly_stl:  # SolidWorks' own setting would decide, and the user's may be per part
                     self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE, not per_component)
                 if per_component:
@@ -5071,9 +5073,11 @@ class SolidWorksSession:
                 else:
                     self._write_via_saveas3(abs_path)
             finally:
+                self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE, in_place)
                 self._sw.SetUserPreferenceToggle(SW_TOGGLE_STL_ONE_FILE, together)
                 self._restore_stl_resolution(old)
             result["resolution"] = "custom" if deviation_mm is not None else quality
+            result["frame"] = "assembly" if int(model.GetType()) == SW_DOC_ASSEMBLY else "part"
         else:
             self._write_via_saveas3(abs_path)
         result["files"] = files
