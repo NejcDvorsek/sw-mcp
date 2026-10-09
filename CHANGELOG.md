@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This project follows
 ## [Unreleased]
 
 ### Added
+- `reorder_feature(name, before)` moves a feature, with its sketch, before
+  another one: a boss added last fills the holes cut before it, and moved
+  before them it is cut through again. It refuses, naming the feature it
+  depends on, when that would come after it.
 - `delete_feature(dry_run=True)` lists what a delete would take along
   (`would_delete`) and leaves the part as it is.
 - `extrude_sketch(up_to="@x,y,z")` ends on the face through that point. Up

@@ -781,6 +781,19 @@ async def suppress_feature(name: str, suppress: bool = True) -> dict:
 
 
 @mcp.tool()
+async def reorder_feature(name: str, before: str) -> dict:
+    """Move a feature (a list_features name), with its sketch, to just before another one; rebuild and remeasure.
+
+    For a boss added last that filled holes cut earlier: build it at the end
+    as usual, then move it before the first of those cuts, and they cut
+    through it again. Refused, the part as it was, when the feature is built
+    on something at or after that place. Returns the new order (features)
+    and the features that fail to rebuild (failing_features).
+    """
+    return await _call(_session.reorder_feature, name, before)
+
+
+@mcp.tool()
 async def set_material(name: str, database: str = "", density_kg_m3: float | None = None) -> dict:
     """Assign a material by name (e.g. "6061 Alloy", "AISI 1020", "ABS").
 

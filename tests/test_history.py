@@ -150,6 +150,31 @@ def test_delete_feature_names_everything_that_goes_along(part):
     assert [f["name"] for f in part.list_features()["features"]][-1] == "Base"
 
 
+def test_reorder_feature_moves_a_boss_before_the_cuts_it_filled(part):
+    """A boss added last filled the holes made before it, without a word;
+    moved before them, they cut through it again. A 40x20x10 block, a Ø6
+    through hole at (10, 10), then a 10 x 10 web over the hole, 10 high."""
+    box = part.add_box(40, 20, 10, name="Base")
+    hole = part.add_hole(6, 10, 10, name="Hole")
+    web = part.add_extruded_profile([[5, 5], [15, 5], [15, 15], [5, 15]], 10, name="Web")
+    assert abs(vol(web) - BLOCK) < 0.01, "the web should fill the hole while it comes last"
+
+    moved = part.reorder_feature("Web", before="Hole")
+
+    assert abs(vol(moved) - (BLOCK - HOLE)) < 0.01, "the hole does not cut through the moved web"
+    order = [sketch_of(box, "width"), "Base", sketch_of(web, "x1"), "Web", sketch_of(hole, "diameter"), "Hole"]
+    assert moved["features"] == order, "the web and its sketch belong before the hole's sketch"
+
+
+def test_reorder_feature_refuses_to_move_a_feature_before_what_it_is_built_on(part):
+    part.add_box(40, 20, 10, name="Base")
+    part.add_hole(6, 10, 10, name="Hole")  # sketched on the block's top face
+
+    with pytest.raises(SolidWorksError, match="built on Base"):
+        part.reorder_feature("Hole", before="Base")
+    assert abs(vol(part.get_mass_properties()) - (BLOCK - HOLE)) < 0.01
+
+
 def test_suppress_feature_round_trips_with_its_dependents(part):
     block_with_hole_and_rounds(part)
 

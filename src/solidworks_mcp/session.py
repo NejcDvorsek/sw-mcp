@@ -74,6 +74,7 @@ from .constants import (
     SW_MARK_MIRROR_FEATURE,
     SW_MARK_MIRROR_PLANE,
     SW_MATE_ALIGN_CLOSEST,
+    SW_MOVE_BEFORE,
     SW_OPEN_DOC_SILENT,
     SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY,
     SW_PREF_DEFAULT_TEMPLATE_PART,
@@ -4504,6 +4505,35 @@ class SolidWorksSession:
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def reorder_feature(self, name: str, before: str) -> dict:
+        """Move a history feature, with its sketch, to just before another one
+        and its sketch; rebuild, remeasure.
+
+        A boss added last fills the holes cut before it; moved before them,
+        they cut through it again. Refused, the part as it was, when the
+        feature is built on something at or after that place.
+        """
+        model = self._require_model()
+        feature, target = self._history_feature(name), self._history_feature(before)
+        if feature.Name == target.Name:
+            raise SolidWorksError(f"'{name}' cannot move before itself.")
+        names = [f.Name for f in self._history()]
+        # before the target's own sketch, so the two stay together in the tree
+        place = min((f.Name for f in [target, *self._sub_features(target)] if f.Name in names), key=names.index)
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        if not extension.ReorderFeature(feature.Name, place, SW_MOVE_BEFORE):
+            moved = self._goes_along(feature, with_children=False)
+            parents = {binding.wrap(p, self._mod.IFeature).Name for f in self._history() if f.Name in moved
+                       for p in (f.GetParents() or ())}
+            later = [n for n in names[names.index(place):] if n in parents and n not in moved]
+            raise SolidWorksError(f"SolidWorks did not move '{name}' before '{before}'"
+                                  + (f": it is built on {', '.join(later)}, which would come after it."
+                                     if later else ".") + " The part is as it was.")
+        rebuilt_ok = bool(model.ForceRebuild3(False))
+        return {"ok": True, "features": [f.Name for f in self._history()], "rebuild_ok": rebuilt_ok,
+                "failing_features": self._failing_features(),
+                "mass_properties": self.get_mass_properties()["mass_properties"]}
 
     # --- meshes: slice a reference, compare the part with it ---------------------
 

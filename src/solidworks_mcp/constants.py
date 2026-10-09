@@ -168,6 +168,10 @@ SKETCH_STATUSES = {1: "status unknown", 2: "under defined", 3: "fully defined", 
 SW_DELETE_CHILDREN = 1
 SW_DELETE_ABSORBED = 2   # the sketches the feature consumed go with it
 
+# swMoveLocation_e (IModelDocExtension.ReorderFeature): the feature lands before the
+# location feature, with the sketch it absorbed
+SW_MOVE_BEFORE = 2
+
 # swFeatureSuppressionAction_e / swInConfigurationOpts_e (IFeature.SetSuppression2).
 # Suppressing takes the dependents along by itself; unsuppressing brings them
 # back only with UNSUPPRESS_DEPENDENT (verified).

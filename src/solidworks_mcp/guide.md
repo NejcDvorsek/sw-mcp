@@ -54,6 +54,10 @@ short connect-time instructions first; this is the long version.
   `suppress_feature` takes a feature out but keeps it and its
   dimensions, to try a variant; `suppress=False` brings it back together with
   what depends on it.
+- **A boss fills the cuts made before it**: every tool adds its feature at the
+  end of the history, so a plate drawn over earlier holes closes them, and
+  only the volume shows it. `reorder_feature("Plate", before="Hole1")` moves
+  it before the first of them, and they cut through it again.
 - A tool that cannot do what was asked returns `{ok: false, error}`. The error
   names the cause. Several SolidWorks calls fail silently (no feature, no
   error); the server checks for that and fails loud instead.
