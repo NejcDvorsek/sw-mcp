@@ -3928,16 +3928,17 @@ class SolidWorksSession:
             return from_system(dim.SystemValue) if coordinate is None else self._coordinate_of(dimension_name)()
 
         old, original = current(), dim.SystemValue
+        target = self._joint_angle(dim, unit, value_mm) if coordinate is None else value_mm
         # A coordinate is a distance to SolidWorks: a negative value puts the
         # point on the other side, a positive one keeps the side it is on.
         crosses = coordinate is not None and (value_mm < 0) != (old < 0)
-        dim.SystemValue = to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate else value_mm)
+        dim.SystemValue = to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate else target)
         rebuilt_ok = bool(model.ForceRebuild3(False))
         # A driven or equation-controlled dimension, or a value SolidWorks keeps
         # out (a width of 0), ignores the write without a word, yet a width of 0
         # left its sketch 'invalid solution': write the old value back.
         applied = current()
-        if abs(applied - value_mm) >= 1e-6:
+        if abs(applied - target) >= 1e-6:
             dim.SystemValue = original
             model.ForceRebuild3(False)
             if abs(current() - old) >= 1e-6:
@@ -3950,11 +3951,20 @@ class SolidWorksSession:
             "dimension": dimension_name,
             f"old_value_{unit}": round(old, 6),
             f"requested_value_{unit}": value_mm,
-            f"new_value_{unit}": round(applied, 6),
+            f"new_value_{unit}": round(applied + value_mm - target, 6),  # -30, not the 330 SolidWorks holds
             "applied": True,
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def _joint_angle(self, dim, unit: str, value: float) -> float:
+        """The value to write for `value`: an angle mate's dimension turns its
+        joint the whole way round, and SolidWorks takes 0..360 for it, so -30
+        is written as 330 (the same turn); any other dimension as it is."""
+        if unit != "deg":
+            return value
+        owner = binding.wrap(dim.GetFeatureOwner(), self._mod.IFeature)
+        return value % 360 if owner is not None and owner.GetTypeName2().startswith("Mate") else value
 
     def _why_not_taken(self, dimension_name: str, dim) -> str:
         """Why SolidWorks kept a dimension at its value."""
@@ -6344,10 +6354,11 @@ class SolidWorksSession:
         moving, steps = set(), []
         try:
             for value in values:
-                dim.SystemValue = to_system(value)
+                target = self._joint_angle(dim, unit, value)
+                dim.SystemValue = to_system(target)
                 rebuilt = bool(model.ForceRebuild3(False))
                 applied = from_system(dim.SystemValue)
-                if abs(applied - value) > 1e-6:
+                if abs(applied - target) > 1e-6:
                     raise SolidWorksError(f"'{dimension_name}' did not take {value:g} {unit} (it reads "
                                           f"{applied:g}): is it a driven dimension?")
                 moving |= {c.Name2 for c in everything if self._moved(start.get(c.Name2), c)}
@@ -6418,10 +6429,11 @@ class SolidWorksSession:
         sections, moved = [], False
         try:
             for value in values:
-                dim.SystemValue = to_system(value)
+                target = self._joint_angle(dim, unit, value)
+                dim.SystemValue = to_system(target)
                 model.ForceRebuild3(False)
                 applied = from_system(dim.SystemValue)
-                if abs(applied - value) > 1e-6:
+                if abs(applied - target) > 1e-6:
                     raise SolidWorksError(f"'{dimension}' did not take {value:g} {unit} (it reads {applied:g}): "
                                           "is it a driven dimension?")
                 for part, triangles in pieces:

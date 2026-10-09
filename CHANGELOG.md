@@ -12,6 +12,10 @@ All notable changes to this project are documented here. This project follows
   to next fails when a side of the profile lies on a face of the part (a
   strip against a boss); its refusal now says so and names a point on the
   face ahead to end on instead.
+- An angle mate's dimension turns its joint below 0 in `set_dimension`,
+  `check_motion` and `swept_region`: -30 is 30 the other way from 0. Past
+  180 it already turned on; a joint of -35..115 needs no face pair picked
+  to keep it inside 0..180 any more.
 
 ### Changed
 - STL exports keep the part's or assembly's own coordinates, also one file

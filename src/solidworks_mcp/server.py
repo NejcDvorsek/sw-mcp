@@ -1118,7 +1118,9 @@ async def add_mate(comp_a: str, face_a: str, comp_b: str, face_b: str,
     about the axis free. flip takes the other solution: the mirror side of a
     distance, the other turning direction of an angle. A distance or angle
     mate returns its `dimension`: drive it with
-    set_dimension, or step it with check_motion. The result is measured back
+    set_dimension, or step it with check_motion. An angle mate's dimension
+    then turns the joint the whole way round, past 180 and below 0 (-30 is 30
+    the other way, the same turn as 330). The result is measured back
     after the rebuild; a mate that does not hold is removed and the components
     are put back.
     """

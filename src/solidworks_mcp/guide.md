@@ -266,7 +266,10 @@ stray drag in SolidWorks can change the part.
   two side faces. The angle mate returns its `dimension`: `set_dimension`
   turns the joint, and `check_motion(dimension, [30, 60, 90, 120, 150],
   distances=[["Rod", "Bolt"]])` checks overlaps and clearances at every step
-  and puts the joint back. `flip` turns an angle mate the other way. A mate
+  and puts the joint back. The mate is made at 0..180 degrees, but its
+  dimension turns the joint the whole way round: a hip of -35..115 steps as
+  `[-35, 0, 60, 115]` from any pair of side faces (a negative angle is the
+  turn the other way from 0). `flip` turns an angle mate the other way. A mate
   that contradicts the others is refused and removed, naming the one it
   fights; `list_components` lists the mates and their errors, in words.
   `check_motion` fails when nothing moves: then the mate lost a face, or is

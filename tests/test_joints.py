@@ -97,6 +97,27 @@ def test_an_angle_mate_sets_the_joint_angle_as_one_number(linkage):
     assert shin_size(linkage) == pytest.approx([width, depth, 5], abs=1e-3), "the shin did not follow the angle"
 
 
+def shin_box(session):
+    [shin] = [c for c in session.list_components()["components"] if c["name"].startswith("link_shin")]
+    return shin["bounding_box_mm"]["min_mm"] + shin["bounding_box_mm"]["max_mm"]
+
+
+def test_a_joint_turns_on_past_0_and_180(linkage):
+    """The angle between two faces reads 0..180, so a hip of -35..115 needed
+    a face pair 60 degrees apart at hip 0. The dimension turns the whole way
+    round: -30 is 30 the other way from 0, the place 330 also gives."""
+    mate = knee(linkage, 90)
+    back = linkage.set_dimension(mate["dimension"], -30)
+    assert back["new_value_deg"] == pytest.approx(-30), back
+    at_minus_30 = shin_box(linkage)
+    linkage.set_dimension(mate["dimension"], 330)
+    assert shin_box(linkage) == pytest.approx(at_minus_30, abs=1e-3), "-30 is not the turn 330 gives"
+    linkage.set_dimension(mate["dimension"], 30)
+    assert shin_box(linkage) != pytest.approx(at_minus_30, abs=1e-3), "-30 landed where +30 does"
+    motion = linkage.check_motion(mate["dimension"], [-30, 200])
+    assert [step["value_deg"] for step in motion["steps"]] == [-30, 200]
+
+
 def test_check_motion_steps_the_knee_and_finds_the_clash(linkage):
     # at 150 the shin swings out over x 20..40 through the stop; at 90 it hangs
     # along the y axis, x 0..10, 10 mm short of it
