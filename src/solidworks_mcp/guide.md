@@ -45,9 +45,10 @@ short connect-time instructions first; this is the long version.
   in the part's own frame.
 - **Undo a step** with `delete_feature(name)`: the feature goes together with
   its sketch. It refuses while other features are built on it (a fillet on its
-  edges, a sketch on its face) and names them; `with_children=True` deletes
-  those too. A loft or rib keeps its hidden helper plane, as in SolidWorks
-  itself: delete that plane as well (`list_features` shows it as a RefPlane).
+  edges, a sketch on its face) and names them, and what is built on those;
+  `with_children=True` deletes them all, `dry_run=True` only lists them. A
+  loft or rib keeps its hidden helper plane, as in SolidWorks itself: delete
+  that plane as well (`list_features` shows it as a RefPlane).
   Equations that named its dimensions break and come back as
   `broken_equations`; `with_equations=True` deletes them.
   `suppress_feature` takes a feature out but keeps it and its

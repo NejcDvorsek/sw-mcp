@@ -126,6 +126,30 @@ def test_delete_feature_refuses_to_break_what_depends_on_it(part):
     )
 
 
+def test_delete_feature_names_everything_that_goes_along(part):
+    """The refusal named only the direct dependents ('Bridge'), yet
+    with_children deleted what was built on those too. A 40x20x10 block, a
+    Ø10 x 5 boss on its top, a Ø6 x 4 post on the boss, a Ø2 x 3 hole in the
+    post: the hole is built on the post, not on the boss."""
+    part.add_box(40, 20, 10, name="Base")
+    part.add_boss_on_face(10, "+z", 20, 10, 10, 5, name="Boss")
+    part.add_boss_on_face(6, "+z", 20, 10, 15, 4, name="Post")
+    part.add_hole_on_face(2, "+z", 20, 10, 19, depth_mm=3, name="PostHole")
+    whole = BLOCK + math.pi * (25 * 5 + 9 * 4 - 1 * 3)
+
+    with pytest.raises(SolidWorksError, match="with_children") as refusal:
+        part.delete_feature("Boss")
+    assert "PostHole" in str(refusal.value), (
+        f"the refusal must name everything with_children deletes, not only the direct dependents: {refusal.value}"
+    )
+    planned = part.delete_feature("Boss", with_children=True, dry_run=True)
+    assert abs(vol(planned) - whole) < 0.01, "a dry run changed the part"
+
+    done = part.delete_feature("Boss", with_children=True)
+    assert planned["would_delete"] == done["deleted"], "the dry run listed other features than the delete took"
+    assert [f["name"] for f in part.list_features()["features"]][-1] == "Base"
+
+
 def test_suppress_feature_round_trips_with_its_dependents(part):
     block_with_hole_and_rounds(part)
 

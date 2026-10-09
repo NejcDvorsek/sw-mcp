@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `delete_feature(dry_run=True)` lists what a delete would take along
+  (`would_delete`) and leaves the part as it is.
+
+### Fixed
+- `delete_feature` named only the features built directly on the one to
+  delete, while `with_children=True` also took what was built on those; the
+  refusal now names everything that goes.
+
 ## [0.13.0] — 2026-10-06
 
 ### Added

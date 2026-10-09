@@ -4327,24 +4327,30 @@ class SolidWorksSession:
         return {"ok": True, "count": len(features), "features": features,
                 "under_defined_sketches": self._under_defined_sketches()}
 
-    def delete_feature(self, name: str, with_children: bool = False, with_equations: bool = False) -> dict:
+    def delete_feature(self, name: str, with_children: bool = False, with_equations: bool = False,
+                       dry_run: bool = False) -> dict:
         """Delete a history feature with the sketches it absorbed; rebuild, remeasure.
 
         What is built on it (a fillet on its edges, a sketch on its face) would
-        be left broken, so it refuses and names those unless with_children=True
-        deletes them too. `deleted` lists what went, in tree order. Equations
-        that named its dimensions break: `broken_equations` lists them, unless
+        be left broken, so it refuses and names those, and what is built on
+        them in turn, unless with_children=True deletes them too. `deleted`
+        lists what went, in tree order; dry_run=True lists it as
+        `would_delete` and leaves the part as it is. Equations that named its
+        dimensions break: `broken_equations` lists them, unless
         with_equations=True deletes them (`deleted_equations`); global
         variables stay.
         """
         model = self._require_model()
         feature = self._history_feature(name)
-        children = [binding.wrap(c, self._mod.IFeature).Name for c in (feature.GetChildren() or ())]
-        if children and not with_children:
+        going = self._goes_along(feature, with_children=True)
+        dependents = [n for n in going if n not in self._goes_along(feature, with_children=False)]
+        if dependents and not with_children:
             raise SolidWorksError(
-                f"'{name}' has dependents: {', '.join(children)}. Delete those first, suppress "
+                f"'{name}' has dependents: {', '.join(dependents)}. Delete those first, suppress "
                 f"'{name}' instead, or pass with_children=True to delete them too."
             )
+        if dry_run:
+            return {"ok": True, "would_delete": going, "mass_properties": self.get_mass_properties()["mass_properties"]}
         before = [f.Name for f in self._history()]
         broken_before = {e["equation"] for e in self._equation_entries() if e["broken"]}
         model.ClearSelection2(True)
@@ -4369,6 +4375,21 @@ class SolidWorksSession:
         result.update(broken_equations=[e["equation"] for e in broken], rebuild_ok=rebuilt_ok,
                       mass_properties=self.get_mass_properties()["mass_properties"])
         return result
+
+    def _goes_along(self, feature, with_children: bool) -> list:
+        """The history features a delete of `feature` takes, in tree order: it
+        and the sketches it absorbed; with_children also what is built on it,
+        on what is built on that, and so on (GetChildren gives one level)."""
+        names, todo = set(), [feature]
+        while todo:
+            feat = todo.pop()
+            if feat.Name in names:
+                continue
+            names.add(feat.Name)
+            todo += self._sub_features(feat)
+            if with_children:
+                todo += [binding.wrap(c, self._mod.IFeature) for c in (feat.GetChildren() or ())]
+        return [f.Name for f in self._history() if f.Name in names]
 
     def suppress_feature(self, name: str, suppress: bool = True) -> dict:
         """Suppress a history feature or bring it back; rebuild, remeasure.
