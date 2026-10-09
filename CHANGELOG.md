@@ -34,6 +34,10 @@ All notable changes to this project are documented here. This project follows
 - A STEP import that SolidWorks refused ("error 1") could leave the parts it
   had made open, hidden and unsaved; a failed or refused import now closes
   every document it opened.
+- SolidWorks now and then ignores a dimension's new value at random (about
+  1 in 25 on a fresh part), so `set_dimension` refused a plain value and
+  `check_motion` stopped at a step. The value is now written once more when
+  the old one reads back; a value SolidWorks refuses is still refused.
 
 ## [0.13.0] — 2026-10-06
 

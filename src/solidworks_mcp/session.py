@@ -3917,7 +3917,7 @@ class SolidWorksSession:
         the origin; any other dimension is a size and cannot be negative.
         A value SolidWorks does not take is refused, the part left as it was.
         """
-        model = self._require_model()
+        self._require_model()
         dim = self._dimension(dimension_name)
         unit, to_system, from_system = self._dimension_unit(dim)
         coordinate = self._coordinate_of(dimension_name)
@@ -3933,15 +3933,14 @@ class SolidWorksSession:
         # A coordinate is a distance to SolidWorks: a negative value puts the
         # point on the other side, a positive one keeps the side it is on.
         crosses = coordinate is not None and (value_mm < 0) != (old < 0)
-        dim.SystemValue = to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate else target)
-        rebuilt_ok = bool(model.ForceRebuild3(False))
+        rebuilt_ok = self._write_dimension(dim, to_system(-abs(value_mm) if crosses else abs(value_mm) if coordinate
+                                                          else target))
         # A driven or equation-controlled dimension, or a value SolidWorks keeps
         # out (a width of 0), ignores the write without a word, yet a width of 0
         # left its sketch 'invalid solution': write the old value back.
         applied = current()
         if abs(applied - target) >= 1e-6:
-            dim.SystemValue = original
-            model.ForceRebuild3(False)
+            self._write_dimension(dim, original)
             if abs(current() - old) >= 1e-6:
                 raise SolidWorksError(f"'{dimension_name}' did not take {value_mm:g} {unit}, and putting back "
                                       f"{old:g} failed: it reads {current():g}. Check the part.")
@@ -3957,6 +3956,21 @@ class SolidWorksSession:
             "rebuild_ok": rebuilt_ok,
             "mass_properties": self.get_mass_properties()["mass_properties"],
         }
+
+    def _write_dimension(self, dim, system_value: float) -> bool:
+        """Write a dimension's SystemValue and rebuild; returns rebuild_ok.
+
+        SolidWorks now and then ignores a write at random (3 in 80 on a fresh
+        box, measured): the old value reads back, and the same write once more
+        takes. A value it refuses stays refused, for the caller to report. A
+        coordinate written negative reads back positive, so sizes are compared.
+        """
+        for _ in range(2):
+            dim.SystemValue = system_value
+            rebuilt_ok = bool(self._model.ForceRebuild3(False))
+            if abs(abs(dim.SystemValue) - abs(system_value)) < 1e-9:
+                break
+        return rebuilt_ok
 
     def _joint_angle(self, dim, unit: str, value: float) -> float:
         """The value to write for `value`: an angle mate's dimension turns its
@@ -6385,8 +6399,7 @@ class SolidWorksSession:
         try:
             for value in values:
                 target = self._joint_angle(dim, unit, value)
-                dim.SystemValue = to_system(target)
-                rebuilt = bool(model.ForceRebuild3(False))
+                rebuilt = self._write_dimension(dim, to_system(target))
                 applied = from_system(dim.SystemValue)
                 if abs(applied - target) > 1e-6:
                     raise SolidWorksError(f"'{dimension_name}' did not take {value:g} {unit} (it reads "
@@ -6399,8 +6412,7 @@ class SolidWorksSession:
                     "distances": [self.measure_distance(a, b) for a, b in pairs],
                 })
         finally:
-            dim.SystemValue = original
-            model.ForceRebuild3(False)
+            self._write_dimension(dim, original)
         if not moving and any(abs(to_system(value) - original) > 1e-12 for value in values):
             raise SolidWorksError(f"Stepping '{dimension_name}' through {values} moved no component: its mate holds "
                                   "nothing any more (suppressed, or a face it used is gone); list_components shows it.")
@@ -6460,8 +6472,7 @@ class SolidWorksSession:
         try:
             for value in values:
                 target = self._joint_angle(dim, unit, value)
-                dim.SystemValue = to_system(target)
-                model.ForceRebuild3(False)
+                self._write_dimension(dim, to_system(target))
                 applied = from_system(dim.SystemValue)
                 if abs(applied - target) > 1e-6:
                     raise SolidWorksError(f"'{dimension}' did not take {value:g} {unit} (it reads {applied:g}): "
@@ -6472,8 +6483,7 @@ class SolidWorksSession:
                     placed = [tuple(place(p) for p in tri) for tri in triangles]
                     sections += [loops for height in heights_mm if (loops := section(placed, key, height))]
         finally:
-            dim.SystemValue = original
-            model.ForceRebuild3(False)
+            self._write_dimension(dim, original)
         if not moved and any(abs(to_system(value) - original) > 1e-12 for value in values):
             raise SolidWorksError(f"Stepping '{dimension}' through {values} moved no part of '{comp.Name2}': its "
                                   "mate holds nothing (suppressed, or a face it used is gone), or it moves something else.")
