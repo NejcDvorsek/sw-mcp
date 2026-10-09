@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.14.0] — 2026-10-09
 
 ### Added
 - `reorder_feature(name, before)` moves a feature, with its sketch, before
