@@ -58,6 +58,7 @@ from .constants import (
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
     SW_END_COND_UP_TO_NEXT,
+    SW_END_COND_UP_TO_SURFACE,
     SW_FEATURE_SCOPE_ALL_BODIES,
     SW_FILE_LOCATIONS_MATERIALS,
     SW_FILLET_OPT_PROPAGATE,
@@ -753,11 +754,12 @@ class SolidWorksSession:
 
     def _extrude_sketch(self, depth_mm: float | None, name: str, sketch: dict, hint: str = "",
                         role: str = "depth", reverse: bool = False, draft_deg: float = 0.0,
-                        merge: bool = True) -> dict:
+                        merge: bool = True, end_face=None) -> dict:
         """Extrude the sketch just closed (it stays selected) depth_mm along its
         normal (reverse: the other way), merged with the body; finish the
         feature and name its depth. depth_mm None runs up to the next face of
-        the part instead, ending on its shape, with no depth to name.
+        the part instead, or up to end_face when given, ending on its shape,
+        with no depth to name.
 
         Shared by every boss. `sketch` is the _define_sketch result, `role` the
         depth's name among the dimensions, `hint` what to check when it fails.
@@ -768,9 +770,16 @@ class SolidWorksSession:
         bodies_before = {body.Name for body in self._part_bodies()}
         feat_mgr = binding.wrap(self._model.FeatureManager, self._mod.IFeatureManager)
         up_to_next = depth_mm is None
+        if end_face is not None:
+            data = binding.wrap(binding.wrap(self._model.SelectionManager, self._mod.ISelectionMgr).CreateSelectData(),
+                                self._mod.ISelectData)
+            data.Mark = 1
+            if not binding.wrap(end_face, self._mod.IEntity).Select4(True, data):
+                raise SolidWorksError("Could not select the face to extrude up to.")
+        end = SW_END_COND_BLIND if not up_to_next else SW_END_COND_UP_TO_SURFACE if end_face else SW_END_COND_UP_TO_NEXT
         extrude = feat_mgr.FeatureExtrusion3(
             True, False, reverse,      # Sd (single dir), Flip, Dir
-            SW_END_COND_UP_TO_NEXT if up_to_next else SW_END_COND_BLIND, 0,  # T1, T2 (end conditions)
+            end, 0,                    # T1, T2 (end conditions)
             0.0 if up_to_next else mm_to_m(depth_mm), 0.0,  # D1 (depth), D2
             bool(draft_deg), False,    # Dchk1 (draft), Dchk2
             draft_deg < 0, False,      # Ddir1 (outward), Ddir2
@@ -4252,20 +4261,71 @@ class SolidWorksSession:
         drew), depth_mm along its normal (reverse=True: the other way), merged
         with the body; or with up_to='next' up to the next face of the part,
         ending on its shape, such as a post into a curved wall, and following
-        it when the wall changes. The sketch's own dimensions come back."""
+        it when the wall changes; or with up_to='@x,y,z' up to the face through
+        that point. The sketch's own dimensions come back."""
         if depth_mm is not None and up_to is not None:
             raise SolidWorksError("Give depth_mm or up_to, not both.")
         if depth_mm is None and up_to is None:
             raise SolidWorksError("extrude_sketch needs depth_mm or up_to='next'.")
-        if up_to not in (None, "next"):
-            raise SolidWorksError(f"Unknown up_to '{up_to}'. Use 'next': up to the next face of the part.")
+        if up_to is not None and up_to != "next" and not str(up_to).strip().startswith("@"):
+            raise SolidWorksError(f"Unknown up_to '{up_to}'. Use 'next': up to the next face of the part, or "
+                                  "'@x,y,z': up to the face through that point.")
         if depth_mm is not None and depth_mm <= 0:
             raise SolidWorksError(f"depth must be > 0 (got {depth_mm}).")
+        end_face = self._part_face_at(self._point_selector(up_to)) if up_to not in (None, "next") else None
         defined = self._select_person_sketch(sketch)
         hint = f"Is '{sketch}' a closed profile?" if up_to is None else (
-            f"Is '{sketch}' a closed profile with a face of the part ahead of it"
+            f"Is '{sketch}' a closed profile with {'that face' if end_face else 'a face of the part'} ahead of it"
             f"{'' if reverse else ' (or behind it: reverse=True)'}?")
-        return self._extrude_sketch(depth_mm, name, defined, hint, reverse=reverse)
+        try:
+            return self._extrude_sketch(depth_mm, name, defined, hint, reverse=reverse, end_face=end_face)
+        except SolidWorksError as exc:
+            if up_to != "next":
+                raise
+            ahead = self._face_ahead(sketch, reverse)
+            if ahead is None:
+                raise
+            # a side of the profile on a face of the part (a strip against a boss) fails 'next' alone
+            raise SolidWorksError(f"{exc} Up to next also fails when a side of the profile lies on a face of the "
+                                  f"part. The face ahead of the profile's middle: up_to='@{ahead}' ends on it.") from exc
+
+    def _face_ahead(self, sketch_name: str, reverse: bool) -> str | None:
+        """Where a ray from the middle of the sketch, along its extrusion,
+        first meets the part: 'x,y,z' in mm for up_to, or None."""
+        sketch = binding.wrap(self._sketch_by_name(sketch_name).GetSpecificFeature2(), self._mod.ISketch)
+        to_model = binding.wrap(binding.wrap(sketch.ModelToSketchTransform, self._mod.IMathTransform).Inverse(),
+                                self._mod.IMathTransform)
+        origin = self._to_model_mm(to_model, 0.0, 0.0, 0.0)
+        normal = [(c - o) * (-1 if reverse else 1) for c, o in zip(self._to_model_mm(to_model, 0.0, 0.0, 0.001), origin)]
+        corners = [s["start_mm"] for s in self.read_sketch(sketch_name)["segments"]
+                   if "start_mm" in s and not s["construction"]]
+        if not corners:
+            return None
+        middle = [sum(c[i] for c in corners) / len(corners) for i in range(3)]
+        model = self._model
+        model.ClearSelection2(True)
+        extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
+        try:
+            if not extension.SelectByRay(*(mm_to_m(c) for c in middle), *normal, mm_to_m(self._ON_FACE_TOLERANCE_MM),
+                                         SW_SEL_FACES, False, 0, 0):
+                return None
+            hit = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr).GetSelectionPoint2(1, -1)
+            return ",".join(f"{m_to_mm(c):.3f}" for c in hit[:3])  # well within the 0.01 mm a face is found by
+        finally:
+            model.ClearSelection2(True)
+
+    def _part_face_at(self, point_mm: list):
+        """The current part's face through point_mm."""
+        def gap(face) -> float:
+            nearest = face.GetClosestPointOn(*(mm_to_m(c) for c in point_mm))
+            return math.dist(point_mm, [m_to_mm(c) for c in nearest[:3]])
+
+        faces = [binding.wrap(f, self._mod.IFace2) for body in self._part_bodies() for f in body.GetFaces() or ()]
+        face = min(faces, key=gap)
+        if gap(face) > self._ON_COMPONENT_FACE_MM:
+            raise SolidWorksError(f"No face of the part goes through ({', '.join(f'{c:g}' for c in point_mm)}): "
+                                  f"the nearest lies {gap(face):.3g} mm away.")
+        return face
 
     def cut_sketch(self, sketch: str, depth_mm: float | None = None, reverse: bool = False,
                    name: str = "Cut") -> dict:

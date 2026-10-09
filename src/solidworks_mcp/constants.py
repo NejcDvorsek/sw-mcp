@@ -15,6 +15,7 @@ SW_DOC_DRAWING = 3
 # swEndConditions_e
 SW_END_COND_BLIND = 0
 SW_END_COND_THROUGH_ALL = 1
+SW_END_COND_UP_TO_SURFACE = 4  # the face selected with mark 1
 SW_END_COND_MID_PLANE = 6
 SW_END_COND_UP_TO_NEXT = 11
 

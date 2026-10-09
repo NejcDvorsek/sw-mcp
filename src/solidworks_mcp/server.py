@@ -548,7 +548,9 @@ async def extrude_sketch(sketch: str, depth_mm: float | None = None, reverse: bo
 
     depth_mm along the sketch's normal (reverse=True: the other way), merged
     with the body. Or up_to='next': up to the next face of the part, ending on
-    its shape (a post into a curved wall) and following it when it changes.
+    its shape (a post into a curved wall) and following it when it changes;
+    or up_to='@x,y,z': up to the face through that point, also where 'next'
+    fails (a side of the profile on a face: the refusal names a point ahead).
     The sketch keeps its own dimensions and relations, so the person's design
     stays in charge; read_sketch shows it first. Returns mass properties.
     """

@@ -283,7 +283,9 @@ stray drag in SolidWorks can change the part.
   the part; from a plane with the part in front of it (a box standing on the
   Front plane) it needs `reverse=True`. A post or rib that must end in a
   curved wall: `extrude_sketch(up_to="next")` ends on the wall's shape and
-  follows it, where no single depth fits. Change the person's dimensions with
+  follows it, where no single depth fits; `up_to="@x,y,z"` ends on the face
+  through that point instead, also where "next" fails because a side of the
+  profile lies on a face. Change the person's dimensions with
   `set_dimension` (names from `read_sketch` or `list_dimensions`). Their
   planes work by name in `add_mirror` and `cut_profile_through_plane`.
 

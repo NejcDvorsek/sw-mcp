@@ -8,6 +8,10 @@ All notable changes to this project are documented here. This project follows
 ### Added
 - `delete_feature(dry_run=True)` lists what a delete would take along
   (`would_delete`) and leaves the part as it is.
+- `extrude_sketch(up_to="@x,y,z")` ends on the face through that point. Up
+  to next fails when a side of the profile lies on a face of the part (a
+  strip against a boss); its refusal now says so and names a point on the
+  face ahead to end on instead.
 
 ### Changed
 - STL exports keep the part's or assembly's own coordinates, also one file

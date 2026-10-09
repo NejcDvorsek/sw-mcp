@@ -9,6 +9,8 @@ import math
 
 import pytest
 
+from solidworks_mcp.errors import SolidWorksError
+
 pytestmark = pytest.mark.solidworks
 
 STADIUM = [{"line": [40, 0]}, {"arc": [40, 20], "tangent": True}, {"line": [0, 20]}, {"arc": [0, 0], "tangent": True}]
@@ -123,3 +125,20 @@ def test_a_post_up_to_the_next_face_ends_on_its_curve(part):
     under = 2 * (1.25 * math.sqrt(100 - 2.5 ** 2) + 50 * math.asin(0.25))  # the circle's height over x -2.5..2.5
     assert vol(post) - before == pytest.approx(10 * (30 * 5 - under), rel=1e-6)
     assert "depth" not in post["dimensions"], "an end up to a face has no depth to change"
+
+
+def test_a_post_ends_on_the_face_through_a_point(part):
+    """Up to next failed for a strip with a side on a boss; an end on a
+    chosen face does not depend on what lies next. A 40 x 20 x 10 block with
+    a step up to z = 20 over x 20..40; a 5 x 5 post from z = 30 over the low
+    half ends on the step's plane (z = 20), not on the block below (z = 10)."""
+    part.add_box(40, 20, 10)
+    part.add_extruded_profile([[20, 0], [40, 0], [40, 20], [20, 20]], 20, name="Step")
+    plane = part.add_plane("front", offset_mm=30)["plane"]
+    sketch = part.add_sketch(plane, [5, 5], [{"line": [10, 5]}, {"line": [10, 10]}, {"line": [5, 10]},
+                                             {"line": [5, 5]}])
+    before = vol(part.get_mass_properties())
+    post = part.extrude_sketch(sketch["sketch"], up_to="@30, 10, 20", reverse=True)
+    assert vol(post) - before == pytest.approx(25 * 10), "the post did not end on the chosen face"
+    with pytest.raises(SolidWorksError, match="nearest lies"):
+        part.extrude_sketch(sketch["sketch"], up_to="@30, 10, 21", reverse=True)
