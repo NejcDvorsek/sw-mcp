@@ -273,25 +273,29 @@ stray drag in SolidWorks can change the part.
     "edge:-x", "hole:CBore1")` measures from the part's left face to the hole
     centre, on the first free row off the view (10, 18, 26 mm ...). A face
     that faces the viewer is refused: use a view that sees it edge-on.
-    `add_dimension_set(..., style="baseline" | "chain")` does rows at once.
-  - `add_section_view(parent, through=[x, y, z], normal="x")` cuts through a
-    model point; `add_detail_view(parent, center=[x, y, z], radius_mm=5)`.
+    `add_dimension(view, "edge:-x", ["hole:H1", "hole:H2"], style="baseline"
+    | "chain" | "ordinate")` does a set at once.
+  - `add_view("section", parent="Drawing View1", through=[x, y, z],
+    normal="x")` cuts through a model point; `add_view("detail", parent=...,
+    center=[x, y, z], radius_mm=5)`.
     A section or detail view keeps the name of its label; the `name` you
     give works as an alias in this session.
   - A model dimension's prefix, tolerance and precision live in the part:
     `edit_annotation` on one changes the part and every drawing of it (the
     result says `changes_part`). Add a drawing dimension to tolerance only
     the drawing.
-  - Ordinate dimensions: `add_dimension_set(view, "edge:-x", [holes...],
-    style="ordinate")`. Symbols attach to an edge mid-way:
-    `add_datum(view, "edge:-z", "A")`, `add_gtol(view, "edge:+z",
-    "parallelism", "0.05", ["A"])`, `add_gtol(view, "hole:H1", "position",
-    "0.1", ["A", "B"], diameter=True, material_condition="MMC")`,
-    `add_surface_finish(view, "edge:+z", "Ra 1.6")`.
-  - Gears: `add_gear_data_table("spur" | "bevel", teeth, module,
-    mating_teeth, ...)` computes the table (span over k teeth, cone angles,
-    chordal thickness); put Teeth / Module / MatingTeeth on the part as custom
-    properties and it reads them. `add_table(rows)` takes any other table.
+  - Symbols attach to an edge mid-way: `add_symbol("datum", view, "edge:-z",
+    label="A")`, `add_symbol("gtol", view, "edge:+z", symbol="parallelism",
+    tolerance="0.05", datums=["A"])`, `add_symbol("gtol", view, "hole:H1",
+    symbol="position", tolerance="0.1", datums=["A", "B"], diameter=True,
+    material_condition="MMC")`, `add_symbol("surface_finish", view,
+    "edge:+z", roughness="Ra 1.6")`, `add_symbol("hole_callout", view,
+    "hole:H1")`.
+  - Gears: `add_table(gear={"kind": "spur" | "bevel", "teeth": 20,
+    "module": 2, "mating_teeth": 40})` computes the table (span over k
+    teeth, cone angles, chordal thickness); put Teeth / Module / MatingTeeth
+    on the part as custom properties and it reads them. `add_table(rows)`
+    takes any other table.
   - Views in a tangle after adding a few: `auto_layout()` lays them all out
     again at the largest scale that fits.
   - Look with `render_drawing(path, zoom_mm=[[x1, y1], [x2, y2]])`; fix

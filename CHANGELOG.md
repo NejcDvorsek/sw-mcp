@@ -15,27 +15,24 @@ All notable changes to this project are documented here. This project follows
   returns the problems `check_drawing` finds, and `keep_open=True` keeps the
   drawing to refine. It wrote neither hole positions nor callouts before,
   and had no border or title block.
-- 33 drawing tools on the current drawing, kept apart from the current
-  part: `new_drawing`, `open_drawing`, `save_drawing`, `export_drawing`
-  (PDF, DXF, DWG, picture), `close_drawing`, `set_drawing_properties`,
-  `add_view`, `add_projected_view`, `add_section_view`, `add_detail_view`,
-  `move_view`, `set_view`, `delete_view`, `list_views`, `import_dimensions`,
-  `add_dimension`, `add_dimension_set`, `add_hole_callout`, `add_note`,
-  `add_center_marks`, `add_surface_finish`, `add_datum`, `add_gtol`,
-  `add_table`, `add_gear_data_table`, `edit_annotation`,
-  `delete_annotation`, `list_annotations`, `arrange_dimensions`,
-  `auto_layout`, `check_drawing`, `render_drawing`, and `build_drawing`,
-  which builds a drawing from a spec.
+- 15 more drawing tools on the current drawing, kept apart from the
+  current part, each family one tool with a switch so a client loads few:
+  `drawing_file` (new, open, save, export to PDF/DXF/DWG/picture, close),
+  `set_drawing_properties`, `add_view` (model, projected, section,
+  detail), `edit_view` (move, change, delete), `list_views` (with the
+  annotations), `import_dimensions` (model dimensions, callouts, hole
+  locations, centre marks), `add_dimension` (single, baseline, chain,
+  ordinate), `add_symbol` (hole callout, surface finish, datum, geometric
+  tolerance), `add_note`, `add_table` (any, or a computed gear data table),
+  `edit_annotation` (or delete), `auto_layout`, `check_drawing`,
+  `render_drawing`, and `build_drawing`, which builds a drawing from a spec.
   Sheet millimetres throughout; dimensions, sections and details are placed
   from model references ('edge:-x', 'hole:CBore1', a model point) instead of
   sheet clicks. A failed drawing call removes what it added.
-- Ordinate dimensions (`add_dimension_set(style="ordinate")`); surface
-  finish, datum and geometric tolerance symbols attached mid-edge
-  (`add_surface_finish`, `add_datum`, `add_gtol`); `add_table`, and
-  `add_gear_data_table`, which computes the gear data of a spur or straight
-  bevel gear; `auto_layout`, which lays a sheet's views out again.
-  `build_drawing` specs take `symbols`, `tables`, `gear_table` and
-  `layout: "auto"` too.
+- Symbols attach to an edge mid-way; gear data tables are computed for
+  spur and straight bevel gears (span over k teeth, cone angles, chordal
+  thickness). `build_drawing` specs take `symbols`, `tables`, `gear_table`
+  and `layout: "auto"`.
 - `add_axis`: a reference axis through a point along a direction, or where
   two planes meet.
 - `add_circular_pattern(axis=...)` turns about a model axis ('y' for a

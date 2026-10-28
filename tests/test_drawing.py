@@ -315,3 +315,28 @@ def test_a_spec_with_symbols_tables_and_layout(sheet, tmp_path):
             "tables": [[["REVISIONS", ""], ["A", "First issue"]]]}
     built = sheet.build_drawing(spec)
     assert len(built["symbols"]) == 3 and len(built["tables"]) == 1 and len(built["dimensions"]) == 3
+
+
+def test_the_merged_tools_end_to_end(sheet, tmp_path):
+    """The one-per-family entry points the MCP server offers."""
+    plate(sheet, tmp_path)
+    assert sheet.drawing_file("new", sheet="A3")["ok"]
+    sheet.add_drawing_view("model", "front", at=[100, 220], scale="1:1", name="front")
+    sheet.add_drawing_view("projected", parent="front", side="below", name="top")
+    sheet.add_drawing_view("section", parent="front", through=[5, 5, 5], normal="y", label="A", name="A-A")
+    imported = sheet.import_annotations(kinds=["callouts", "center_marks"])
+    assert imported["center_marks"] > 0 and len(imported["hole_callouts"]) == 1
+    ordinates = sheet.dimension("front", "edge:-x", ["hole:CBore1", "hole:CBore2"], "ordinate")
+    assert [d["value"] for d in ordinates["dimensions"]] == [0.0, 5.0, 55.0]
+    single = sheet.dimension("top", "edge:+z", "edge:-z")
+    assert single["value"] == pytest.approx(10)
+    assert sheet.add_symbol("gtol", "top", "edge:+z", symbol="flatness", tolerance="0.02")["type"] == "gtol"
+    assert sheet.table(gear={"kind": "spur", "teeth": 20, "module": 2})["type"] == "table"
+    listed = sheet.annotations("front")
+    assert [v["name"] for v in listed["views"]] == ["front"] and listed["views"][0]["annotations"]
+    sheet.edit_view("top", display="hidden_visible")
+    sheet.change_annotation(single["id"], delete=True)
+    laid = sheet.lay_out(arrange_dimensions=True)
+    assert laid["arranged_dimensions"] > 0
+    assert sheet.drawing_file("export", str(tmp_path / "merged.pdf"))["bytes"] > 1000
+    assert sheet.drawing_file("close")["ok"] and sheet._drawing is None

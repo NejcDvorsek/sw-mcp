@@ -2270,6 +2270,215 @@ class DrawingTools:
         return {"ok": True, "path": abs_path, "format": os.path.splitext(abs_path)[1].lstrip(".").lower(),
                 "bytes": os.path.getsize(abs_path)}
 
+    # --- one entry point per tool family ---------------------------------------------
+    #
+    # The MCP server offers each family of drawing operations as one tool, so a
+    # client loads 16 drawing tools instead of 34. These route to the methods
+    # above and refuse arguments that do not belong to the kind asked for.
+
+    @staticmethod
+    def _only(kind: str, given: dict, allowed: set) -> None:
+        stray = sorted(k for k, v in given.items() if v is not None and v is not False and k not in allowed)
+        if stray:
+            raise SolidWorksError(f"{', '.join(stray)} {'does' if len(stray) == 1 else 'do'} not go with {kind}.")
+
+    def drawing_file(self, action: str, path: str | None = None, sheet: str = "A3", part: str | None = None) -> dict:
+        """new (sheet, part) | open (path) | save (path, .slddrw) | export (path:
+        PDF, DXF, DWG, picture) | close: the current drawing's document."""
+        key = str(action).lower()
+        if key == "new":
+            self._only("action 'new'", {"path": path}, set())
+            return self.new_drawing(sheet, part)
+        if key in ("open", "save", "export"):
+            if not path:
+                raise SolidWorksError(f"action '{key}' needs path=...")
+            self._only(f"action '{key}'", {"part": part}, set())
+            return {"open": self.open_drawing, "save": self.save_drawing, "export": self.export_drawing}[key](path)
+        if key == "close":
+            self._only("action 'close'", {"path": path, "part": part}, set())
+            return self.close_drawing()
+        raise SolidWorksError(f"Unknown action '{action}'. Use new, open, save, export or close.")
+
+    def add_drawing_view(self, kind: str = "model", orientation: str = "front", parent: str | None = None,
+                         side: str | None = None, through: list | None = None, normal: str = "x",
+                         label: str | None = None, flip: bool = False, center: list | None = None,
+                         radius_mm: float | None = None, at: list | None = None, beside: str | None = None,
+                         gap_mm: float | None = None, scale=None, name: str | None = None,
+                         part: str | None = None) -> dict:
+        """A view of kind 'model' (orientation; at, or beside + side),
+        'projected' (parent, side), 'section' (parent, through, normal, label,
+        side, flip) or 'detail' (parent, center, radius_mm, scale, label, at)."""
+        key = str(kind).lower()
+        given = {"orientation": None if orientation == "front" else orientation, "parent": parent, "side": side,
+                 "through": through, "normal": None if normal == "x" else normal, "label": label, "flip": flip,
+                 "center": center, "radius_mm": radius_mm, "at": at, "beside": beside, "gap_mm": gap_mm,
+                 "scale": scale, "part": part}
+        if key == "model":
+            self._only("kind 'model'", given, {"orientation", "at", "beside", "side", "gap_mm", "scale", "part"})
+            relative = {"right_of": None, "left_of": None, "above": None, "below": None}
+            if beside:
+                spot = {"right": "right_of", "left": "left_of", "above": "above", "below": "below"}.get(side or "right")
+                if spot is None:
+                    raise SolidWorksError(f"Unknown side '{side}'. Use {', '.join(lay.SIDES)}.")
+                relative[spot] = beside
+            elif side:
+                raise SolidWorksError("side places a model view beside another: give beside='<view>' too.")
+            return self.add_view(orientation, at, *relative.values(), gap_mm, scale, name, part)
+        if not parent:
+            raise SolidWorksError(f"A {key} view needs parent='<view>'.")
+        if key == "projected":
+            self._only("kind 'projected'", given, {"parent", "side", "gap_mm"})
+            return self.add_projected_view(parent, side or "right", gap_mm, name)
+        if key == "section":
+            self._only("kind 'section'", given, {"parent", "through", "normal", "label", "side", "flip", "gap_mm"})
+            if through is None:
+                raise SolidWorksError("A section view needs through=[x, y, z], a model point on the cutting plane.")
+            return self.add_section_view(parent, through, normal, label or "A", side, gap_mm, flip, name)
+        if key == "detail":
+            self._only("kind 'detail'", given, {"parent", "center", "radius_mm", "scale", "label", "at"})
+            if center is None or radius_mm is None:
+                raise SolidWorksError("A detail view needs center=[x, y, z] and radius_mm.")
+            return self.add_detail_view(parent, center, radius_mm, scale, label or "B", at, name)
+        raise SolidWorksError(f"Unknown kind '{kind}'. Use model, projected, section or detail.")
+
+    def edit_view(self, name: str, at: list | None = None, beside: str | None = None, side: str | None = None,
+                  gap_mm: float | None = None, align: str = "center", scale=None, display: str | None = None,
+                  tangent_edges: bool | None = None, new_name: str | None = None, delete: bool = False) -> dict:
+        """Move a view (at, or beside + side), change it (scale, display,
+        tangent_edges, new_name), or delete it."""
+        if delete:
+            self._only("delete", {"at": at, "beside": beside, "side": side, "gap_mm": gap_mm, "scale": scale,
+                                  "display": display, "tangent_edges": tangent_edges, "new_name": new_name}, set())
+            return self.delete_view(name)
+        result = None
+        if any(v is not None for v in (scale, display, tangent_edges, new_name)):
+            result = self.set_view(name, scale, display, tangent_edges, new_name)
+            name = new_name or name
+        if at is not None or beside:
+            relative = {"right": None, "left": None, "above": None, "below": None}
+            if beside:
+                if (side or "right") not in relative:
+                    raise SolidWorksError(f"Unknown side '{side}'. Use {', '.join(lay.SIDES)}.")
+                relative[side or "right"] = beside
+            result = self.move_view(name, at, *relative.values(), gap_mm, align)
+        if result is None:
+            raise SolidWorksError("Say what to change: at / beside to move it, scale, display, tangent_edges, "
+                                  "new_name, or delete=True.")
+        return result
+
+    def dimension(self, view: str, ref, to=None, style: str = "single", direction: str = "auto",
+                  side: str | None = None, offset_mm: float | None = None) -> dict:
+        """style 'single': ref to `to` (or the size of ref); 'baseline' /
+        'chain' / 'ordinate': `to` is a list of references measured from ref."""
+        key = str(style).lower()
+        if key == "single":
+            return self.add_dimension(view, ref, to, direction, side, offset_mm)
+        if key not in ("baseline", "chain", "ordinate"):
+            raise SolidWorksError(f"Unknown style '{style}'. Use single, baseline, chain or ordinate.")
+        if not isinstance(to, (list, tuple)) or not to or all(isinstance(c, (int, float)) for c in to):
+            raise SolidWorksError(f"style '{key}' takes to=[ref, ref, ...], the references measured from ref.")
+        if offset_mm is not None:
+            raise SolidWorksError(f"offset_mm is for a single dimension; a {key} set finds its own rows.")
+        return self.add_dimension_set(view, ref, list(to), key, direction, side)
+
+    def add_symbol(self, type: str, view: str, ref, at: list | None = None, count: bool = True,  # noqa: A002
+                   roughness: str | None = None, process: str = "machined", label: str | None = None,
+                   symbol: str | None = None, tolerance: str | None = None, datums: list | None = None,
+                   diameter: bool = False, material_condition: str | None = None) -> dict:
+        """type 'hole_callout' (ref 'hole:<feature>', count), 'surface_finish'
+        (roughness, process), 'datum' (label) or 'gtol' (symbol, tolerance,
+        datums, diameter, material_condition), attached to an edge of a view."""
+        key = str(type).lower()
+        given = {"roughness": roughness, "process": None if process == "machined" else process, "label": label,
+                 "symbol": symbol, "tolerance": tolerance, "datums": datums, "diameter": diameter,
+                 "material_condition": material_condition, "count": None if count else "False"}
+        if key == "hole_callout":
+            self._only("a hole callout", given, {"count"})
+            hole = str(ref)
+            return self.add_hole_callout(view, hole[5:] if hole.lower().startswith("hole:") else hole, at, count)
+        if key == "surface_finish":
+            self._only("a surface finish", given, {"roughness", "process"})
+            return self.add_surface_finish(view, ref, roughness or "Ra 3.2", process, at)
+        if key == "datum":
+            self._only("a datum", given, {"label"})
+            return self.add_datum(view, ref, label or "A", at)
+        if key == "gtol":
+            self._only("a tolerance frame", given, {"symbol", "tolerance", "datums", "diameter", "material_condition"})
+            if not symbol or tolerance is None:
+                raise SolidWorksError("A tolerance frame needs symbol='flatness' (or ...) and tolerance='0.05'.")
+            return self.add_gtol(view, ref, symbol, tolerance, datums, diameter, material_condition, at)
+        raise SolidWorksError(f"Unknown type '{type}'. Use hole_callout, surface_finish, datum or gtol.")
+
+    def table(self, rows: list | None = None, gear: dict | None = None, at: list | None = None, title: bool = True,
+              text_height_mm: float = 2.5, column_widths_mm: list | None = None) -> dict:
+        """rows [[cell, ...], ...] for any table, or gear={kind, teeth, module,
+        mating_teeth, ...} for a computed gear data table."""
+        if (rows is None) == (gear is None):
+            raise SolidWorksError("Give rows=[[...], ...] for a table, or gear={...} for a gear data table.")
+        if gear is not None:
+            if not isinstance(gear, dict):
+                raise SolidWorksError("gear is a dict: {'kind': 'spur', 'teeth': 20, 'module': 2, ...}.")
+            known = {"kind", "teeth", "module", "mating_teeth", "pressure_angle_deg", "face_width_mm",
+                     "profile_shift", "shaft_angle_deg", "accuracy", "extra_rows"}
+            unknown = sorted(set(gear) - known)
+            if unknown:
+                raise SolidWorksError(f"Unknown gear keys {unknown}; use {sorted(known)}.")
+            return self.add_gear_data_table(**gear, at=at)
+        return self.add_table(rows, at, title, text_height_mm, column_widths_mm)
+
+    def annotations(self, view: str | None = None) -> dict:
+        """list_views with every annotation listed under the view it is in."""
+        listed = self.list_views()
+        entries = self.list_annotations(view)["annotations"]
+        for entry in listed["views"]:
+            entry["annotations"] = [a for a in entries if a["view"] == entry["name"]]
+        if view is not None:
+            target = self._view(view).GetName2()
+            listed["views"] = [v for v in listed["views"] if v["name"] == target]
+            listed["count"] = len(listed["views"])
+        else:
+            listed["sheet_annotations"] = [a for a in entries if a["view"] == "sheet"]
+        return listed
+
+    def import_annotations(self, view: str | None = None, kinds: list | None = None) -> dict:
+        """import_dimensions, with kind 'center_marks' (centre marks and lines) too."""
+        kinds = [str(k).lower() for k in (kinds or ["model", "callouts", "hole_locations"])]
+        marks = "center_marks" in kinds
+        rest = [k for k in kinds if k != "center_marks"]
+        result = self.import_dimensions(view, rest) if rest else {"ok": True, "count": 0, "added": []}
+        if marks:
+            added = []
+            for v in ([self._view(view)] if view else self._views()):
+                added += self.add_center_marks(v.GetName2())["added"]
+            result["center_marks"] = len(added)
+            result["added"] = result.get("added", []) + added
+            result["count"] = len(result["added"])
+        return result
+
+    def lay_out(self, scale=None, main: str | None = None, arrange_dimensions: bool = False) -> dict:
+        """auto_layout, then (arrange_dimensions=True) SolidWorks' auto arrange
+        of every view's dimensions."""
+        result = self.auto_layout(scale, main)
+        if arrange_dimensions:
+            arranged = sum(self.arrange_dimensions(v.GetName2())["arranged"] for v in self._views())
+            result["arranged_dimensions"] = arranged
+            result["problems"] = self.check_drawing()["problems"]
+        return result
+
+    def change_annotation(self, annotation_id: str, prefix: str | None = None, suffix: str | None = None,
+                          precision: int | None = None, tolerance: list | None = None, fit: str | None = None,
+                          text: str | None = None, at: list | None = None, diametric: bool | None = None,
+                          delete: bool = False) -> dict:
+        """edit_annotation, or delete=True."""
+        changes = {"prefix": prefix, "suffix": suffix, "precision": precision, "tolerance": tolerance, "fit": fit,
+                   "text": text, "at": at, "diametric": diametric}
+        if delete:
+            stray = sorted(k for k, v in changes.items() if v is not None)
+            if stray:
+                raise SolidWorksError(f"{', '.join(stray)} do not go with delete.")
+            return self.delete_annotation(annotation_id)
+        return self.edit_annotation(annotation_id, **changes)
+
     # --- rollback -------------------------------------------------------------------
 
     def _drawing_snapshot(self):

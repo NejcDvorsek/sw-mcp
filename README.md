@@ -35,7 +35,7 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete, suppress and reorder features; read, extrude and cut a person's sketches; import STEP. Colours per part or component. Joints with concentric and angle mates, checked over their range. Printability checks. Manufacturing drawings: ISO sheets with a title block, section and detail views, dimensions placed from model references (also baseline, chain and ordinate), counted hole callouts, surface finish, datum and geometric tolerance symbols, tables and computed gear data tables, notes, automatic layout, a sheet check, and drawings built from a spec. Planes at any offset or angle, or through a point square to any direction; axes anywhere, and circular patterns about them; lofts and loft cuts between sketches on any planes. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 122 tools in total, and `run_script` for what none of them covers (off unless allowed).
+  Engraved and embossed text. Work on existing parts: list, delete, suppress and reorder features; read, extrude and cut a person's sketches; import STEP. Colours per part or component. Joints with concentric and angle mates, checked over their range. Printability checks. Manufacturing drawings: ISO sheets with a title block, section and detail views, dimensions placed from model references (also baseline, chain and ordinate), counted hole callouts, surface finish, datum and geometric tolerance symbols, tables and computed gear data tables, notes, automatic layout, a sheet check, and drawings built from a spec. Planes at any offset or angle, or through a point square to any direction; axes anywhere, and circular patterns about them; lofts and loft cuts between sketches on any planes. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 104 tools in total, and `run_script` for what none of them covers (off unless allowed).
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
@@ -264,27 +264,28 @@ The server speaks MCP over **stdio**.
 ### Drawing tools
 
 Sheet millimetres, origin at the sheet's bottom-left corner. Annotations are
-named `<name>@<view>`. Where geometry matters, tools take references into a
+named `<name>@<view>`. Each family of drawing operations is one tool with a
+`kind` / `type` / `action` / `style` switch, so a client loads 16 drawing tools. Where geometry matters, tools take references into a
 view: `edge:-x` (the part's face facing -x, seen edge-on), `hole:<feature>`,
 `feature:<name>`, or a model point `[x, y, z]`.
 
 | Tool | Purpose |
 |---|---|
 | `make_drawing(path, sheet, scale, keep_open)` | The whole drawing in one call: front, top and side views (first angle) plus iso on an ISO sheet with SolidWorks' ISO title block, at the largest standard scale that leaves room for dimensions; model dimensions once each, one counted hole callout per set of identical Hole Wizard holes (`4X ...`), their centres dimensioned, material and mass in the title block; returns `problems`. PDF, `.slddrw`, DXF or DWG |
-| `build_drawing(spec, path)` | A drawing from a JSON spec (views, imports, dimensions, callouts, notes, title block), built from scratch each time; a failing entry is named |
-| `new_drawing(sheet, part)` / `open_drawing(path)` / `save_drawing(path)` / `export_drawing(path)` / `close_drawing()` | The current drawing, kept apart from the current part; exports PDF, DXF, DWG or a picture of the sheet |
+| `build_drawing(spec, path)` | A drawing from a JSON spec (views, layout, imports, dimensions, callouts, symbols, notes, tables, title block), built from scratch each time; a failing entry is named |
+| `drawing_file(action, path, sheet, part)` | The current drawing, kept apart from the current part: `new` on an ISO sheet, `open`, `save`, `export` (PDF, DXF, DWG or a picture of the sheet), `close` |
 | `set_drawing_properties(properties)` | Title block through its linked properties: description, material and weight (`'from part'` links them to the model) on the part; drawn by, dates, revision, company on the drawing |
-| `add_view(orientation, at, right_of, …)` / `add_projected_view(parent, side)` | Model and projected views, placed at a sheet point or beside another view, past views in the way |
-| `add_section_view(parent, through, normal, label)` / `add_detail_view(parent, center, radius_mm, scale)` | Section line and detail circle placed from model geometry |
-| `move_view` / `set_view` / `delete_view` / `list_views` | Relative or absolute placement; scale, display, tangent edges; views with outline, geometry box and model-to-sheet mapping |
-| `import_dimensions(view, kinds)` | Model dimensions (once each), counted hole callouts, hole centre locations |
-| `add_dimension(view, ref, to, direction, side, offset_mm)` / `add_dimension_set(view, base, refs, style)` | Dimensions between references, stacked on free rows; baseline, chain and ordinate sets |
-| `add_surface_finish(view, ref, roughness, process)` / `add_datum(view, ref, label)` / `add_gtol(view, ref, symbol, tolerance, datums, diameter, material_condition)` | ISO 1302 surface texture, datum feature and ISO 1101 tolerance frame, attached to an edge |
-| `add_table(rows, at, title)` / `add_gear_data_table(kind, teeth, module, mating_teeth, …)` | A table on the sheet; the gear data table of a spur or straight bevel gear, computed (from the part's custom properties when not given) |
-| `add_hole_callout(view, hole, at, count)` | Callout linked to the model, counting identical holes |
-| `add_note` / `add_center_marks` / `edit_annotation` / `delete_annotation` / `list_annotations` | Notes, centre marks and lines; prefix, suffix, precision, tolerance, fit, place; ids, texts, values and boxes |
-| `auto_layout(scale, main)` | Lay all views out again around the main one, at the largest standard scale that leaves room for dimensions |
-| `arrange_dimensions(view)` / `check_drawing()` / `render_drawing(path, zoom_mm)` | SolidWorks' auto arrange; the sheet's problems (outside the frame, over the title block, overlapping text, crossing leaders, small text, duplicate dimensions, undimensioned features); a picture of the sheet or a region |
+| `add_view(kind, …)` | A `model` view (front, top, iso, …), or a `projected`, `section` (through a model point, square to an axis) or `detail` view of a parent; placed at a sheet point or beside another view, past views in the way |
+| `edit_view(name, …)` | Move a view (absolute or beside another), change its scale, display, tangent edges or name, or delete it |
+| `list_views(view)` | Frame and title block; each view's outline, geometry box, model-to-sheet mapping and annotations (ids, texts, values, boxes) |
+| `import_dimensions(view, kinds)` | Model dimensions (once each), counted hole callouts, hole centre locations, centre marks and lines |
+| `add_dimension(view, ref, to, style, direction, side, offset_mm)` | Dimensions between references, stacked on free rows; `single`, `baseline`, `chain` or `ordinate` |
+| `add_symbol(type, view, ref, …)` | On an edge: a `hole_callout` linked to the model and counting identical holes, an ISO 1302 `surface_finish`, a `datum`, or an ISO 1101 `gtol` frame |
+| `add_note(text, at, height_mm)` | A note on the sheet |
+| `add_table(rows, gear, at)` | A table on the sheet, or the gear data table of a spur or straight bevel gear, computed (from the part's custom properties when not given) |
+| `edit_annotation(annotation_id, …, delete)` | Prefix, suffix, precision, tolerance, fit, text, place; or delete it |
+| `auto_layout(scale, main, arrange_dimensions)` | Lay all views out again around the main one, at the largest standard scale that leaves room for dimensions; optionally SolidWorks' auto arrange of the dimensions |
+| `check_drawing()` / `render_drawing(path, zoom_mm)` | The sheet's problems (outside the frame, over the title block, overlapping text, crossing leaders, small text, duplicate dimensions, undimensioned features); a picture of the sheet or a region |
 
 ### Assembly tools
 
