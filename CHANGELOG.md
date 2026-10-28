@@ -3,6 +3,55 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Manufacturing drawings. `make_drawing` now lays the views out itself on an
+  ISO sheet (A4 upright, A3 to A0 landscape) with SolidWorks' ISO sheet
+  format and title block, at the largest standard scale with room for
+  dimensions, and adds one counted hole callout per set of identical Hole
+  Wizard holes ('4X ...', kept linked to the model), the holes' centre
+  dimensions, and the part's material and mass in the title block. It
+  returns the problems `check_drawing` finds, and `keep_open=True` keeps the
+  drawing to refine. It wrote neither hole positions nor callouts before,
+  and had no border or title block.
+- 33 drawing tools on the current drawing, kept apart from the current
+  part: `new_drawing`, `open_drawing`, `save_drawing`, `export_drawing`
+  (PDF, DXF, DWG, picture), `close_drawing`, `set_drawing_properties`,
+  `add_view`, `add_projected_view`, `add_section_view`, `add_detail_view`,
+  `move_view`, `set_view`, `delete_view`, `list_views`, `import_dimensions`,
+  `add_dimension`, `add_dimension_set`, `add_hole_callout`, `add_note`,
+  `add_center_marks`, `add_surface_finish`, `add_datum`, `add_gtol`,
+  `add_table`, `add_gear_data_table`, `edit_annotation`,
+  `delete_annotation`, `list_annotations`, `arrange_dimensions`,
+  `auto_layout`, `check_drawing`, `render_drawing`, and `build_drawing`,
+  which builds a drawing from a spec.
+  Sheet millimetres throughout; dimensions, sections and details are placed
+  from model references ('edge:-x', 'hole:CBore1', a model point) instead of
+  sheet clicks. A failed drawing call removes what it added.
+- Ordinate dimensions (`add_dimension_set(style="ordinate")`); surface
+  finish, datum and geometric tolerance symbols attached mid-edge
+  (`add_surface_finish`, `add_datum`, `add_gtol`); `add_table`, and
+  `add_gear_data_table`, which computes the gear data of a spur or straight
+  bevel gear; `auto_layout`, which lays a sheet's views out again.
+  `build_drawing` specs take `symbols`, `tables`, `gear_table` and
+  `layout: "auto"` too.
+- `add_axis`: a reference axis through a point along a direction, or where
+  two planes meet.
+- `add_circular_pattern(axis=...)` turns about a model axis ('y' for a
+  revolved part) or a reference axis by name, all round or over `angle_deg`;
+  it could only turn about a hole's cylinder along z before.
+- `add_loft`: a loft or loft cut through closed sketches by name on any
+  planes. `add_lofted_solid` only stacks profiles on planes parallel to Front.
+- `add_plane(normal=..., through=...)`: the plane through a point square to
+  any direction.
+- `add_sketch(fixed=True)` freezes computed geometry with Fix relations
+  instead of dimensions.
+- `run_script`: Python against the live SolidWorks on the server's COM
+  thread, rebuilt and reported like any modelling call and rolled back when
+  it raises. Off unless the server runs with `--allow-scripts` or
+  `SOLIDWORKS_MCP_ALLOW_SCRIPTS=1`.
+
 ## [0.16.3] — 2026-10-27
 
 ### Fixed

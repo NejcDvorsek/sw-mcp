@@ -28,9 +28,10 @@ import win32com.client
 import win32gui
 
 from . import __version__, binding, free_sketch
+from .advanced import AdvancedTools
+from .drawing import DrawingTools
 from .constants import (
     FEATURE_ERRORS,
-    DRAWING_FORMATS,
     EXPORT_FORMATS,
     IMPORT_FORMATS,
     LENGTH_UNITS,
@@ -58,7 +59,6 @@ from .constants import (
     SW_DOC_DRAWING,
     SW_DOC_PART,
     SW_DONT_REBUILD_ACTIVE_DOC,
-    SW_DWG_PAPER_A4,
     SW_END_COND_BLIND,
     SW_END_COND_MID_PLANE,
     SW_END_COND_THROUGH_ALL,
@@ -87,13 +87,10 @@ from .constants import (
     SW_FM_SWEEP_THREAD,
     SW_FULLY_CONSTRAINED,
     SW_HOR_LINEAR_DIMENSION,
-    SW_IMPORT_ENTIRE_MODEL,
-    SW_INSERT_DIMENSIONS,
     SW_ISO_SCREW_CLEARANCES,
     SW_ISO_SOCKET_COUNTERSUNK,
     SW_ISO_SOCKET_HEAD_CAP,
     SW_ISO_TAPPED_HOLE,
-    SW_PREF_DEFAULT_TEMPLATE_DRAWING,
     SW_RAY_HIT_EXIT,
     SW_RAY_NORMALS_ENTRY_EXIT,
     SW_REF_PLANE_ANGLE,
@@ -149,7 +146,7 @@ from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
-class SolidWorksSession:
+class SolidWorksSession(DrawingTools, AdvancedTools):
     """Holds the SolidWorks connection and the current part document."""
 
     def __init__(self) -> None:
@@ -158,6 +155,10 @@ class SolidWorksSession:
         self._model = None    # current IModelDoc2
         self._quiet_depth = 0  # inside _quiet_ui
         self._to_wake = []     # (document, [(object, property)]) to switch back on after it
+        self._drawing = None   # current drawing (IModelDoc2), apart from the current part
+        self._drawing_model = None  # the model file new views of it show
+        self._frames = {}      # drawing title -> (frame, title block), sheet mm
+        self._view_aliases = {}  # drawing title -> {name given: section/detail view's own name}
 
     # --- connection -----------------------------------------------------------
 
@@ -338,6 +339,10 @@ class SolidWorksSession:
         if len(matches) != 1:
             listed = ", ".join(d.GetTitle() for d in documents) or "none"
             raise SolidWorksError(f"No open document '{title}' (open: {listed}).")
+        if int(matches[0].GetType()) == SW_DOC_DRAWING:  # the drawing tools' document, apart from the part
+            self._drawing = matches[0]
+            self._require_drawing()
+            return {"ok": True, "current_drawing": self._drawing.GetTitle(), **self._document_entry(self._drawing)}
         self._model = matches[0]
         self._require_model()  # SolidWorks' active document too
         return {"ok": True, "current": self._model.GetTitle(), **self._document_entry(self._model)}
@@ -3582,19 +3587,31 @@ class SolidWorksSession:
             return None
         return best
 
-    def add_circular_pattern(self, count: int, center_x_mm: float, center_y_mm: float,
-                             feature_name: str | None = None) -> dict:
+    def add_circular_pattern(self, count: int, center_x_mm: float | None = None, center_y_mm: float | None = None,
+                             feature_name: str | None = None, axis: str | None = None,
+                             angle_deg: float = 360.0) -> dict:
         """Repeat a feature `count` times evenly around 360 deg about an axis.
 
         The axis is the cylindrical face nearest (center_x_mm, center_y_mm) -- e.g.
-        a centre hole drilled there. feature_name defaults to the last feature.
+        a centre hole drilled there -- or `axis`: a reference axis by name
+        (add_axis) or 'x' / 'y' / 'z', the model axis through the origin (a
+        revolved part turns about y). feature_name defaults to the last feature.
         A bolt circle: drill a centre hole + one bolt hole, then pattern the bolt
         hole. Selection marks: axis face = 1, seed feature = 4; the per-instance
-        angle is 360/count degrees.
+        angle is 360/count degrees, or spread over angle_deg (first to last)
+        when that is less than a full turn.
         """
         model = self._require_model()
         if count < 2:
             raise SolidWorksError(f"count must be >= 2 (got {count}).")
+        if not 0.0 < abs(angle_deg) <= 360.0:
+            raise SolidWorksError(f"angle_deg must be up to 360, not 0 (got {angle_deg}).")
+        if axis is not None:
+            return self._circular_pattern_about(axis, count, feature_name or self._last_feature_name(), angle_deg)
+        if center_x_mm is None or center_y_mm is None:
+            raise SolidWorksError("Give the axis: center_x_mm and center_y_mm of a hole, or axis='y' / an axis name.")
+        if abs(angle_deg) != 360.0:
+            raise SolidWorksError("angle_deg is for a pattern about axis=...; about a hole it goes all round.")
 
         body = self._solid_body()
         face = self._cylindrical_face_near(body, center_x_mm, center_y_mm)
@@ -3658,17 +3675,32 @@ class SolidWorksSession:
     _PLANE_NORMALS = {"front": (0.0, 0.0, 1.0), "top": (0.0, 1.0, 0.0), "right": (1.0, 0.0, 0.0)}
 
     def add_plane(self, base: str = "front", offset_mm: float = 0.0, angle_deg: float = 0.0,
-                  about: str | None = None, name: str | None = None) -> dict:
+                  about: str | None = None, name: str | None = None, normal: list | None = None,
+                  through: list | None = None) -> dict:
         """A reference plane to build on, its position a dimension.
 
         Either `base` (front/top/right or a plane by name) moved offset_mm along
         its normal, or a default plane turned angle_deg about the model axis
         `about` that it holds (front holds x and y, top x and z, right y and z),
         by the right-hand rule. For both, turn first and offset that plane next.
+        Or, with normal=[dx, dy, dz] and through=[x, y, z], the plane through
+        that model point square to that direction (e.g. square to a cone's
+        generatrix), placed by a fixed line in a 3D sketch.
         Returns the plane's name and how a sketch on it lies in the model:
         origin_mm, normal, x_axis and y_axis, so a point (u, v) on it is
         origin + u x_axis + v y_axis.
         """
+        if normal is not None or through is not None:
+            if normal is None or through is None or offset_mm or angle_deg:
+                raise SolidWorksError("A plane by normal takes normal=[dx, dy, dz] and through=[x, y, z], alone.")
+            if len(through) != 3:
+                raise SolidWorksError(f"through is a model point [x, y, z] in mm (got {through}).")
+            plane, frame = self._plane_through(through, normal)
+            if name:
+                plane.Name = name
+                if plane.Name != name:
+                    raise SolidWorksError(f"The plane could not be named '{name}' (it is '{plane.Name}'): is the name taken?")
+            return {"ok": True, "plane": plane.Name, **frame}
         if bool(offset_mm) == bool(angle_deg):
             raise SolidWorksError("Give offset_mm or angle_deg (for both: turn first, then offset that plane).")
         key = axis = None
@@ -3750,17 +3782,22 @@ class SolidWorksSession:
         model.ClearSelection2(True)
         return made
 
-    def add_sketch(self, plane: str, start_mm: list, segments: list, name: str | None = None) -> dict:
+    def add_sketch(self, plane: str, start_mm: list, segments: list, name: str | None = None,
+                   fixed: bool = False) -> dict:
         """Draw a chain of lines, arcs and splines on a plane, fully defined (see
         free_sketch): smooth joints get tangent relations, the rest dimensions
         from the origin. Returns the sketch's name for extrude_sketch / cut_sketch,
         its dimensions, the points given (x<i>/y<i> number them) and the plane's
-        frame: [u, v] lies at origin_mm + u x_axis + v y_axis."""
+        frame: [u, v] lies at origin_mm + u x_axis + v y_axis.
+
+        fixed=True freezes the drawn geometry with Fix relations instead of
+        dimensions: for curves computed elsewhere (an involute, a cam), whose
+        points are no designer's dimensions."""
         model = self._require_model()
         self._require_part()
         chain = free_sketch.build_chain(start_mm, segments)
         plan = free_sketch.plan_chain(chain)
-        if not plan.fully_defined:
+        if not plan.fully_defined and not fixed:
             raise SolidWorksError("Could not work out the relations and dimensions for this sketch.")
         ref, label = self._named_plane(plane)
         frame = self._plane_frame(ref)
@@ -3773,7 +3810,14 @@ class SolidWorksSession:
         try:
             drawn = self._draw_chain(sk, chain)
             sketch, definer = self._open_sketch_definer(sk)
-            dimensions = definer.define_chain(plan, drawn, self._chain_sketch_points(drawn, chain))
+            if fixed:
+                model.ClearSelection2(True)
+                for segment in drawn:
+                    binding.wrap(segment, self._mod.ISketchSegment).Select4(True, None)
+                model.SketchAddConstraints("sgFIXED")
+                dimensions = {}
+            else:
+                dimensions = definer.define_chain(plan, drawn, self._chain_sketch_points(drawn, chain))
             fully_defined = definer.fully_defined()
         finally:
             model.ClearSelection2(True)
@@ -3876,17 +3920,19 @@ class SolidWorksSession:
         """
         self._reattach_if_gone()
         snapshot = self._history_snapshot()
+        drawn = self._drawing_snapshot()
         busy = self._command_in_progress(True)
         try:
             with self._quiet_ui():
                 return fn(*args, **kwargs)
         except SolidWorksError as exc:
-            left = self._roll_back(snapshot)
+            left = self._roll_back(snapshot) + self._drawing_roll_back(drawn)
             if left:
                 raise SolidWorksError(f"{exc} Could not remove what the call added: {', '.join(left)}.") from exc
             raise
         except Exception:
             self._roll_back(snapshot)
+            self._drawing_roll_back(drawn)
             raise
         finally:
             self._command_in_progress(busy)
@@ -5590,54 +5636,6 @@ class SolidWorksSession:
         turned = [[sum(p * a for p, a in zip(corner, axis)) for axis in axes]
                   for corner in itertools.product(*zip(*corners_mm))]
         return [min(t[i] for t in turned) for i in range(3)], [max(t[i] for t in turned) for i in range(3)]
-
-    def make_drawing(self, path: str) -> dict:
-        """A 2D drawing of the current part, saved as PDF or as an editable .slddrw.
-
-        Front, top and right views in European (first angle) projection plus an
-        isometric view, on an A4 sheet at the scale SolidWorks picks, with the
-        model's own dimensions, each shown once. The drawing refers to the part's
-        file, so the part must have been saved; unsaved changes show in a PDF
-        but not when a saved drawing is opened later.
-        """
-        fmt = os.path.splitext(path)[1].lstrip(".").lower()
-        if fmt not in DRAWING_FORMATS:
-            raise SolidWorksError(f"A drawing is saved as {' or '.join(sorted(DRAWING_FORMATS))} (got '{fmt}').")
-        self._require_part()
-        part_path = self._model.GetPathName()
-        if not part_path:
-            raise SolidWorksError("Save the part first (save_part): the drawing refers to its file.")
-        template = self._sw.GetUserPreferenceStringValue(SW_PREF_DEFAULT_TEMPLATE_DRAWING)
-        drawing = binding.wrap(self._sw.NewDocument(template, SW_DWG_PAPER_A4, 0.0, 0.0), self._mod.IModelDoc2)
-        if drawing is None:
-            raise SolidWorksError(f"SolidWorks could not start a drawing from the template '{template}'.")
-        try:
-            sheets = binding.wrap(drawing, self._mod.IDrawingDoc)
-            if not sheets.Create1stAngleViews2(part_path):
-                raise SolidWorksError("SolidWorks could not place the front, top and right views.")
-            iso = binding.wrap(sheets.CreateDrawViewFromModelView3(part_path, "*Isometric", 0.24, 0.16, 0.0),
-                               self._mod.IView)
-            if iso is None:
-                raise SolidWorksError("SolidWorks could not place the isometric view.")
-            iso.UseSheetScale = True
-            # DuplicateDims True leaves out repeats: each dimension in one view
-            dimensions = sheets.InsertModelAnnotations3(SW_IMPORT_ENTIRE_MODEL, SW_INSERT_DIMENSIONS,
-                                                        True, True, False, False) or ()
-            views = []
-            view = binding.wrap(sheets.GetFirstView(), self._mod.IView)  # the sheet itself comes first
-            view = binding.wrap(view.GetNextView(), self._mod.IView)
-            while view is not None:
-                views.append(view.GetName2())
-                view = binding.wrap(view.GetNextView(), self._mod.IView)
-            scale = binding.wrap(sheets.GetCurrentSheet(), self._mod.ISheet).GetProperties2()[2:4]
-            abs_path = os.path.abspath(path)
-            self._write_via_saveas3(abs_path, drawing)
-        finally:
-            # saved, the drawing is named after the part ('holed_box - Sheet1'),
-            # so the title it started with no longer closes it (verified)
-            self._sw.CloseDoc(drawing.GetTitle())
-        return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "views": views,
-                "dimensions": len(dimensions), "scale": f"{scale[0]:g}:{scale[1]:g}"}
 
     # --- assemblies -----------------------------------------------------------
     #

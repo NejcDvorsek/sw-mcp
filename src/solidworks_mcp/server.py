@@ -7,6 +7,7 @@ rather than getting an opaque stack trace.
 """
 
 import argparse
+import os
 import sys
 from importlib import resources
 
@@ -45,6 +46,10 @@ Read the resource solidworks://guide for the full guide: recipes (holes, ribs, t
 """
 
 mcp = FastMCP("solidworks-mcp", instructions=INSTRUCTIONS)
+
+# run_script executes any Python it is given: off unless the person starting
+# the server allows it
+_ALLOW_SCRIPTS = os.environ.get("SOLIDWORKS_MCP_ALLOW_SCRIPTS", "").strip().lower() in ("1", "true", "yes")
 
 
 @mcp.resource("solidworks://guide", name="guide", mime_type="text/markdown",
@@ -285,17 +290,20 @@ async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float
 
 @mcp.tool()
 async def add_plane(base: str = "front", offset_mm: float = 0.0, angle_deg: float = 0.0,
-                    about: str | None = None, name: str | None = None) -> dict:
+                    about: str | None = None, name: str | None = None, normal: list | None = None,
+                    through: list | None = None) -> dict:
     """Make a reference plane to sketch on: an offset or a turned plane, its position a dimension.
 
     base moved offset_mm along its normal (base: front/top/right or a plane by
     name), or a default plane turned angle_deg about a model axis it holds,
     about='x'/'y'/'z' (front holds x and y, top x and z, right y and z), by the
-    right-hand rule. For both, turn first, then offset that plane. Returns its
-    name for plane= arguments, and origin_mm, normal, x_axis and y_axis: a point
-    (u, v) on it is origin + u x_axis + v y_axis.
+    right-hand rule. For both, turn first, then offset that plane. Or the plane
+    through model point through=[x, y, z] square to normal=[dx, dy, dz] (any
+    direction, e.g. square to a cone's generatrix). Returns its name for
+    plane= arguments, and origin_mm, normal, x_axis and y_axis: a point (u, v)
+    on it is origin + u x_axis + v y_axis.
     """
-    return await _call(_session.add_plane, base, offset_mm, angle_deg, about, name)
+    return await _call(_session.add_plane, base, offset_mm, angle_deg, about, name, normal, through)
 
 
 @mcp.tool()
@@ -558,7 +566,8 @@ async def extrude_sketch(sketch: str, depth_mm: float | None = None, reverse: bo
 
 
 @mcp.tool()
-async def add_sketch(plane: str, start_mm: list, segments: list, name: str | None = None) -> dict:
+async def add_sketch(plane: str, start_mm: list, segments: list, name: str | None = None,
+                     fixed: bool = False) -> dict:
     """Draw a sketch of lines, arcs and splines on a plane, fully defined, to extrude or cut.
 
     plane: "front", "top", "right" or a plane by name (add_plane). Points are
@@ -573,8 +582,10 @@ async def add_sketch(plane: str, start_mm: list, segments: list, name: str | Non
     tangent relation, the rest is dimensioned from the origin: x<i>/y<i> for
     the i-th point given (points_mm lists them; start_mm is 0), r<k> for the
     radius of segment k. Then extrude_sketch / cut_sketch the returned sketch.
+    fixed=True freezes computed geometry (an involute, a cam) with Fix
+    relations instead of dimensions.
     """
-    return await _call(_session.add_sketch, plane, start_mm, segments, name)
+    return await _call(_session.add_sketch, plane, start_mm, segments, name, fixed)
 
 
 @mcp.tool()
@@ -654,15 +665,56 @@ async def add_linear_pattern(count: int, spacing_mm: float, direction: str = "+x
 
 
 @mcp.tool()
-async def add_circular_pattern(count: int, center_x_mm: float, center_y_mm: float,
-                               feature_name: str | None = None) -> dict:
+async def add_circular_pattern(count: int, center_x_mm: float | None = None, center_y_mm: float | None = None,
+                               feature_name: str | None = None, axis: str | None = None,
+                               angle_deg: float = 360.0) -> dict:
     """Repeat a feature `count` times evenly around 360° about an axis.
 
     The axis is the cylindrical face nearest (center_x_mm, center_y_mm) — e.g. a
-    centre hole drilled there. feature_name defaults to the last feature. Bolt
-    circle: drill a centre hole + one bolt hole, then pattern the bolt hole.
+    centre hole drilled there — or axis='y' (a model axis through the origin:
+    revolved parts turn about y) or a reference axis by name (add_axis).
+    feature_name defaults to the last feature. Bolt circle: drill a centre hole
+    + one bolt hole, then pattern the bolt hole. angle_deg < 360 spreads the
+    instances over that angle, first to last (with axis=).
     """
-    return await _call(_session.add_circular_pattern, count, center_x_mm, center_y_mm, feature_name)
+    return await _call(_session.add_circular_pattern, count, center_x_mm, center_y_mm, feature_name, axis,
+                       angle_deg)
+
+
+@mcp.tool()
+async def add_axis(through: list | None = None, planes: list | None = None, name: str | None = None) -> dict:
+    """A reference axis anywhere: through=[[x, y, z], [dx, dy, dz]] (point and direction, model mm) or where two planes meet (planes=['Plane1', 'right']).
+
+    Patterns turn about it by name (add_circular_pattern(axis=...)).
+    """
+    return await _call(_session.add_axis, through, planes, name)
+
+
+@mcp.tool()
+async def add_loft(sketches: list, cut: bool = False, name: str | None = None) -> dict:
+    """Loft through closed sketches by name (add_sketch on any planes), in order; cut=True cuts the lofted shape away.
+
+    A straight bevel gear's tooth gap is a loft cut between heel and toe
+    profiles. Draw the profiles in the same order and sense so they do not twist.
+    """
+    return await _call(_session.add_loft, sketches, cut, name)
+
+
+@mcp.tool()
+async def run_script(code: str) -> dict:
+    """Run Python against the live SolidWorks, for what no tool covers; only when the server runs with --allow-scripts.
+
+    The script sees sw, model (current part/assembly), drawing, mod (typed
+    interfaces), wrap(obj, mod.IFeature), mm (mm -> m), to_mm, doubles([..])
+    (a VARIANT array) and session (this server's tools). print() is captured
+    and `result = ...` comes back. The part is rebuilt and reported like any
+    modelling call; a script that raises is rolled back. Promote anything you
+    script twice into a real tool.
+    """
+    if not _ALLOW_SCRIPTS:
+        return {"ok": False, "error": "run_script is off: it runs any Python on this computer. Start the server "
+                                      "with --allow-scripts (or SOLIDWORKS_MCP_ALLOW_SCRIPTS=1) to allow it."}
+    return await _call(_session.run_script, code)
 
 
 @mcp.tool()
@@ -1020,16 +1072,344 @@ async def screenshot(path: str, view: str = "iso", zoom_mm: list | None = None,
     return await _call(_session.screenshot, path, view, zoom_mm, show_planes, from_dir)
 
 
-@mcp.tool()
-async def make_drawing(path: str) -> dict:
-    """Make a 2D drawing of the current part: a PDF, or an editable .slddrw.
+# --- drawings -------------------------------------------------------------------
+# Sheet millimetres, origin at the sheet's bottom-left corner. Annotations are
+# named '<name>@<view>'. References into a view: 'edge:-x' (the face facing -x,
+# seen edge-on), 'hole:<feature>', 'feature:<name>' or a model point [x, y, z].
 
-    Front, top and right views in European (first angle) projection plus an
-    isometric view, on an A4 sheet at the scale SolidWorks picks, with the
-    model's own dimensions, each shown once: a dimensioned sketch to print or
-    send. Save the part first (save_part): the drawing refers to its file.
+
+@mcp.tool()
+async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, keep_open: bool = False) -> dict:
+    """Make a manufacturing drawing of the current part in one call: PDF, .slddrw, DXF or DWG.
+
+    Front, top and side views (first angle) plus an iso view on an ISO sheet
+    ('A4' upright, 'A3'..'A0' landscape) with SolidWorks' ISO title block, at
+    the largest standard scale that leaves room for dimensions (or scale='1:2').
+    The model's dimensions come in once each, one hole callout per set of
+    identical Hole Wizard holes ('4X ...'), their centres dimensioned, and the
+    title block shows material and mass. Returns `problems` (check_drawing).
+    keep_open=True keeps it as the current drawing to refine with the other
+    drawing tools. Save the part first (save_part): the drawing refers to its file.
     """
-    return await _call(_session.make_drawing, path)
+    return await _call(_session.make_drawing, path, sheet, scale, keep_open)
+
+
+@mcp.tool()
+async def new_drawing(sheet: str = "A3", part: str | None = None) -> dict:
+    """Start an empty drawing on an ISO sheet ('A4' upright, 'A3'..'A0' landscape) with a title block.
+
+    It becomes the current drawing (apart from the current part). part: the
+    saved .sldprt/.sldasm its views show, by default the current part. Returns
+    the frame, title block and free areas in sheet mm.
+    """
+    return await _call(_session.new_drawing, sheet, part)
+
+
+@mcp.tool()
+async def open_drawing(path: str) -> dict:
+    """Open a .slddrw; it becomes the current drawing."""
+    return await _call(_session.open_drawing, path)
+
+
+@mcp.tool()
+async def save_drawing(path: str) -> dict:
+    """Save the current drawing as an editable .slddrw."""
+    return await _call(_session.save_drawing, path)
+
+
+@mcp.tool()
+async def export_drawing(path: str) -> dict:
+    """Write the current drawing as PDF, DXF, DWG, .slddrw, or a PNG/JPG/TIF picture of the sheet."""
+    return await _call(_session.export_drawing, path)
+
+
+@mcp.tool()
+async def close_drawing() -> dict:
+    """Close the current drawing without saving."""
+    return await _call(_session.close_drawing)
+
+
+@mcp.tool()
+async def set_drawing_properties(properties: dict) -> dict:
+    """Fill the title block through the custom properties its fields show.
+
+    description, material, weight, finish go to the part ('from part' links
+    material / weight to the part's own, so they follow the model); drawn_by,
+    drawn_date, checked_by, checked_date, approved_by, revision, company,
+    part_no, qty or any other name go to the drawing. Returns what each title
+    block field now shows and which properties it has no field for.
+    """
+    return await _call(_session.set_drawing_properties, properties)
+
+
+@mcp.tool()
+async def list_views() -> dict:
+    """The views on the sheet: name, type, scale, outline and geometry box (sheet mm), and the model-to-sheet mapping.
+
+    A model point p (mm) lands on the sheet at origin + p.x * x + p.y * y + p.z * z.
+    Also the frame and title block of the sheet.
+    """
+    return await _call(_session.list_views)
+
+
+@mcp.tool()
+async def add_view(orientation: str = "front", at: list | None = None, right_of: str | None = None,
+                   left_of: str | None = None, above: str | None = None, below: str | None = None,
+                   gap_mm: float | None = None, scale: str | None = None, name: str | None = None,
+                   part: str | None = None) -> dict:
+    """Add a model view: 'front', 'top', 'right', 'left', 'back', 'bottom', 'iso' or a named view ('*Name').
+
+    Placed with its geometry centred on at=[x, y] (sheet mm), or beside another
+    view (right_of='Drawing View1'; gap_mm, default room for two rows of
+    dimensions, past any view in the way). scale '1:2'. Warns when it overlaps.
+    """
+    return await _call(_session.add_view, orientation, at, right_of, left_of, above, below, gap_mm, scale,
+                       name, part)
+
+
+@mcp.tool()
+async def add_projected_view(parent: str, side: str = "right", gap_mm: float | None = None,
+                             name: str | None = None) -> dict:
+    """Project a view from `parent` to its 'right', 'left', 'above' or 'below' (first angle), aligned with it."""
+    return await _call(_session.add_projected_view, parent, side, gap_mm, name)
+
+
+@mcp.tool()
+async def add_section_view(parent: str, through: list, normal: str = "x", label: str = "A",
+                           side: str | None = None, gap_mm: float | None = None, flip: bool = False,
+                           name: str | None = None) -> dict:
+    """Section view of `parent`, cut by the plane through model point `through` (mm) square to model axis `normal`.
+
+    The section line is placed from the model, not drawn by hand. The view
+    goes beside the parent, square to the line, where there is room (or
+    `side`); flip=True looks the other way.
+    """
+    return await _call(_session.add_section_view, parent, through, normal, label, side, gap_mm, flip, name)
+
+
+@mcp.tool()
+async def add_detail_view(parent: str, center: list, radius_mm: float, scale: str | None = None,
+                          label: str = "B", at: list | None = None, name: str | None = None) -> dict:
+    """Detail view of the circle around model point `center` (mm) with model radius radius_mm.
+
+    Enlarged to scale (default about 2.5x the parent, a standard scale), placed
+    at at=[x, y] (sheet mm) or in free room.
+    """
+    return await _call(_session.add_detail_view, parent, center, radius_mm, scale, label, at, name)
+
+
+@mcp.tool()
+async def move_view(name: str, at: list | None = None, right_of: str | None = None, left_of: str | None = None,
+                    above: str | None = None, below: str | None = None, gap_mm: float | None = None,
+                    align: str = "center") -> dict:
+    """Move a view: its geometry centred on at=[x, y] (sheet mm), or beside another view with gap_mm between.
+
+    Projected and section views stay aligned with their parent, so they only
+    move along that line. align 'center' or 'start' (line up the edges).
+    """
+    return await _call(_session.move_view, name, at, right_of, left_of, above, below, gap_mm, align)
+
+
+@mcp.tool()
+async def set_view(name: str, scale: str | None = None, display: str | None = None,
+                   tangent_edges: bool | None = None, new_name: str | None = None) -> dict:
+    """Change a view: scale ('1:2' or 'sheet'), display ('hidden_removed', 'hidden_visible', 'wireframe', 'shaded', 'shaded_edges'), tangent edges, name."""
+    return await _call(_session.set_view, name, scale, display, tangent_edges, new_name)
+
+
+@mcp.tool()
+async def delete_view(name: str) -> dict:
+    """Delete a view with its annotations."""
+    return await _call(_session.delete_view, name)
+
+
+@mcp.tool()
+async def import_dimensions(view: str | None = None, kinds: list | None = None) -> dict:
+    """Bring the model's annotations in: kinds 'model' (dimensions, each once), 'callouts', 'hole_locations'.
+
+    callouts: one hole callout per set of identical Hole Wizard holes, counted
+    ('4X ...'); hole_locations: their centres dimensioned from the left and
+    bottom edges. Default all three, into every view (or one).
+    """
+    return await _call(_session.import_dimensions, view, kinds)
+
+
+@mcp.tool()
+async def add_dimension(view: str, ref: str | list, to: str | list | None = None, direction: str = "auto",
+                        side: str | None = None, offset_mm: float | None = None) -> dict:
+    """Dimension between two references in a view, or the size of one (a hole's diameter, a fillet's radius).
+
+    ref / to: 'edge:-x' (the face facing -x, seen edge-on), 'hole:M4_CBore_1'
+    (its centre; alone its diameter), 'feature:CornerFillet', or a model point
+    [x, y, z] (the edge nearest it). direction 'auto', 'horizontal', 'vertical',
+    'aligned'. side 'below', 'above', 'left', 'right' (default nearer the
+    geometry); offset_mm from the view outline (default the first free row:
+    10, 18, 26 ...). Returns its id, value and box, with warnings on overlaps.
+    """
+    return await _call(_session.add_dimension, view, ref, to, direction, side, offset_mm)
+
+
+@mcp.tool()
+async def add_dimension_set(view: str, base: str | list, refs: list, style: str = "baseline",
+                            direction: str = "auto", side: str | None = None) -> dict:
+    """Several dimensions at once: 'baseline' (each ref from base, one row each), 'chain' (base -> ref1 -> ref2 in one row) or 'ordinate' (base is 0, each ref its distance)."""
+    return await _call(_session.add_dimension_set, view, base, refs, style, direction, side)
+
+
+@mcp.tool()
+async def add_hole_callout(view: str, hole: str, at: list | None = None, count: bool = True) -> dict:
+    """Hole callout on a hole feature (diameter, depth, counterbore, countersink, thread), linked to the model.
+
+    count=True counts identical holes showing in the view into it ('4X ...').
+    at=[x, y]: where the text goes (sheet mm); by default above or below the
+    view, clear of other text.
+    """
+    return await _call(_session.add_hole_callout, view, hole, at, count)
+
+
+@mcp.tool()
+async def add_surface_finish(view: str, ref: str | list, roughness: str = "Ra 3.2", process: str = "machined",
+                             at: list | None = None) -> dict:
+    """Surface texture symbol (ISO 1302) on an edge of a view: roughness 'Ra 1.6'; process 'machined', 'any' or 'no_removal'.
+
+    ref as in add_dimension ('edge:+z', a model point). at=[x, y] (sheet mm),
+    by default off the view straight out from the edge.
+    """
+    return await _call(_session.add_surface_finish, view, ref, roughness, process, at)
+
+
+@mcp.tool()
+async def add_datum(view: str, ref: str | list, label: str = "A", at: list | None = None) -> dict:
+    """Datum feature symbol (lettered box on a filled triangle) on an edge of a view; ref as in add_dimension."""
+    return await _call(_session.add_datum, view, ref, label, at)
+
+
+@mcp.tool()
+async def add_gtol(view: str, ref: str | list, symbol: str, tolerance: str, datums: list | None = None,
+                   diameter: bool = False, material_condition: str | None = None, at: list | None = None) -> dict:
+    """Geometric tolerance frame (ISO 1101) with a leader to an edge of a view.
+
+    symbol: straightness, flatness, circularity, cylindricity, line_profile,
+    surface_profile, parallelism, perpendicularity, angularity, position,
+    concentricity, symmetry, runout, total_runout. tolerance '0.05'; datums
+    ['A', 'B']; diameter=True for a round zone; material_condition 'MMC'/'LMC'.
+    """
+    return await _call(_session.add_gtol, view, ref, symbol, tolerance, datums, diameter, material_condition, at)
+
+
+@mcp.tool()
+async def add_table(rows: list, at: list | None = None, title: bool = True, text_height_mm: float = 2.5,
+                    column_widths_mm: list | None = None) -> dict:
+    """A table on the sheet: rows [[cell, ...], ...]; title=True merges the first row; at=[x, y] its top-left corner (sheet mm), by default free room."""
+    return await _call(_session.add_table, rows, at, title, text_height_mm, column_widths_mm)
+
+
+@mcp.tool()
+async def add_gear_data_table(kind: str = "spur", teeth: int | None = None, module: float | None = None,
+                              mating_teeth: int | None = None, pressure_angle_deg: float = 20.0,
+                              face_width_mm: float | None = None, profile_shift: float = 0.0,
+                              shaft_angle_deg: float = 90.0, accuracy: str | None = None,
+                              extra_rows: list | None = None, at: list | None = None) -> dict:
+    """The gear data table, computed: 'spur' (diameters, span over k teeth, centre distance) or 'bevel' (straight: cone angles, cone distance, chordal thickness and height, crown to apex).
+
+    teeth, module and mating_teeth default to the part's custom properties
+    Teeth, Module, MatingTeeth. extra_rows [[label, value], ...] (material,
+    backlash, ...). Returns the computed values in `gear`.
+    """
+    return await _call(_session.add_gear_data_table, kind, teeth, module, mating_teeth, pressure_angle_deg,
+                       face_width_mm, profile_shift, shaft_angle_deg, accuracy, extra_rows, at)
+
+
+@mcp.tool()
+async def auto_layout(scale: str | None = None, main: str | None = None) -> dict:
+    """Lay out all views again: the main view top left, its projected and section views beside it, the rest in the room left, with room for dimensions, at the largest standard scale that fits (or scale)."""
+    return await _call(_session.auto_layout, scale, main)
+
+
+@mcp.tool()
+async def add_note(text: str, at: list | None = None, height_mm: float = 3.5) -> dict:
+    """A note on the sheet; at=[x, y] its top-left corner (sheet mm), by default above the title block. Lines: '\\n'."""
+    return await _call(_session.add_note, text, at, height_mm)
+
+
+@mcp.tool()
+async def add_center_marks(view: str, holes: bool = True, fillets: bool = False, centerlines: bool = True) -> dict:
+    """Centre marks on the holes (and fillets) of a view, and centre lines on cylinders seen from the side."""
+    return await _call(_session.add_center_marks, view, holes, fillets, centerlines)
+
+
+@mcp.tool()
+async def list_annotations(view: str | None = None) -> dict:
+    """Annotations on the sheet or in one view: id, type, shown text, value (mm), bounding box (sheet mm)."""
+    return await _call(_session.list_annotations, view)
+
+
+@mcp.tool()
+async def edit_annotation(annotation_id: str, prefix: str | None = None, suffix: str | None = None,
+                          precision: int | None = None, tolerance: list | None = None, fit: str | None = None,
+                          text: str | None = None, at: list | None = None, diametric: bool | None = None) -> dict:
+    """Change an annotation by id ('RD3@Drawing View1').
+
+    prefix / suffix (a prefix replaces SolidWorks' own symbol: a radius needs
+    'R', e.g. '4X R'), precision (decimals), tolerance [upper, lower] mm, fit
+    ('H7'), a note's text, its place at=[x, y] (sheet mm), diametric=True.
+    """
+    return await _call(_session.edit_annotation, annotation_id, prefix, suffix, precision, tolerance, fit, text,
+                       at, diametric)
+
+
+@mcp.tool()
+async def delete_annotation(annotation_id: str) -> dict:
+    """Delete an annotation by id ('RD3@Drawing View1')."""
+    return await _call(_session.delete_annotation, annotation_id)
+
+
+@mcp.tool()
+async def arrange_dimensions(view: str) -> dict:
+    """Let SolidWorks space a view's dimensions evenly off the geometry, then report the problems left there."""
+    return await _call(_session.arrange_dimensions, view)
+
+
+@mcp.tool()
+async def check_drawing() -> dict:
+    """Problems on the sheet, to fix before sending the drawing out.
+
+    Views or annotations outside the frame or over the title block, views
+    overlapping, texts overlapping or on view geometry, crossing leaders, text
+    under 2.5 mm, probable duplicate dimensions, and hole/cut/fillet/chamfer
+    features no dimension or callout covers.
+    """
+    return await _call(_session.check_drawing)
+
+
+@mcp.tool()
+async def render_drawing(path: str, zoom_mm: list | None = None) -> dict:
+    """Picture (PNG/JPG) of the sheet, or of the region zoom_mm = [[x1, y1], [x2, y2]] (sheet mm), to look at it."""
+    return await _call(_session.render_drawing, path, zoom_mm)
+
+
+@mcp.tool()
+async def build_drawing(spec: dict, path: str | None = None) -> dict:
+    """Build a drawing from scratch from a spec; edit the spec and rebuild to fine-tune.
+
+    spec: {"part": path (default the current part), "sheet": "A3",
+    "scale": "1:2", "views": [{"name": "front", "orient": "front", "at": [x, y]},
+    {"name": "side", "projected_from": "front", "side": "right"},
+    {"name": "A-A", "section_of": "front", "through": [x, y, z], "normal": "x"},
+    {"name": "B", "detail_of": "front", "center": [x, y, z], "radius": 5}],
+    "import": ["model", "callouts", "hole_locations"],
+    "dims": [{"view": "front", "ref": "edge:-x", "to": "hole:H1"},
+    {"view": "front", "chain": ["edge:-x", "hole:H1", "hole:H2"]}],
+    "callouts": [{"view": "front", "hole": "H1"}],
+    "symbols": [{"type": "datum", "view": "top", "ref": "edge:-z", "label": "A"},
+    {"type": "gtol", "view": "top", "ref": "edge:+z", "symbol": "parallelism",
+    "tolerance": "0.05", "datums": ["A"]}, {"type": "surface_finish", ...}],
+    "notes": ["..."], "tables": [[["a", "b"], ...]], "gear_table": {"kind":
+    "spur", "teeth": 20, "module": 2}, "props": {"material": "from part"},
+    "layout": "auto"}. Saved to path when given. Returns what was made and the
+    problems check_drawing finds.
+    """
+    return await _call(_session.build_drawing, spec, path)
 
 
 @mcp.tool()
@@ -1230,7 +1610,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="solidworks-mcp", description="MCP server for a running SolidWorks.")
     parser.add_argument("--selftest", action="store_true",
                         help="check this machine's SolidWorks with a few small parts, print a report and exit")
-    selftest = parser.parse_args().selftest
+    parser.add_argument("--allow-scripts", action="store_true",
+                        help="let the run_script tool run Python against SolidWorks (it can run anything)")
+    args = parser.parse_args()
+    selftest = args.selftest
+    if args.allow_scripts:
+        global _ALLOW_SCRIPTS
+        _ALLOW_SCRIPTS = True
     try:
         if not selftest:
             mcp.run()

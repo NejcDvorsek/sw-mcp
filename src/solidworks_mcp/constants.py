@@ -74,6 +74,9 @@ SW_REF_PLANE_FLIP = 256
 # the plane (selected first, mark 0) and Coincident with the axis (mark 1).
 SW_REF_PLANE_COINCIDENT = 4
 SW_REF_PLANE_ANGLE = 16
+# A plane through a point square to a line (add_plane with normal): Perpendicular
+# to the line (mark 0) and Coincident with its start point (mark 1).
+SW_REF_PLANE_PERPENDICULAR = 2
 
 # IFeatureManager.InsertMirrorFeature2 (verified): selection marks for what to
 # mirror (features 1, a body 256) and the mirror plane (2); swFeatureScope_e.
@@ -250,13 +253,83 @@ SW_SAVE_AS_OPTIONS_SILENT = 1
 SW_VIEW_ISOMETRIC = 7
 VIEWS = {"front": 1, "back": 2, "left": 3, "right": 4, "top": 5, "bottom": 6, "iso": SW_VIEW_ISOMETRIC}
 
-# Drawings (make_drawing): an A4 sheet (swDwgPaperSizes_e) with the model's
-# dimensions (IDrawingDoc.InsertModelAnnotations3: swImportModelItemsSource_e,
-# swInsertAnnotation_e dimensions + those marked for drawings).
-SW_DWG_PAPER_A4 = 6
+# Drawings (drawing.py). swDwgPaperSizes_e / swDwgTemplates_e sit in
+# drawing_layout.SHEETS; swDwgTemplateCustom takes a sheet format file.
+SW_FILE_LOCATIONS_SHEET_FORMAT = 7   # swFileLocationsSheetFormat
+SW_DWG_TEMPLATE_CUSTOM = 12
+SW_DETAILING_DIMENSION_STANDARD = 13           # swUserPreferenceIntegerValue_e
+SW_DETAILING_STANDARD_ISO = 2                  # swDetailingStandard_e
+SW_DETAILING_DIM_TRAILING_ZERO = 15
+SW_DIM_REMOVE_TRAILING_ZEROES = 2              # swDetailingDimTrailingZero_e
+SW_UNIT_SYSTEM = 263                           # swUnitSystem
+SW_UNIT_SYSTEM_CUSTOM = 4
+SW_UNITS_MASS = 259                            # swUnitsMassPropMass
+SW_UNITS_MASS_GRAMS = 2
+SW_UNITS_MASS_KILOGRAMS = 3
+SW_UNITS_MASS_DECIMALS = 261                   # swUnitsMassPropDecimalPlaces
+SW_VIEW_ENTITY_EDGE = 1                        # swViewEntityType_e
+# IDrawingDoc.InsertModelAnnotations3: swImportModelItemsSource_e and
+# swInsertAnnotation_e (dimensions + those marked for drawings)
 SW_IMPORT_ENTIRE_MODEL = 0
 SW_INSERT_DIMENSIONS = 8 | 32768
-DRAWING_FORMATS = {"pdf", "slddrw"}
+# swAnnotationType_e
+SW_ANNOTATION_DIMENSION = 4
+SW_ANNOTATION_NOTE = 6
+SW_ANNOTATION_CENTER_MARK = 13
+SW_ANNOTATION_CENTERLINE = 15
+SW_ANNOTATION_OWNER_TEMPLATE = 2                # swAnnotationOwner_e: the sheet format's own notes
+ANNOTATION_TYPES = {SW_ANNOTATION_CENTER_MARK: "center_mark", SW_ANNOTATION_CENTERLINE: "centerline",
+                    1: "cosmetic_thread", 2: "datum", 5: "gtol", 7: "surface_finish", 14: "table"}
+# swDimensionTextParts_e. A hole callout shows its first line in CALLOUT_ABOVE
+# and keeps it with the model's variables in CALLOUT_ABOVE_DEFINITION
+SW_DIMENSION_TEXT_PREFIX = 1
+SW_DIMENSION_TEXT_SUFFIX = 2
+SW_DIMENSION_TEXT_CALLOUT_ABOVE = 3
+SW_DIMENSION_TEXT_PREFIX_DEFINITION = 5
+SW_DIMENSION_TEXT_CALLOUT_ABOVE_DEFINITION = 7
+SW_ALIGN_AUTO_ARRANGE = 0                      # swAlignDimensionType_e
+SW_DELETE_NO_OPTION = 0
+SW_CUSTOM_INFO_TEXT = 30                       # swCustomInfoType_e
+SW_CUSTOM_PROPERTY_REPLACE = 2                 # swCustomPropertyAddOption_e
+SW_CREATE_SECTION_CHANGE_DIRECTION = 4         # swCreateSectionViewAtOptions_e
+SW_DET_VIEW_STANDARD = 0                       # swDetViewStyle_e
+SW_DET_CIRCLE_CIRCLE = 1                       # swDetCircleShowType_e
+SW_AUTO_CENTER_MARK_HOLES = 1                  # swAutoInsertCenterMarkTypes_e
+SW_AUTO_CENTER_MARK_FILLETS = 2
+SW_CENTER_MARK_SINGLE = 2                      # swCenterMarkConnectionLine_e
+SW_TANGENT_EDGES_HIDDEN = 0                    # swDisplayTangentEdges_e
+SW_TANGENT_EDGES_VISIBLE = 2
+# IDisplayDimension.Type2 (swDimensionType_e)
+DIMENSION_KINDS = {1: "ordinate", 2: "linear", 3: "angular", 4: "arc_length", 5: "radius", 6: "diameter",
+                   7: "horizontal_ordinate", 8: "vertical_ordinate", 10: "chamfer", 11: "horizontal",
+                   12: "vertical"}
+# IView.Type (swDrawingViewTypes_e)
+VIEW_TYPES = {1: "sheet", 2: "section", 3: "detail", 4: "projected", 5: "auxiliary", 6: "standard",
+              7: "named", 8: "relative"}
+# IView.SetDisplayMode4 (swDisplayMode_e)
+VIEW_DISPLAY_MODES = {"wireframe": 0, "hidden_visible": 1, "hidden_removed": 2, "shaded": 3, "shaded_edges": 7}
+# IDimensionTolerance.Type (swTolType_e)
+TOLERANCE_TYPES = {"none": 0, "basic": 1, "bilateral": 2, "limit": 3, "symmetric": 4, "min": 5, "max": 6,
+                   "fit": 7, "fit_with_tolerance": 8, "fit_tolerance_only": 9}
+# IDrawingDoc.AddOrdinateDimension2 (swAddOrdinateDims_e)
+SW_ORDINATE_VERTICAL = 2
+SW_ORDINATE_HORIZONTAL = 3
+# Symbols: swLeaderStyle_e, swArrowStyle_e, and the slot of an ISFSymbol's
+# roughness value (swSurfaceFinishSymbolText_e)
+SW_LEADER_STRAIGHT = 1
+SW_ARROW_CLOSED = 1
+SW_SF_ROUGHNESS = 8
+# InsertSurfaceFinishSymbol3's SymType (swSFSymType_e)
+SURFACE_FINISH_PROCESSES = {"any": 0, "machined": 1, "no_removal": 2}
+# Geometric characteristics as SolidWorks' gtol97.sym names them, for IGtol.SetFrameSymbols2
+GTOL_SYMBOLS = {"straightness": "<GTOL-STRAIGHT>", "flatness": "<GTOL-FLAT>", "circularity": "<GTOL-CIRC>",
+                "roundness": "<GTOL-CIRC>", "cylindricity": "<GTOL-CYL>", "line_profile": "<GTOL-LPROF>",
+                "surface_profile": "<GTOL-SPROF>", "parallelism": "<GTOL-PARA>",
+                "perpendicularity": "<GTOL-PERP>", "angularity": "<GTOL-ANGULAR>", "position": "<GTOL-POSI>",
+                "concentricity": "<GTOL-CONC>", "coaxiality": "<GTOL-CONC>", "symmetry": "<GTOL-SYMMETRY>",
+                "runout": "<GTOL-SRUN>", "total_runout": "<GTOL-TRUN>"}
+SW_TABLE_ANCHOR_TOP_LEFT = 1                   # swBOMConfigurationAnchorType_e
+DRAWING_EXPORTS = {"pdf", "dxf", "dwg", "png", "jpg", "tif", "slddrw"}
 
 # swRayPtsOpts_e (IModelDoc2.RayIntersections): hit normals, and entry/exit
 # points. Each hit comes back as 9 doubles: body, ray, hit type, x y z, nx ny nz.

@@ -220,7 +220,17 @@ stray drag in SolidWorks can change the part.
   nominal diameter. Internal: drill the ISO basic minor diameter first,
   D - 1.0825 P (M10x1.5 -> 8.376 mm); the error tells you the value.
 - **Patterns**: `add_linear_pattern`, `add_circular_pattern` (the axis is the
-  cylindrical face nearest the centre you give).
+  cylindrical face nearest the centre you give, or `axis='y'` for a revolved
+  part, which turns about y, or any axis made with `add_axis`).
+- **Gears and other lofted cuts**: draw each section with `add_sketch` on its
+  own plane (`add_plane(normal=..., through=...)` makes one square to a cone's
+  generatrix; `fixed=True` keeps a computed involute as drawn), then
+  `add_loft([heel, toe], cut=True)` and `add_circular_pattern(z, axis='y')`.
+  Draw the sections in the same order and sense, or the loft twists.
+- **Something no tool does**: `run_script(code)` (when the server allows it)
+  runs Python with `sw`, `model`, `mod`, `wrap` and `session` at hand; the part
+  is rebuilt and reported afterwards and rolled back if the script raises.
+  Script it once, then ask for a tool.
 - **Mirror**: `add_mirror(plane, offset_mm, features)` mirrors features about
   the Front/Top/Right plane moved `offset_mm` (z / y / x = offset). Put the
   plane where the copies land in material: a box spans x 0..w, so mirror about
@@ -248,10 +258,45 @@ stray drag in SolidWorks can change the part.
   bodies the tools act on the first. A file holding an assembly opens with
   `open_assembly` instead: its parts come in as components at their places,
   ready for `list_components` and `add_mate`.
-- **Drawings**: `make_drawing("part.pdf")` puts front, top and right views
-  (first angle) and an isometric view on A4 with the model's own dimensions,
-  each shown once, so a fully dimensioned part gives a complete sketch to
-  print or send; `.slddrw` keeps it editable. Save the part first.
+- **Drawings**: save the part, then `make_drawing("part.pdf", sheet="A3")`
+  lays out front, top and side views (first angle) and an iso view on an ISO
+  sheet with a title block, at the largest standard scale with room for
+  dimensions. It brings in the model's dimensions once each, one callout per
+  set of identical Hole Wizard holes ('4X ...', linked to the model), their
+  centres, and material and mass in the title block. Read its `problems`
+  (the same list `check_drawing` gives) before sending it out.
+  - To refine it, `make_drawing(..., keep_open=True)` and use the drawing
+    tools; they work on the current drawing, apart from the current part.
+    Everything is in sheet mm from the bottom-left corner; `list_views` gives
+    each view's geometry box and how model points map onto the sheet.
+  - Dimension by reference, not by clicking: `add_dimension("Drawing View1",
+    "edge:-x", "hole:CBore1")` measures from the part's left face to the hole
+    centre, on the first free row off the view (10, 18, 26 mm ...). A face
+    that faces the viewer is refused: use a view that sees it edge-on.
+    `add_dimension_set(..., style="baseline" | "chain")` does rows at once.
+  - `add_section_view(parent, through=[x, y, z], normal="x")` cuts through a
+    model point; `add_detail_view(parent, center=[x, y, z], radius_mm=5)`.
+    A section or detail view keeps the name of its label; the `name` you
+    give works as an alias in this session.
+  - A model dimension's prefix, tolerance and precision live in the part:
+    `edit_annotation` on one changes the part and every drawing of it (the
+    result says `changes_part`). Add a drawing dimension to tolerance only
+    the drawing.
+  - Ordinate dimensions: `add_dimension_set(view, "edge:-x", [holes...],
+    style="ordinate")`. Symbols attach to an edge mid-way:
+    `add_datum(view, "edge:-z", "A")`, `add_gtol(view, "edge:+z",
+    "parallelism", "0.05", ["A"])`, `add_gtol(view, "hole:H1", "position",
+    "0.1", ["A", "B"], diameter=True, material_condition="MMC")`,
+    `add_surface_finish(view, "edge:+z", "Ra 1.6")`.
+  - Gears: `add_gear_data_table("spur" | "bevel", teeth, module,
+    mating_teeth, ...)` computes the table (span over k teeth, cone angles,
+    chordal thickness); put Teeth / Module / MatingTeeth on the part as custom
+    properties and it reads them. `add_table(rows)` takes any other table.
+  - Views in a tangle after adding a few: `auto_layout()` lays them all out
+    again at the largest scale that fits.
+  - Look with `render_drawing(path, zoom_mm=[[x1, y1], [x2, y2]])`; fix
+    what `check_drawing` lists. `build_drawing(spec)` rebuilds a drawing
+    from a spec, so fine-tuning is editing the spec, not the sheet.
 - **Open documents**: `list_documents` lists what SolidWorks has open;
   `activate_document(title)` makes one current again, also a new part that was
   never saved (after `open_part` and `close_part` on another).

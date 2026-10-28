@@ -35,7 +35,7 @@ it "looks about right".
   holes, counterbores, slots and pockets on any face; rounded polygon corners; ISO holes from the Hole Wizard; real ISO metric threads;
   fillets, chamfers, shells, patterns, mirrors, ribs, equations and materials. Assemblies
   with mates and interference checks. STEP/STL/3MF export and screenshots.
-  Engraved and embossed text. Work on existing parts: list, delete, suppress and reorder features; read, extrude and cut a person's sketches; import STEP. Colours per part or component. Joints with concentric and angle mates, checked over their range. Printability checks and dimensioned drawings. Planes at any offset or angle. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 86 tools in total.
+  Engraved and embossed text. Work on existing parts: list, delete, suppress and reorder features; read, extrude and cut a person's sketches; import STEP. Colours per part or component. Joints with concentric and angle mates, checked over their range. Printability checks. Manufacturing drawings: ISO sheets with a title block, section and detail views, dimensions placed from model references (also baseline, chain and ordinate), counted hole callouts, surface finish, datum and geometric tolerance symbols, tables and computed gear data tables, notes, automatic layout, a sheet check, and drawings built from a spec. Planes at any offset or angle, or through a point square to any direction; axes anywhere, and circular patterns about them; lofts and loft cuts between sketches on any planes. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 122 tools in total, and `run_script` for what none of them covers (off unless allowed).
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
 - **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
@@ -154,6 +154,9 @@ at the venv's Python:
 }
 ```
 
+Add `"--allow-scripts"` to `args` to switch on `run_script`, which runs any
+Python it is given on this computer.
+
 ### Run the verification scripts
 
 With SolidWorks open:
@@ -203,7 +206,9 @@ The server speaks MCP over **stdio**.
 | `add_lofted_solid(profiles_mm, heights_mm, name)` | Loft/blend 2+ polygon or round profiles on stacked parallel planes (transitions, adapters, a leg thick at the knee) |
 | `add_rib(start_mm, end_mm, toward_mm, thickness_mm, z_mm, name)` | Straight rib / gusset in a plane parallel to Front at `z_mm`, grown toward `toward_mm` until it meets the part (L-bracket gussets) |
 | `add_extruded_profile(points_mm, depth_mm, name, corner_radii_mm, rotate_deg, about_mm, draft_deg, merge)` | Extrude any closed polygon `[[x,y],…]` (brackets, sections); `corner_radii_mm` rounds its corners with real sketch fillets, each radius a dimension; `rotate_deg` turns it about a pivot; `draft_deg` tapers its walls; `merge=False` keeps a separate body |
-| `add_plane(base, offset_mm, angle_deg, about, name)` | A reference plane offset from a plane, or turned about a model axis; its offset or angle a dimension; gives its origin and axes |
+| `add_plane(base, offset_mm, angle_deg, about, name, normal, through)` | A reference plane offset from a plane, turned about a model axis, or through a point square to any direction; gives its origin and axes |
+| `add_axis(through, planes, name)` | A reference axis through a point along a direction, or where two planes meet |
+| `add_loft(sketches, cut, name)` | Loft, or loft cut, through closed sketches by name on any planes (a bevel gear's tooth gap) |
 | `add_extruded_profile_on_plane(points_mm, plane, depth_mm, reverse, name, corner_radii_mm, draft_deg, merge)` | Extrude a polygon drawn on any plane (3D points on it), merged with the part |
 | `list_bodies()` | The part's solid bodies: name, volume, bounding box |
 | `combine_bodies(operation, main, tools, name)` | Add, subtract or intersect bodies of the part (`add` / `subtract` / `common`) |
@@ -228,7 +233,7 @@ The server speaks MCP over **stdio**.
 | `add_chamfer(distance_mm, edges, name)` | Chamfer edges at 45° (`edges`: `all`, axis, a face outline, a feature's edges, or indices) |
 | `add_shell(thickness_mm, open_face)` | Hollow to a wall thickness; open a face (`+z`/…) or `none` |
 | `add_linear_pattern(count, spacing_mm, direction, feature_name)` | Repeat a feature N times along `+x`/`-x`/… |
-| `add_circular_pattern(count, center_x_mm, center_y_mm, feature_name)` | Repeat a feature N times around an axis (bolt circle) |
+| `add_circular_pattern(count, center_x_mm, center_y_mm, feature_name, axis, angle_deg)` | Repeat a feature N times around a hole's axis (bolt circle), a model axis (`axis='y'`: revolved parts) or a reference axis by name; all round or over `angle_deg` |
 | `add_mirror(plane, offset_mm, features, name)` | Mirror features (copies follow their seeds) or the whole body about the Front/Top/Right plane, or a plane by name, moved `offset_mm`; fails when a copy would land outside the part |
 | `set_dimension(dimension_name, value_mm)` | Change a named driving dim (e.g. `D1@BlockExtrude`, or any name a tool returned in `dimensions`), rebuild, remeasure; an angle in degrees |
 | `set_equation(equation)` | Add a global equation or variable linking dims (e.g. `"W" = 40`, then `"width@Sketch1" = "W"`), or replace the one that sets the same name; names the features that fail to rebuild |
@@ -237,7 +242,8 @@ The server speaks MCP over **stdio**.
 | `slice_mesh(path, axis, heights_mm, frame)` | Cross-sections of an STL/3MF mesh as polygon loops, ready to use as profiles |
 | `compare_with_mesh(path, axis, heights_mm, frame, offset_mm)` | Compare the part's cross-sections with a reference mesh (area and extent differences) |
 | `read_sketch(name)` | A sketch read back in model coordinates: lines, arcs, circles, splines, its dimensions, fully defined or not |
-| `add_sketch(plane, start_mm, segments, name)` | Sketch an outline of lines, arcs and splines on any plane, fully defined: tangent where it flows, dimensioned from the origin |
+| `add_sketch(plane, start_mm, segments, name, fixed)` | Sketch an outline of lines, arcs and splines on any plane, fully defined: tangent where it flows, dimensioned from the origin; `fixed=True` freezes computed curves (involutes, cams) instead |
+| `run_script(code)` | Python against the live SolidWorks on the server's COM thread, with its helpers; rebuilt and reported, rolled back when it raises. Off unless the server runs with `--allow-scripts` (or `SOLIDWORKS_MCP_ALLOW_SCRIPTS=1`) |
 | `extrude_sketch(sketch, depth_mm, reverse, name, up_to)` / `cut_sketch(sketch, depth_mm, reverse, name)` | Build on an existing sketch by name (one a person drew): extrude it blind or up to the next face, or cut it blind or through all |
 | `list_dimensions()` | Every dimension in the part: name (for `set_dimension`), feature, value, unit |
 | `list_features()` | The part's history in tree order (name, type, suppressed); flags features that fail to rebuild and sketches that are not fully defined |
@@ -251,10 +257,34 @@ The server speaks MCP over **stdio**.
 | `check_printability(up, overhang_deg, min_wall_mm)` | For a print direction: overhanging faces (area, worst lean, centre), bed contact, height; with `min_wall_mm` the walls thinner than that |
 | `export(path, file_format, quality, deviation_mm, angle_deg, per_component)` | STEP/STL/IGES/Parasolid/3MF (silent; verifies file). STL/3MF tessellation: `quality` `coarse`/`fine`, or explicit `deviation_mm`+`angle_deg`; an assembly's STL as one file or one per component |
 | `screenshot(path, view, zoom_mm, show_planes, from_dir)` | PNG/JPG/TIF from a standard view (`iso`, `front`, `top`, …) or any direction, zoomed to fit or onto a region; planes and axes left out unless asked for |
-| `make_drawing(path)` | 2D drawing as PDF or editable `.slddrw`: front, top, right (first angle) and isometric views on A4 with the model's own dimensions, each once |
 | `save_part(path)` / `open_part(path)` | Save to / open a native `.sldprt`; `open_part` also imports STEP, IGES and Parasolid files as a part to build on |
 | `close_part(save)` | Close the current part or assembly; without one, SolidWorks' active document if it is saved |
 | `list_documents` / `activate_document(title)` | The open documents (path, type, unsaved changes) / make one current again, also one never saved |
+
+### Drawing tools
+
+Sheet millimetres, origin at the sheet's bottom-left corner. Annotations are
+named `<name>@<view>`. Where geometry matters, tools take references into a
+view: `edge:-x` (the part's face facing -x, seen edge-on), `hole:<feature>`,
+`feature:<name>`, or a model point `[x, y, z]`.
+
+| Tool | Purpose |
+|---|---|
+| `make_drawing(path, sheet, scale, keep_open)` | The whole drawing in one call: front, top and side views (first angle) plus iso on an ISO sheet with SolidWorks' ISO title block, at the largest standard scale that leaves room for dimensions; model dimensions once each, one counted hole callout per set of identical Hole Wizard holes (`4X ...`), their centres dimensioned, material and mass in the title block; returns `problems`. PDF, `.slddrw`, DXF or DWG |
+| `build_drawing(spec, path)` | A drawing from a JSON spec (views, imports, dimensions, callouts, notes, title block), built from scratch each time; a failing entry is named |
+| `new_drawing(sheet, part)` / `open_drawing(path)` / `save_drawing(path)` / `export_drawing(path)` / `close_drawing()` | The current drawing, kept apart from the current part; exports PDF, DXF, DWG or a picture of the sheet |
+| `set_drawing_properties(properties)` | Title block through its linked properties: description, material and weight (`'from part'` links them to the model) on the part; drawn by, dates, revision, company on the drawing |
+| `add_view(orientation, at, right_of, …)` / `add_projected_view(parent, side)` | Model and projected views, placed at a sheet point or beside another view, past views in the way |
+| `add_section_view(parent, through, normal, label)` / `add_detail_view(parent, center, radius_mm, scale)` | Section line and detail circle placed from model geometry |
+| `move_view` / `set_view` / `delete_view` / `list_views` | Relative or absolute placement; scale, display, tangent edges; views with outline, geometry box and model-to-sheet mapping |
+| `import_dimensions(view, kinds)` | Model dimensions (once each), counted hole callouts, hole centre locations |
+| `add_dimension(view, ref, to, direction, side, offset_mm)` / `add_dimension_set(view, base, refs, style)` | Dimensions between references, stacked on free rows; baseline, chain and ordinate sets |
+| `add_surface_finish(view, ref, roughness, process)` / `add_datum(view, ref, label)` / `add_gtol(view, ref, symbol, tolerance, datums, diameter, material_condition)` | ISO 1302 surface texture, datum feature and ISO 1101 tolerance frame, attached to an edge |
+| `add_table(rows, at, title)` / `add_gear_data_table(kind, teeth, module, mating_teeth, …)` | A table on the sheet; the gear data table of a spur or straight bevel gear, computed (from the part's custom properties when not given) |
+| `add_hole_callout(view, hole, at, count)` | Callout linked to the model, counting identical holes |
+| `add_note` / `add_center_marks` / `edit_annotation` / `delete_annotation` / `list_annotations` | Notes, centre marks and lines; prefix, suffix, precision, tolerance, fit, place; ids, texts, values and boxes |
+| `auto_layout(scale, main)` | Lay all views out again around the main one, at the largest standard scale that leaves room for dimensions |
+| `arrange_dimensions(view)` / `check_drawing()` / `render_drawing(path, zoom_mm)` | SolidWorks' auto arrange; the sheet's problems (outside the frame, over the title block, overlapping text, crossing leaders, small text, duplicate dimensions, undimensioned features); a picture of the sheet or a region |
 
 ### Assembly tools
 
