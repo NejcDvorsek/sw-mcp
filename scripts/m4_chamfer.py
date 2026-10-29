@@ -11,7 +11,7 @@ same size, since a chamfer cuts a flat triangle rather than a rounded quarter).
 import argparse
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

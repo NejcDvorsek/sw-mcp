@@ -9,8 +9,8 @@ import asyncio
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.session import SolidWorksSession
 
 
 class RecordingSession(SolidWorksSession):
@@ -66,7 +66,7 @@ def test_a_failed_tool_call_through_the_server_leaves_the_part_as_it_was():
     fails only after its sketch is complete, which then stayed in the tree and
     stretched the bounding box to x = 110. (A sketch left empty SolidWorks drops
     by itself, so that case proves nothing.)"""
-    from solidworks_mcp import server
+    from sw_mcp import server
 
     def call(tool, *args):
         return asyncio.run(tool(*args))

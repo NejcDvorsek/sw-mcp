@@ -11,7 +11,7 @@ import argparse
 import os
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 L_BRACKET = [[0, 0], [60, 0], [60, 20], [20, 20], [20, 50], [0, 50]]
 DEPTH = 10.0

@@ -8,7 +8,7 @@ volume follows. Proves IEquationMgr wiring + expression evaluation.
 
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

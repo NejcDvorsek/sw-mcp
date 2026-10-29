@@ -6,7 +6,7 @@ The block is 40 x 20 x 10, so its volume tells the depth: 800 mm^3 per mm.
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
 

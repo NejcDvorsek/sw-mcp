@@ -11,7 +11,7 @@ import argparse
 import os
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 POCKET = [[10, 5], [30, 5], [30, 15], [10, 15]]  # 20 x 10 mm
 AREA = 20 * 10

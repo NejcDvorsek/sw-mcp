@@ -1,7 +1,7 @@
 """M1 - prove the geometry + measurement pipeline (standalone, no MCP server).
 
 Builds a block and verifies the measured volume against the hand calculation.
-Drives solidworks_mcp.session.SolidWorksSession directly: a single-threaded
+Drives sw_mcp.session.SolidWorksSession directly: a single-threaded
 script needs no COM worker thread, and this doubles as an integration test of
 the packaged operations.
 
@@ -12,7 +12,7 @@ the packaged operations.
 import argparse
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

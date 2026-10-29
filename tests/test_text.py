@@ -7,8 +7,8 @@ with embossing (the same letters), and where the letters land. Marked
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.session import SolidWorksSession
 
 BLOCK = 60 * 30 * 10
 

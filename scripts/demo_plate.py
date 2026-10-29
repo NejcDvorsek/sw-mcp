@@ -14,7 +14,7 @@ import math
 import os
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 # --- the spec the "agent" is asked to satisfy ---
 W = H = 120.0

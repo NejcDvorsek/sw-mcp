@@ -2,8 +2,8 @@
 
 import pytest
 
-from solidworks_mcp import drawing_layout as lay
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp import drawing_layout as lay
+from sw_mcp.errors import SolidWorksError
 
 # The A3 ISO sheet format of SOLIDWORKS 2026 (sheet mm): outer border, inner
 # frame, a zone tick between them, and the title block's lines in the bottom

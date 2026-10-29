@@ -3,7 +3,12 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - unreleased
+
+First release of sw-mcp, a fork of [solidworks-mcp](https://github.com/hjbaard/SolidWorks-MCP)
+0.16.3 by Henk Jan Baard. The package is now `sw-mcp` and the module `sw_mcp`.
+The material database stays `solidworks-mcp`, so parts made with the original
+server keep their materials. Entries below 0.1.0 are the upstream history.
 
 ### Added
 - Manufacturing drawings. `make_drawing` now lays the views out itself on an

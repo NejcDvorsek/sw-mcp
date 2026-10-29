@@ -8,7 +8,7 @@ Then fillet two edges chosen by index to prove targeted selection.
 
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

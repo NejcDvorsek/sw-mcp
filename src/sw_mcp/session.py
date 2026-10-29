@@ -4773,7 +4773,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
 
     def _part_triangles(self) -> list:
         """The current part as triangles in its own model frame (mm), via a fine STL export."""
-        path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_{uuid.uuid4().hex}.stl")
+        path = os.path.join(tempfile.gettempdir(), f"sw_mcp_{uuid.uuid4().hex}.stl")
         try:
             self.export(path, quality="fine")
             return load_mesh(path)
@@ -4926,7 +4926,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
         """{English name: matid} of SolidWorks' default material database, read
         from an English install (material_ids.json). A material keeps its matid
         in every language; its name is translated."""
-        text = resources.files("solidworks_mcp").joinpath("material_ids.json").read_text(encoding="utf-8")
+        text = resources.files("sw_mcp").joinpath("material_ids.json").read_text(encoding="utf-8")
         return json.loads(text)
 
     @staticmethod
@@ -4958,7 +4958,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
         """SolidWorks reads a .sldmat only from its material folders, so one is
         written to a temporary folder that joins them while the material is
         assigned. The part keeps the material's properties once it is gone."""
-        folder = tempfile.mkdtemp(prefix="solidworks_mcp_")
+        folder = tempfile.mkdtemp(prefix="sw_mcp_")
         path = os.path.join(folder, f"{MCP_MATERIAL_DATABASE}.sldmat")
         with open(path, "w", encoding="utf-8") as f:
             f.write(self._material_xml(name, density_kg_m3))

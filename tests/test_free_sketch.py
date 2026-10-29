@@ -11,8 +11,8 @@ import math
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.free_sketch import build_chain, plan_chain
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.free_sketch import build_chain, plan_chain
 
 STADIUM = [{"line": [40, 0]}, {"arc": [40, 20], "tangent": True}, {"line": [0, 20]}, {"arc": [0, 0], "tangent": True}]
 

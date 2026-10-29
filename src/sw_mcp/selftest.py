@@ -1,6 +1,6 @@
 """Check this machine's SolidWorks against what the tools need.
 
-`solidworks-mcp --selftest`, with SolidWorks open, builds small parts through the
+`sw-mcp --selftest`, with SolidWorks open, builds small parts through the
 session the MCP tools use, compares each with a hand calculation, closes them
 without saving, and prints a report to paste into an issue. It covers what
 differs between installations (release, language, templates, Hole Wizard
@@ -124,7 +124,7 @@ def _check_delete(sw):
 
 def _check_export(sw):
     _block(sw)
-    path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_selftest_{uuid.uuid4().hex}.stl")
+    path = os.path.join(tempfile.gettempdir(), f"sw_mcp_selftest_{uuid.uuid4().hex}.stl")
     try:
         return f"{sw.export(path)['bytes']} bytes"
     finally:
@@ -134,7 +134,7 @@ def _check_export(sw):
 
 def _check_import(sw):
     _block(sw)
-    path = os.path.join(tempfile.gettempdir(), f"solidworks_mcp_selftest_{uuid.uuid4().hex}.step")
+    path = os.path.join(tempfile.gettempdir(), f"sw_mcp_selftest_{uuid.uuid4().hex}.step")
     try:
         sw.export(path)
         sw.close_part()
@@ -220,16 +220,16 @@ def _version_of(distribution) -> str:
 
 
 def _report_hint() -> None:
-    entries = importlib.metadata.metadata("solidworks-mcp").get_all("Project-URL") or []
+    entries = importlib.metadata.metadata("sw-mcp").get_all("Project-URL") or []
     urls = dict(entry.split(", ", 1) for entry in entries)
     print("Please report the result, whether it worked or not:")
     print(f"{urls['Issues']}/new?template=compatibility.yml" if "Issues" in urls
-          else "on the project's issue tracker (this install's metadata has no link: reinstall solidworks-mcp)")
+          else "on the project's issue tracker (this install's metadata has no link: reinstall sw-mcp)")
 
 
 def main(sw) -> int:
     """Print the report for `sw`, the server's session; return the exit code."""
-    print(f"solidworks-mcp {__version__} selftest")
+    print(f"sw-mcp {__version__} selftest")
     print(f"Python {platform.python_version()} on {platform.platform()}, "
           f"pywin32 {_version_of('pywin32')}, mcp {_version_of('mcp')}")
     try:

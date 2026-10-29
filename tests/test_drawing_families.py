@@ -6,8 +6,8 @@ Pure: the methods they route to are replaced by recorders.
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.session import SolidWorksSession
 
 ROUTED = ["new_drawing", "open_drawing", "save_drawing", "export_drawing", "close_drawing", "add_view",
           "add_projected_view", "add_section_view", "add_detail_view", "move_view", "set_view", "delete_view",

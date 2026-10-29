@@ -5,8 +5,8 @@ import types
 import pythoncom
 import pytest
 
-from solidworks_mcp import binding
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp import binding
+from sw_mcp.errors import SolidWorksError
 
 
 class _FakeSldWorks:

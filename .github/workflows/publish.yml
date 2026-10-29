@@ -1,7 +1,7 @@
 # Publishes a GitHub release to PyPI (trusted publishing) and then to the
 # MCP Registry (GitHub OIDC). No stored secrets: both logins use the job's
 # OIDC token, which PyPI only accepts once this workflow is registered there
-# as the trusted publisher for "solidworks-mcp".
+# as the trusted publisher for "sw-mcp".
 name: Publish
 
 on:
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/solidworks-mcp
+      url: https://pypi.org/p/sw-mcp
     permissions:
       id-token: write
       contents: read

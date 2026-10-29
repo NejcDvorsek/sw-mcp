@@ -12,8 +12,8 @@ import random
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.sketch_constraints import MAX_DIMENSIONED_VERTICES, plan_profile, plan_sketch
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.sketch_constraints import MAX_DIMENSIONED_VERTICES, plan_profile, plan_sketch
 
 
 def constraint_count(plan):

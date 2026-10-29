@@ -10,9 +10,9 @@ import re
 
 import pytest
 
-from solidworks_mcp import binding
-from solidworks_mcp.constants import SW_FILE_LOCATIONS_MATERIALS, SW_TOGGLE_DISPLAY_PLANES, VIEWS
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp import binding
+from sw_mcp.constants import SW_FILE_LOCATIONS_MATERIALS, SW_TOGGLE_DISPLAY_PLANES, VIEWS
+from sw_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
 
@@ -758,7 +758,7 @@ def test_close_part_leaves_an_active_document_with_unsaved_work_open(sw):
 
 
 def test_status_names_the_server_version(sw):
-    from solidworks_mcp import __version__
+    from sw_mcp import __version__
 
     assert sw.get_status()["server_version"] == __version__, "a user cannot tell which server version runs"
 
@@ -783,8 +783,8 @@ def test_export_stl_resolution(part, tmp_path):
 def test_an_stl_keeps_the_parts_coordinates(part, tmp_path):
     """SolidWorks moved an STL into positive space: a part measured back from
     its STL was off by the shift. A Ø40 disc centred on the origin, 10 thick."""
-    from solidworks_mcp.constants import SW_TOGGLE_STL_DONT_TRANSLATE
-    from solidworks_mcp.mesh_tools import load_mesh
+    from sw_mcp.constants import SW_TOGGLE_STL_DONT_TRANSLATE
+    from sw_mcp.mesh_tools import load_mesh
     setting = part._sw.GetUserPreferenceToggle(SW_TOGGLE_STL_DONT_TRANSLATE)
     part.add_disc(40, 10)
     exported = part.export(str(tmp_path / "disc.stl"))
@@ -796,7 +796,7 @@ def test_an_stl_keeps_the_parts_coordinates(part, tmp_path):
 
 def test_export_restores_stl_prefs(part, tmp_path):
     # the global STL quality pref must be unchanged after an export (save/restore)
-    from solidworks_mcp.constants import SW_STL_QUALITY
+    from sw_mcp.constants import SW_STL_QUALITY
     before = part._sw.GetUserPreferenceIntegerValue(SW_STL_QUALITY)
     part.add_disc(40, 10)
     part.export(str(tmp_path / "x.stl"), quality="coarse")

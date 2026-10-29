@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "solidworks-mcp"
-version = "0.16.3"
+name = "sw-mcp"
+version = "0.1.0"
 description = "MCP server that drives a local SolidWorks instance over COM for parametric part modelling."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Henk Jan Baard" }]
+authors = [{ name = "Nejc Dvorsek" }, { name = "Henk Jan Baard" }]
 keywords = ["solidworks", "mcp", "cad", "com", "parametric", "3d-printing"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -26,22 +26,22 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hjbaard/SolidWorks-MCP"
-Repository = "https://github.com/hjbaard/SolidWorks-MCP"
-Changelog = "https://github.com/hjbaard/SolidWorks-MCP/blob/main/CHANGELOG.md"
-Issues = "https://github.com/hjbaard/SolidWorks-MCP/issues"
+Homepage = "https://github.com/NejcDvorsek/sw-mcp"
+Repository = "https://github.com/NejcDvorsek/sw-mcp"
+Changelog = "https://github.com/NejcDvorsek/sw-mcp/blob/main/CHANGELOG.md"
+Issues = "https://github.com/NejcDvorsek/sw-mcp/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [project.scripts]
-solidworks-mcp = "solidworks_mcp.server:main"
+sw-mcp = "sw_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-solidworks_mcp = ["guide.md", "material_ids.json"]  # the guide resource; English material ids
+sw_mcp = ["guide.md", "material_ids.json"]  # the guide resource; English material ids
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

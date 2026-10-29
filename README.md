@@ -1,7 +1,7 @@
-# SolidWorks MCP
+# sw-mcp
 
-[![PyPI](https://img.shields.io/pypi/v/solidworks-mcp)](https://pypi.org/project/solidworks-mcp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/hjbaard/SolidWorks-MCP/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/sw-mcp)](https://pypi.org/project/sw-mcp/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/NejcDvorsek/sw-mcp/blob/main/LICENSE)
 
 Let an AI agent (Claude, or any other MCP client) model real parametric parts and
 assemblies in **your own SolidWorks** — and **check its own work**. Every
@@ -9,16 +9,24 @@ modelling call returns the measured volume, mass and bounding box, so the agent
 can compare the result with the spec and correct itself instead of guessing that
 it "looks about right".
 
-<!-- mcp-name: io.github.hjbaard/solidworks-mcp -->
+sw-mcp is a fork of [SolidWorks-MCP](https://github.com/hjbaard/SolidWorks-MCP)
+by Henk Jan Baard (`solidworks-mcp` 0.16.3 on PyPI). It adds manufacturing
+drawings, lofts and reference axes, `run_script`, and merges related tools into
+families so a client loads fewer of them; see
+[Differences from upstream](#differences-from-upstream). It is the SolidWorks
+connector of [Jig](https://github.com/NejcDvorsek/jig), and works on its own
+with any MCP client.
+
+<!-- mcp-name: io.github.NejcDvorsek/sw-mcp -->
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hjbaard/SolidWorks-MCP/main/Docs/images/bracket.png" width="32%" alt="3D-print mounting bracket with counterbored holes, bolt circle and cable slot">
-  <img src="https://raw.githubusercontent.com/hjbaard/SolidWorks-MCP/main/Docs/images/thread.png" width="32%" alt="M10 bolt with a real, printable ISO metric thread">
-  <img src="https://raw.githubusercontent.com/hjbaard/SolidWorks-MCP/main/Docs/images/vase.png" width="32%" alt="Revolved and shelled vase">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/bracket.png" width="32%" alt="3D-print mounting bracket with counterbored holes, bolt circle and cable slot">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/thread.png" width="32%" alt="M10 bolt with a real, printable ISO metric thread">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/vase.png" width="32%" alt="Revolved and shelled vase">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hjbaard/SolidWorks-MCP/main/Docs/images/pipe.png" width="32%" alt="Swept pipe with rounded bends">
-  <img src="https://raw.githubusercontent.com/hjbaard/SolidWorks-MCP/main/Docs/images/loft.png" width="32%" alt="Lofted and shelled horn">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/pipe.png" width="32%" alt="Swept pipe with rounded bends">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/loft.png" width="32%" alt="Lofted and shelled horn">
 </p>
 <p align="center"><sub>Built by the tools themselves: a mounting bracket (every step checked against a hand calculation), an M10 bolt with a real thread, a revolved + shelled vase, a swept pipe, a lofted + shelled horn.</sub></p>
 
@@ -38,8 +46,9 @@ it "looks about right".
   Engraved and embossed text. Work on existing parts: list, delete, suppress and reorder features; read, extrude and cut a person's sketches; import STEP. Colours per part or component. Joints with concentric and angle mates, checked over their range. Printability checks. Manufacturing drawings: ISO sheets with a title block, section and detail views, dimensions placed from model references (also baseline, chain and ordinate), counted hole callouts, surface finish, datum and geometric tolerance symbols, tables and computed gear data tables, notes, automatic layout, a sheet check, and drawings built from a spec. Planes at any offset or angle, or through a point square to any direction; axes anywhere, and circular patterns about them; lofts and loft cuts between sketches on any planes. Several bodies per part, combined and split. Variable fillets and full rounds. Free sketches with tangent arcs and splines. 91 tools in total, and `run_script` for what none of them covers (off unless allowed).
 - **It fails loud.** A call that cannot do what was asked returns
   `{ok: false, error}` with the cause, never silently wrong geometry.
-- **A fixed, typed tool surface.** There is no "run arbitrary code" tool; the
-  agent can only do what the tools allow.
+- **A fixed, typed tool surface.** The agent can only do what the tools allow.
+  `run_script`, which runs arbitrary Python, is off unless you start the server
+  with `--allow-scripts`.
 - **Tested against real SolidWorks.** 697 tests; each feature's integration test
   compares the result with a hand calculation.
 - **Local.** It talks to your running SolidWorks over COM; the server itself
@@ -55,7 +64,7 @@ it "looks about right".
    **Claude Code:**
 
    ```bash
-   claude mcp add solidworks -- uvx solidworks-mcp
+   claude mcp add solidworks -- uvx sw-mcp
    ```
 
    **Claude Desktop** (`claude_desktop_config.json`) or any other client:
@@ -65,15 +74,13 @@ it "looks about right".
      "mcpServers": {
        "solidworks": {
          "command": "uvx",
-         "args": ["solidworks-mcp"]
+         "args": ["sw-mcp"]
        }
      }
    }
    ```
 
-   It is also listed in the official
-   [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.hjbaard/solidworks-mcp)
-   as `io.github.hjbaard/solidworks-mcp`.
+   **With Jig** there is nothing to register: the plugin starts sw-mcp itself.
 
 4. Ask for a part, for example:
 
@@ -87,7 +94,7 @@ The server hands every MCP client short modelling guidelines when it connects
 (conventions, verify each step, known pitfalls). The full guide is the resource
 `solidworks://guide`: recipes for holes, ribs, threads and assemblies, 3D-print
 advice, and how to reverse-engineer a part from a mesh (STL/3MF). The same text
-is in [`src/solidworks_mcp/guide.md`](https://github.com/hjbaard/SolidWorks-MCP/blob/main/src/solidworks_mcp/guide.md).
+is in [`src/sw_mcp/guide.md`](https://github.com/NejcDvorsek/sw-mcp/blob/main/src/sw_mcp/guide.md).
 
 ## Requirements and compatibility
 
@@ -101,22 +108,22 @@ is in [`src/solidworks_mcp/guide.md`](https://github.com/hjbaard/SolidWorks-MCP/
   **untested**. To check your installation, run this with SolidWorks open:
 
   ```bash
-  uvx solidworks-mcp --selftest
+  uvx sw-mcp --selftest
   ```
 
   It builds a few small parts, compares each with a hand calculation and
   closes them unsaved. Please paste its output in a
-  [compatibility report](https://github.com/hjbaard/SolidWorks-MCP/issues/new?template=compatibility.yml),
+  [compatibility report](https://github.com/NejcDvorsek/sw-mcp/issues/new?template=compatibility.yml),
   whether it worked or not.
 
 **Status: early (0.x).** It works end-to-end, but tool names and conventions
-may still change. See [CHANGELOG.md](https://github.com/hjbaard/SolidWorks-MCP/blob/main/CHANGELOG.md).
+may still change. Versions restart at 0.1.0 for the fork. See [CHANGELOG.md](https://github.com/NejcDvorsek/sw-mcp/blob/main/CHANGELOG.md).
 
 ## Troubleshooting
 
-- **Start with the selftest**: `uvx solidworks-mcp --selftest` shows your
+- **Start with the selftest**: `uvx sw-mcp --selftest` shows your
   SolidWorks release, language and templates, and which tool areas work. Add
-  its output to a [bug report](https://github.com/hjbaard/SolidWorks-MCP/issues/new?template=bug_report.yml).
+  its output to a [bug report](https://github.com/NejcDvorsek/sw-mcp/issues/new?template=bug_report.yml).
 - **"No running SolidWorks found" / connection fails** — SolidWorks must be
   *running* before you start the server or run a script; it attaches to the active
   instance via `GetActiveObject` and does not launch one.
@@ -147,8 +154,8 @@ at the venv's Python:
 {
   "mcpServers": {
     "solidworks": {
-      "command": "C:\\path\\to\\SolidWorks-MCP\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "solidworks_mcp.server"]
+      "command": "C:\\path\\to\\sw-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "sw_mcp.server"]
     }
   }
 }
@@ -306,11 +313,16 @@ SolidWorks-internal metre/radian units at the boundary.
 ## Architecture
 
 ```
-src/solidworks_mcp/
+src/sw_mcp/
   binding.py     early-binding plumbing (wrap raw dispatches in generated classes)
   com_worker.py  one dedicated STA thread; all COM calls serialised through it
   session.py     SolidWorks operations (must run on the COM thread)
   server.py      FastMCP tools that delegate to session via the worker
+  families.py    one tool per family: picks the session method from the arguments
+  advanced.py    axes, lofts, planes by normal, run_script
+  drawing.py     drawing tools (views, dimensions, symbols, tables, checks)
+  drawing_layout.py  view and dimension placement (pure, no COM)
+  image_sheet.py several views on one PNG (run_script's picture)
   constants.py   enum values read from the installed typelib (verified)
   units.py       mm<->m, deg<->rad
   errors.py      SolidWorksError -> agent-facing {ok:false,error}
@@ -341,10 +353,10 @@ Proven end-to-end against **SOLIDWORKS 2026 (3DEXPERIENCE R2026x)**:
 | M2 | change a named dimension → rebuild → volume changes predictably | ✅ |
 | M3 | full agent loop via the MCP server: build → measure → correct → export STEP/STL + screenshot | ✅ |
 | M4 | revolve, sweep, loft, profiles, holes/pockets/counterbores, slots, fillet/chamfer, shell, patterns, equations, materials, save/open | 🚧 ongoing |
-| M5 | end-to-end 3D-print part: build a functional mounting bracket through the full loop → verify every dimension → export a fine STL ([scripts/m5_demo_bracket.py](https://github.com/hjbaard/SolidWorks-MCP/blob/main/scripts/m5_demo_bracket.py)) | ✅ |
-| M6 | assemblies: insert and position components, mate them, check interference — every placement and mate measured back ([tests/test_assembly.py](https://github.com/hjbaard/SolidWorks-MCP/blob/main/tests/test_assembly.py)) | ✅ |
+| M5 | end-to-end 3D-print part: build a functional mounting bracket through the full loop → verify every dimension → export a fine STL ([scripts/m5_demo_bracket.py](https://github.com/NejcDvorsek/sw-mcp/blob/main/scripts/m5_demo_bracket.py)) | ✅ |
+| M6 | assemblies: insert and position components, mate them, check interference — every placement and mate measured back ([tests/test_assembly.py](https://github.com/NejcDvorsek/sw-mcp/blob/main/tests/test_assembly.py)) | ✅ |
 
-See [Docs/PROGRESS.md](https://github.com/hjbaard/SolidWorks-MCP/blob/main/Docs/PROGRESS.md) for the detailed log and roadmap.
+See [Docs/PROGRESS.md](https://github.com/NejcDvorsek/sw-mcp/blob/main/Docs/PROGRESS.md) for the detailed log and roadmap.
 Feedback and contributions are welcome.
 
 ## Known limitations
@@ -369,5 +381,40 @@ Feedback and contributions are welcome.
   by axis **or explicit index** (`_select_edges`). `list_faces`/`list_edges` let
   an agent inspect geometry before selecting.
 - Assemblies (M6): components, transforms, mates and interference detection.
-  Component patterns, in-context features, configurations, drawings and
-  Simulation (FEA) are out of scope.
+  Component patterns, in-context features, configurations and Simulation (FEA)
+  are out of scope.
+- `list_faces`, `list_edges` and `add_fillet` see only the first body of a
+  multibody part.
+
+## Differences from upstream
+
+Forked from `hjbaard/SolidWorks-MCP` at 0.16.3. Added since (details in
+[CHANGELOG.md](https://github.com/NejcDvorsek/sw-mcp/blob/main/CHANGELOG.md)):
+
+- **Manufacturing drawings**: `make_drawing` on an ISO sheet with title block,
+  counted hole callouts and hole positions, plus 15 drawing tools (views,
+  sections, details, dimensions, hole callouts, surface finish, datums, GD&T,
+  tables and gear data tables, notes, layout, a sheet check, `build_drawing`
+  from a spec).
+- **Modelling**: `add_axis`, `add_loft` (also loft cuts), circular patterns
+  about any axis, planes through a point square to any direction,
+  `add_sketch(fixed=True)`, several mates in one call, `replace_component`.
+- **`run_script`** (off unless allowed): a whole part from a script file in one
+  call, with one report and a four-view picture.
+- **Tool families**: related tools merged into one with a switch (`add_hole`,
+  `add_extruded_profile`, `cut_profile`, `new_document`, ...), 91 tools in
+  place of 106.
+- Different names: the package is `sw-mcp`, the module `sw_mcp`.
+
+Fixes from upstream are merged in from time to time. In a clone:
+
+```bash
+git remote add upstream https://github.com/hjbaard/SolidWorks-MCP.git
+git fetch upstream && git merge upstream/main
+```
+
+## Credits and license
+
+MIT, see [LICENSE](LICENSE). The original server is by Henk Jan Baard
+([hjbaard/SolidWorks-MCP](https://github.com/hjbaard/SolidWorks-MCP)); this
+fork is maintained by Nejc Dvorsek.

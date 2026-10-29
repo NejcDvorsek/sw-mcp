@@ -435,5 +435,5 @@ a proven battery socket:
   SolidWorks fails. With no title and no current document, `close_document` closes SolidWorks'
   active one if it is saved; `get_status` shows which one that is.
 - Tools failing in ways this guide does not explain? Ask the user to run
-  `uvx solidworks-mcp --selftest` with SolidWorks open: it shows which tool
+  `uvx sw-mcp --selftest` with SolidWorks open: it shows which tool
   areas work on their installation and ends with where to report it.

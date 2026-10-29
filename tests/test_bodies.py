@@ -7,7 +7,7 @@ so it overlaps the block by 10 x 10 x 10. Volumes are in mm^3.
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
 

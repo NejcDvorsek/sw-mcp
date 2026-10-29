@@ -45,7 +45,7 @@ Pitfalls
 Read the resource solidworks://guide for the full guide: recipes (holes, ribs, threads, patterns, assemblies), 3D printing, and reverse-engineering a part from a mesh.
 """
 
-mcp = FastMCP("solidworks-mcp", instructions=INSTRUCTIONS)
+mcp = FastMCP("sw-mcp", instructions=INSTRUCTIONS)
 
 # run_script executes any Python it is given: off unless the person starting
 # the server allows it
@@ -56,7 +56,7 @@ _ALLOW_SCRIPTS = os.environ.get("SOLIDWORKS_MCP_ALLOW_SCRIPTS", "").strip().lowe
               description="Modelling guide: conventions, verification, recipes, 3D printing, "
                           "reverse-engineering from a mesh, limits.")
 def guide() -> str:
-    return resources.files("solidworks_mcp").joinpath("guide.md").read_text(encoding="utf-8")
+    return resources.files("sw_mcp").joinpath("guide.md").read_text(encoding="utf-8")
 
 
 class _NoSolidWorks:
@@ -1403,7 +1403,7 @@ async def swept_region(component: str, dimension: str, values: list, heights_mm:
 
 def main() -> None:
     """Entry point: run the MCP server over stdio, or the selftest with --selftest."""
-    parser = argparse.ArgumentParser(prog="solidworks-mcp", description="MCP server for a running SolidWorks.")
+    parser = argparse.ArgumentParser(prog="sw-mcp", description="MCP server for a running SolidWorks.")
     parser.add_argument("--selftest", action="store_true",
                         help="check this machine's SolidWorks with a few small parts, print a report and exit")
     parser.add_argument("--allow-scripts", action="store_true",

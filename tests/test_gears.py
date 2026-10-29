@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from solidworks_mcp import gears
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp import gears
+from sw_mcp.errors import SolidWorksError
 
 
 def test_a_spur_gear_against_the_tables():

@@ -29,10 +29,10 @@ def test_server_json_points_at_this_package_version():
 
 
 def test_package_reports_its_own_version():
-    import solidworks_mcp
+    import sw_mcp
 
-    assert solidworks_mcp.__version__ == _project()["version"], (
-        f"solidworks_mcp.__version__ is {solidworks_mcp.__version__}, but this release is "
+    assert sw_mcp.__version__ == _project()["version"], (
+        f"sw_mcp.__version__ is {sw_mcp.__version__}, but this release is "
         f"{_project()['version']}: anyone checking the installed version is misled"
     )
 

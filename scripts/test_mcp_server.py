@@ -1,6 +1,6 @@
 """End-to-end test of the MCP server, driven over stdio like a real agent.
 
-Spawns `python -m solidworks_mcp.server` as a subprocess, speaks the MCP
+Spawns `python -m sw_mcp.server` as a subprocess, speaks the MCP
 protocol to it, and runs the M3 verification loop against the live SolidWorks:
 
     get_status -> new_document -> add_box(40x20x10) -> measure (expect 8000 mm^3)
@@ -42,7 +42,7 @@ def approx(actual: float, expected: float, rel: float = 1e-4) -> bool:
 
 async def run() -> int:
     os.makedirs(OUT_DIR, exist_ok=True)
-    params = StdioServerParameters(command=PYTHON, args=["-m", "solidworks_mcp.server"])
+    params = StdioServerParameters(command=PYTHON, args=["-m", "sw_mcp.server"])
     failures: list[str] = []
 
     def check(name: str, cond: bool, detail: str = "") -> None:

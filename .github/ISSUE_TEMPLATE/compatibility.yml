@@ -9,7 +9,7 @@ body:
         With SolidWorks open, run this in a terminal and paste its output below:
 
         ```
-        uvx solidworks-mcp --selftest
+        uvx sw-mcp --selftest
         ```
 
         It builds a few small parts, compares each with a hand calculation and closes them without saving.
@@ -27,7 +27,7 @@ body:
     id: selftest
     attributes:
       label: Selftest output
-      description: The full output of `uvx solidworks-mcp --selftest`.
+      description: The full output of `uvx sw-mcp --selftest`.
       render: text
     validations:
       required: true

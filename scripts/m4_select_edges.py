@@ -10,7 +10,7 @@ a 40x20x10 add_box block has exactly 4 edges parallel to each of x, y, z.
 import argparse
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

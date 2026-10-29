@@ -2,7 +2,7 @@
 
 import math
 
-from solidworks_mcp.units import deg_to_rad, m_to_mm, mm_to_m
+from sw_mcp.units import deg_to_rad, m_to_mm, mm_to_m
 
 
 def test_mm_to_m():

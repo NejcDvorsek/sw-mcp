@@ -8,8 +8,8 @@ import math
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.region_tools import swept_outline
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.region_tools import swept_outline
 
 
 def square(x0, y0, size):

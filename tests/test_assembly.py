@@ -10,10 +10,10 @@ import os
 
 import pytest
 
-from solidworks_mcp import binding
-from solidworks_mcp.constants import SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.mesh_tools import load_mesh
+from sw_mcp import binding
+from sw_mcp.constants import SW_DOC_ASSEMBLY, SW_OPEN_DOC_SILENT
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.mesh_tools import load_mesh
 
 pytestmark = pytest.mark.solidworks
 

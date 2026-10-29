@@ -15,7 +15,7 @@ import argparse
 import math
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 W, H, D, DIA = 40.0, 20.0, 10.0, 8.0
 CYL = math.pi * (DIA / 2) ** 2 * D  # full through-cylinder volume

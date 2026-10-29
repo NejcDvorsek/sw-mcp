@@ -8,7 +8,7 @@ import math
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp.errors import SolidWorksError
 
 pytestmark = pytest.mark.solidworks
 

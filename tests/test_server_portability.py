@@ -27,7 +27,7 @@ class NoPywin32(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, NoPywin32())
 real_platform, sys.platform = sys.platform, "linux"
-from solidworks_mcp import server
+from sw_mcp import server
 sys.platform = real_platform
 server.main()
 """
@@ -44,7 +44,7 @@ _REQUESTS = [
 
 
 def _declared_tools():
-    source = pathlib.Path("src/solidworks_mcp/server.py").read_text(encoding="utf-8")
+    source = pathlib.Path("src/sw_mcp/server.py").read_text(encoding="utf-8")
     return sorted(node.name for node in ast.parse(source).body
                   if isinstance(node, ast.AsyncFunctionDef) and node.decorator_list)
 
@@ -90,7 +90,7 @@ def test_server_starts_without_pywin32_and_tools_fail_loud():
 
 
 def test_selftest_off_windows_says_why_it_cannot_run():
-    probe = _PROBE.replace("server.main()", "sys.argv = ['solidworks-mcp', '--selftest']\nserver.main()")
+    probe = _PROBE.replace("server.main()", "sys.argv = ['sw-mcp', '--selftest']\nserver.main()")
     run = subprocess.run([sys.executable, "-c", probe], stdin=subprocess.DEVNULL,
                          capture_output=True, text=True, timeout=60)
 

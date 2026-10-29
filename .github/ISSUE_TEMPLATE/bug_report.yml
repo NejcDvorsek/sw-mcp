@@ -15,7 +15,7 @@ body:
     id: selftest
     attributes:
       label: Selftest output
-      description: With SolidWorks open, run `uvx solidworks-mcp --selftest` in a terminal and paste its output.
+      description: With SolidWorks open, run `uvx sw-mcp --selftest` in a terminal and paste its output.
       render: text
     validations:
       required: true

@@ -10,8 +10,8 @@ Run only the fast layer with:  pytest -m "not solidworks"
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.session import SolidWorksSession
 
 
 @pytest.fixture(scope="session")

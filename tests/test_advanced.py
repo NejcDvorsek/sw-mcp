@@ -8,8 +8,8 @@ import math
 
 import pytest
 
-from solidworks_mcp.advanced import json_safe, unit
-from solidworks_mcp.errors import SolidWorksError
+from sw_mcp.advanced import json_safe, unit
+from sw_mcp.errors import SolidWorksError
 
 
 def volume(result):
@@ -127,7 +127,7 @@ def test_a_failing_script_is_rolled_back(part):
 def test_scripts_are_off_unless_the_server_allows_them(monkeypatch):
     import asyncio
 
-    from solidworks_mcp import server
+    from sw_mcp import server
 
     monkeypatch.setattr(server, "_ALLOW_SCRIPTS", False)
     refused = asyncio.run(server.run_script("result = 1"))

@@ -12,7 +12,7 @@ SolidWorks itself produced (7770.36 mm^3) as a regression check.
 import argparse
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

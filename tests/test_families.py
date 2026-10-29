@@ -2,8 +2,8 @@
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.families import ToolFamilies
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.families import ToolFamilies
 
 
 class Recorder(ToolFamilies):

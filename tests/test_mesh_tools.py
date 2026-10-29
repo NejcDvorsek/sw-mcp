@@ -10,8 +10,8 @@ import zipfile
 
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.mesh_tools import compare_sections, load_mesh, section, simplify
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.mesh_tools import compare_sections, load_mesh, section, simplify
 
 # a 40 x 20 x 10 box from the origin, as 12 triangles
 _BOX_V = [(0, 0, 0), (40, 0, 0), (40, 20, 0), (0, 20, 0), (0, 0, 10), (40, 0, 10), (40, 20, 10), (0, 20, 10)]
@@ -149,7 +149,7 @@ def test_compare_counts_a_missing_loop():
 
 
 def test_session_slices_a_mesh_without_solidworks(tmp_path):
-    from solidworks_mcp.session import SolidWorksSession
+    from sw_mcp.session import SolidWorksSession
     path = tmp_path / "box.stl"
     _write_binary_stl(path, BOX)
     result = SolidWorksSession().slice_mesh(str(path), "z", [5.0, 20.0])

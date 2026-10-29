@@ -12,7 +12,7 @@ import argparse
 import os
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 T = 2.0  # wall thickness mm
 

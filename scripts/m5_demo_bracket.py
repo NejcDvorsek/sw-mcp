@@ -21,7 +21,7 @@ import math
 import os
 import tempfile
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 TOL = 0.5  # mm^3; analytic steps match to well within this
 

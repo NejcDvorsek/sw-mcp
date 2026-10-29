@@ -9,9 +9,9 @@ import math
 import pythoncom
 import pytest
 
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.session import SolidWorksSession
-from solidworks_mcp.sketch_constraints import MAX_DIMENSIONED_VERTICES
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.session import SolidWorksSession
+from sw_mcp.sketch_constraints import MAX_DIMENSIONED_VERTICES
 
 
 @pytest.fixture
@@ -621,7 +621,7 @@ def _tool_delegations():
     import ast
     import pathlib
 
-    source = pathlib.Path("src/solidworks_mcp/server.py").read_text(encoding="utf-8")
+    source = pathlib.Path("src/sw_mcp/server.py").read_text(encoding="utf-8")
     for node in ast.parse(source).body:
         if not isinstance(node, ast.AsyncFunctionDef) or not node.decorator_list:
             continue

@@ -10,9 +10,9 @@ import zlib
 
 import pytest
 
-from solidworks_mcp.advanced import boxes_overlap, script_folder, sheet_tile
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.image_sheet import png_bytes, read_bmp, tile
+from sw_mcp.advanced import boxes_overlap, script_folder, sheet_tile
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.image_sheet import png_bytes, read_bmp, tile
 
 
 def bmp(width, height, pixel, bits=24, top_down=False):
@@ -172,7 +172,7 @@ def test_a_script_that_starts_its_own_part_reports_all_of_it(sw):
 
 @pytest.mark.solidworks
 def test_pictures_leave_the_view_animation_as_it_was(part, tmp_path):
-    from solidworks_mcp.constants import SW_VIEW_ANIMATION_SPEED
+    from sw_mcp.constants import SW_VIEW_ANIMATION_SPEED
 
     app = part._ensure()
     before = app.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED)
@@ -188,7 +188,7 @@ def test_pictures_leave_the_view_animation_as_it_was(part, tmp_path):
 
 
 def test_a_script_comes_as_code_or_as_a_file():
-    from solidworks_mcp.session import SolidWorksSession
+    from sw_mcp.session import SolidWorksSession
 
     session = SolidWorksSession.__new__(SolidWorksSession)  # refused before it reaches SolidWorks
     with pytest.raises(SolidWorksError, match="one of them"):

@@ -12,7 +12,7 @@ SolidWorksSession directly (integration test of set_dimension).
 import argparse
 import sys
 
-from solidworks_mcp.session import SolidWorksSession
+from sw_mcp.session import SolidWorksSession
 
 
 def main() -> int:

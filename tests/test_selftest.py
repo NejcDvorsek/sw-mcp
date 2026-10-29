@@ -10,10 +10,10 @@ import pathlib
 
 import pytest
 
-from solidworks_mcp import selftest
-from solidworks_mcp.constants import LENGTH_UNITS
-from solidworks_mcp.errors import SolidWorksError
-from solidworks_mcp.selftest import CHECKS, release_year, run_checks, summary
+from sw_mcp import selftest
+from sw_mcp.constants import LENGTH_UNITS
+from sw_mcp.errors import SolidWorksError
+from sw_mcp.selftest import CHECKS, release_year, run_checks, summary
 
 
 class StandInSession:
