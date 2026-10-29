@@ -45,9 +45,63 @@ All notable changes to this project are documented here. This project follows
 - `add_sketch(fixed=True)` freezes computed geometry with Fix relations
   instead of dimensions.
 - `run_script`: Python against the live SolidWorks on the server's COM
-  thread, rebuilt and reported like any modelling call and rolled back when
-  it raises. Off unless the server runs with `--allow-scripts` or
-  `SOLIDWORKS_MCP_ALLOW_SCRIPTS=1`.
+  thread, rolled back when it raises. Off unless the server runs with
+  `--allow-scripts` or `SOLIDWORKS_MCP_ALLOW_SCRIPTS=1`. A whole part in one
+  call: `path=` runs a script file, whose helper modules in the same folder
+  load fresh on every run, so a part is fixed by editing the file and
+  running it again. One report comes back: the features it added, features
+  that fail to rebuild, each body's volume and box, overlaps between bodies,
+  sketches it left under defined, mass properties, the time taken, and one
+  PNG of the iso, right, top and bottom views (next to the script, or at
+  `image=`).
+- `add_mates`: several mates in one call, each measured back as `add_mate`
+  does; it stops at the first that fails (`stop_on_error`), keeping the ones
+  before it, and returns a result per mate.
+- `replace_component(component, path)`: swaps a component for another part
+  or sub-assembly in the same place. It reports the mates SolidWorks kept,
+  and for each mate that broke or went, what it held on the old part (the
+  face's type, normal or axis and centre in the component's frame) and up to
+  three candidate faces on the new one, nearest first, to re-mate with.
+- `list_components(name, mates, brief)`: narrows a big assembly to the
+  components a name or wildcard matches and the mates that hold them, leaves
+  the mates out, or gives only name, path and fixed. Each mate now names the
+  components it holds.
+
+### Changed
+- **Breaking:** one tool per family of modelling and document tools, so a
+  client loads 91 tools instead of 106. Arguments pick the variant, and an
+  argument that doesn't go with it is refused:
+  - `add_hole` covers `add_counterbore_hole` (`cbore_diameter_mm`,
+    `cbore_depth_mm`), `add_hole_on_face` (`face`, `z_mm`, `depth_mm`) and
+    `add_hole_wizard` (`iso`, `size`, `fit`, `thread`). `x_mm` and `y_mm`
+    now come first.
+  - `add_extruded_profile` covers `add_extruded_profile_on_face` (`face`),
+    `add_extruded_profile_on_plane` (`plane`, `reverse`) and
+    `add_extruded_spline` (`spline=True`).
+  - `cut_profile` covers `cut_profile_on_face` (`face`) and
+    `cut_profile_through_plane` (`plane`, `keep_inside`).
+  - `add_loft` covers `add_lofted_solid` (`profiles_mm`, `heights_mm`);
+    `add_mate` covers `add_mates` (`mates=[...]`); `set_equation` takes a
+    list too (was `set_equations`); `get_bounding_box` measures an assembly
+    too (was `get_assembly_bounding_box`).
+  - `new_document(kind)`, `open_document(path, kind)`, `save_document(path)`
+    and `close_document(title, save)` replace `new_part`, `new_assembly`,
+    `open_part`, `open_assembly`, `save_part`, `save_assembly` and
+    `close_part`. A neutral file opens as a part, or as an assembly if it
+    holds one. `save_document()` without a path saves over the document's
+    own file. `close_document` closes any open part, assembly or drawing by
+    title without making it current first, `save=True` saves it first, and
+    the result says whether unsaved changes were dropped. It refuses parts
+    an open assembly loaded, which close with the assembly.
+  The session methods behind the old tools are unchanged, so scripts for
+  `run_script` keep working.
+- `delete_mate` takes a list of names too, deleting them with one rebuild,
+  and returns `mates_left` (a count) instead of every mate left: on a
+  300-mate assembly each call sent all 300. `delete_component` likewise
+  returns `components_left` instead of every component's name. A mate name
+  not found lists at most 20 of the others.
+- `screenshot` is about 0.5 s faster: view changes are no longer animated
+  while it draws (the person's animation setting comes back afterwards).
 
 ## [0.16.3] — 2026-10-27
 

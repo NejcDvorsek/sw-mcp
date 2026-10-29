@@ -11,6 +11,7 @@ green by scripts/m1_block.py and scripts/m2_parametric.py.
 
 import contextlib
 import difflib
+import fnmatch
 import html
 import itertools
 import json
@@ -30,6 +31,7 @@ import win32gui
 from . import __version__, binding, free_sketch
 from .advanced import AdvancedTools
 from .drawing import DrawingTools
+from .families import ToolFamilies
 from .constants import (
     FEATURE_ERRORS,
     EXPORT_FORMATS,
@@ -82,6 +84,7 @@ from .constants import (
     SW_MATE_ALIGN_CLOSEST,
     SW_MOVE_BEFORE,
     SW_OPEN_DOC_SILENT,
+    SW_REPLACE_CONFIG_MATCH_NAME,
     SW_PREF_DEFAULT_TEMPLATE_ASSEMBLY,
     SW_PREF_DEFAULT_TEMPLATE_PART,
     SW_FM_SWEEP_THREAD,
@@ -125,6 +128,7 @@ from .constants import (
     SW_TOGGLE_INPUT_DIM_VAL_ON_CREATE,
     SW_TOGGLE_STL_DONT_TRANSLATE,
     SW_TOGGLE_DISPLAY_AXES,
+    SW_VIEW_ANIMATION_SPEED,
     SW_TOGGLE_DISPLAY_PLANES,
     SW_TOGGLE_STL_ONE_FILE,
     SW_UNITS_LINEAR,
@@ -146,7 +150,7 @@ from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
-class SolidWorksSession(DrawingTools, AdvancedTools):
+class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
     """Holds the SolidWorks connection and the current part document."""
 
     def __init__(self) -> None:
@@ -198,7 +202,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         and would after any switch of window in SolidWorks itself.
         """
         if self._model is None:
-            raise SolidWorksError("No active document. Call 'new_part' or 'new_assembly' first.")
+            raise SolidWorksError("No active document. Call 'new_document' or 'open_document' first.")
         title = self._model.GetTitle()
         active = binding.wrap(self._sw.ActiveDoc, self._mod.IModelDoc2)
         if active is None or active.GetTitle() != title:
@@ -225,7 +229,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         if int(model.GetType()) != SW_DOC_PART:
             raise SolidWorksError(
                 f"The current document '{model.GetTitle()}' is an assembly, not a part. "
-                "Call 'new_part' or 'open_part', or use the assembly tools."
+                "Call 'new_document' or 'open_document', or use the assembly tools."
             )
         return binding.wrap(model, self._mod.IPartDoc)
 
@@ -235,7 +239,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         if int(model.GetType()) != SW_DOC_ASSEMBLY:
             raise SolidWorksError(
                 f"The current document '{model.GetTitle()}' is not an assembly. "
-                "Call 'new_assembly' or 'open_assembly' first."
+                "Call new_document(kind='assembly') or 'open_document' first."
             )
         return binding.wrap(model, self._mod.IAssemblyDoc)
 
@@ -300,7 +304,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         lost.
         """
         if save:
-            raise SolidWorksError("Saving on close is not supported yet; use 'save_part', 'save_assembly' or 'export' first.")
+            raise SolidWorksError("Save first (save_document), or use close_document(save=True).")
         if self._model is None:
             return self._close_active_document()
         title = self._require_model().GetTitle()
@@ -332,18 +336,12 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
     def activate_document(self, title: str) -> dict:
         """Make an open document current again by its title (list_documents),
         also a new one that was never saved."""
-        documents = self._open_documents()
-        key = re.sub(r"\.(sldprt|sldasm|slddrw)$", "", str(title).strip(), flags=re.IGNORECASE).lower()
-        matches = [d for d in documents if d.GetTitle() == title] or \
-            [d for d in documents if re.sub(r"\.(sldprt|sldasm|slddrw)$", "", d.GetTitle(), flags=re.IGNORECASE).lower() == key]
-        if len(matches) != 1:
-            listed = ", ".join(d.GetTitle() for d in documents) or "none"
-            raise SolidWorksError(f"No open document '{title}' (open: {listed}).")
-        if int(matches[0].GetType()) == SW_DOC_DRAWING:  # the drawing tools' document, apart from the part
-            self._drawing = matches[0]
+        document = self._find_document(title)
+        if int(document.GetType()) == SW_DOC_DRAWING:  # the drawing tools' document, apart from the part
+            self._drawing = document
             self._require_drawing()
             return {"ok": True, "current_drawing": self._drawing.GetTitle(), **self._document_entry(self._drawing)}
-        self._model = matches[0]
+        self._model = document
         self._require_model()  # SolidWorks' active document too
         return {"ok": True, "current": self._model.GetTitle(), **self._document_entry(self._model)}
 
@@ -355,8 +353,8 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         if active.GetSaveFlag():
             raise SolidWorksError(
                 f"There is no current document, and SolidWorks' active document '{title}' has unsaved "
-                "changes, so it stays open. Save it in SolidWorks, or open it with open_part or "
-                "open_assembly to work on it."
+                "changes, so it stays open. Save it in SolidWorks, or open it with open_document "
+                "to work on it."
             )
         self._sw.CloseDoc(title)
         return {"ok": True, "closed": title}
@@ -452,9 +450,9 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
             raise SolidWorksError(f"SolidWorks could not import {abs_path} (error {errors}"
                                   f"{', no reason given' if errors == 1 else ''}).{self._close_new_documents(before)}")
         if int(model.GetType()) != doc_type:
-            raise SolidWorksError((f"{name} holds an assembly, not a part: open it with open_assembly."
+            raise SolidWorksError((f"{name} holds an assembly, not a part: open it with open_document(kind='assembly')."
                                    if doc_type == SW_DOC_PART else
-                                   f"{name} holds a single part, not an assembly: open it with open_part.")
+                                   f"{name} holds a single part, not an assembly: open it with open_document(kind='part').")
                                   + self._close_new_documents(before))
         return model
 
@@ -470,7 +468,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
             for _, title in new:
                 self._sw.CloseDoc(title)
         stayed = sorted(d.GetTitle() for d in self._open_documents() if d.GetTitle() not in before)
-        return f" It left open: {', '.join(stayed)}; close each with activate_document and close_part." if stayed else ""
+        return f" It left open: {', '.join(stayed)}; close each with close_document." if stayed else ""
 
     @staticmethod
     def _load_file(sw, abs_path: str) -> tuple:
@@ -4254,7 +4252,7 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         that fail to rebuild, and the mass properties."""
         model = self._require_model()
         if isinstance(equations, str) or not equations:
-            raise SolidWorksError('set_equations takes a list of equations, such as [\'"L" = 85\'].')
+            raise SolidWorksError('set_equation takes an equation or a non-empty list of them, such as [\'"L" = 85\'].')
         names = [self._equation_lhs(text) for text in equations]  # every one checked before any change
         eqmgr = self._equation_mgr()
         eqmgr.AutomaticSolveOrder = True
@@ -5567,13 +5565,27 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         if zoom_mm is not None and (len(zoom_mm) != 2 or any(len(corner) != 3 for corner in zoom_mm)):
             raise SolidWorksError(f"zoom_mm needs two corners [[x1, y1, z1], [x2, y2, z2]] (got {zoom_mm}).")
         rotation = None if from_dir is None else self._view_rotation(from_dir)
-        # The view must draw for the picture. Kept still, as _require_model does
-        # inside a tool call (here and again in export), SOLIDWORKS saved a
-        # blank, all-white image: wake what is still and keep it awake.
+        with self._view_drawn(show_planes) as model:
+            return self._take_screenshot(model, path, ext, key, zoom_mm, rotation)
+
+    @contextlib.contextmanager
+    def _view_drawn(self, show_planes: bool = False):
+        """The current model with its view drawing, for a picture of it.
+
+        Kept still, as _require_model does inside a tool call (here and again in
+        export), SOLIDWORKS saved a blank, all-white image: wake what is still
+        and keep it awake. Planes and axes are hidden unless show_planes; the
+        part's own setting comes back afterwards. View changes are not animated:
+        each zoom to fit took 0.5 s at SolidWorks' default speed, 0.01 s without
+        (SP4.1, verified); the person's setting comes back afterwards too.
+        """
         depth, self._quiet_depth = self._quiet_depth, 0
         self._wake_all()
         busy = self._command_in_progress(False)
         shown = {}
+        animation = self._sw.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED)
+        if animation:
+            self._sw.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, 0.0)
         try:
             model = self._require_model()
             extension = binding.wrap(model.Extension, self._mod.IModelDocExtension)
@@ -5582,12 +5594,14 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
                     shown[toggle] = bool(extension.GetUserPreferenceToggle(toggle, 0))
                     extension.SetUserPreferenceToggle(toggle, 0, False)
                 model.GraphicsRedraw2()
-            return self._take_screenshot(model, path, ext, key, zoom_mm, rotation)
+            yield model
         finally:
             for toggle, value in shown.items():
                 extension.SetUserPreferenceToggle(toggle, 0, value)
             if shown:
                 model.GraphicsRedraw2()
+            if animation:
+                self._sw.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, animation)
             self._command_in_progress(busy)
             self._quiet_depth = depth
 
@@ -5995,17 +6009,72 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
             self._fix_component(asm, comp)
         return {"ok": True, "component": self._component_entry(comp)}
 
-    def list_components(self) -> dict:
+    def list_components(self, name: str | None = None, mates: bool = True, brief: bool = False) -> dict:
         """List the components (name, path, fixed, placement, bounding box) and
-        the mates: name, SolidWorks type, the dimension of a distance or angle
-        mate, and the error of a mate SolidWorks flags."""
+        the mates: name, SolidWorks type, the components it holds, the
+        dimension of a distance or angle mate, and the error of a mate
+        SolidWorks flags.
+
+        A big assembly gives a big answer, so it narrows: name keeps the
+        components it matches ('Bolt*' as a wildcard, 'bolt' anywhere in the
+        name; case ignored) and the mates that hold them, mates=False leaves
+        the mates out, brief=True gives name, path and fixed only (placement
+        and boxes cost time to measure too)."""
         asm = self._require_assembly()
-        comps = [self._component_entry(c) for c in self._components(asm)]
-        return {"ok": True, "count": len(comps), "components": comps,
-                "mates": [self._mate_entry(mate) for mate in self._mates()]}
+        comps = self._components(asm)
+        total = len(comps)
+        if name is not None:
+            comps = [c for c in comps if self._name_matches(c.Name2, name)]
+        entries = [{"name": c.Name2, "path": c.GetPathName(), "fixed": bool(c.IsFixed())} if brief
+                   else self._component_entry(c) for c in comps]
+        out = {"ok": True, "count": len(entries), "components": entries}
+        if name is not None:
+            out["total"] = total
+        if mates:
+            listed = self._mates()
+            if name is not None:
+                kept = [c.Name2 for c in comps]
+                listed = [m for m in listed if any(self._holds(held, top) for held in self._mate_components(m)
+                                                   for top in kept)]
+            out["mates"] = [self._mate_entry(mate) for mate in listed]
+        return out
+
+    @staticmethod
+    def _name_matches(name: str, pattern: str) -> bool:
+        """'Bolt*' / 'bolt?-1' matches as a wildcard, anything else as a part of
+        the name; case is ignored. Pure, unit-tested."""
+        name, pattern = str(name).lower(), str(pattern).strip().lower()
+        if any(ch in pattern for ch in "*?["):
+            return fnmatch.fnmatchcase(name, pattern)
+        return pattern in name
+
+    @staticmethod
+    def _holds(held: str | None, top: str) -> bool:
+        """Whether a mate entity's component (a part, maybe 'Leg-1/Shin-1'
+        inside a sub-assembly) belongs to the top-level component `top`."""
+        return held is not None and (held == top or held.startswith(top + "/"))
+
+    def _mate_entities(self, mate) -> list:
+        """The mate's entities as IMateEntity2 (empty for a mate with no details)."""
+        details = binding.wrap(mate.GetSpecificFeature2(), self._mod.IMate2)
+        if details is None:
+            return []
+        return [binding.wrap(details.MateEntity(i), self._mod.IMateEntity2) for i in range(details.GetMateEntityCount())]
+
+    def _mate_components(self, mate) -> list:
+        """The names of the components a mate holds, one per entity: None for
+        the assembly's own planes and for an entity SolidWorks lost."""
+        names = []
+        for entity in self._mate_entities(mate):
+            comp = None if entity is None else binding.wrap(entity.ReferenceComponent, self._mod.IComponent2)
+            names.append(None if comp is None else comp.Name2)
+        return names
 
     def _mate_entry(self, mate) -> dict:
         entry = {"name": mate.Name, "type": mate.GetTypeName2()}
+        held = [n for n in self._mate_components(mate) if n is not None]
+        if held:
+            entry["components"] = held
         dimensions = self._dimension_entries(mate)
         if dimensions:
             entry["dimensions"] = [{key: d[key] for key in ("name", "value", "unit")} for d in dimensions]
@@ -6040,27 +6109,60 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
                                   "the joint means nothing. Repair them, or delete_mate and add them again.")
 
     def _mate_by_name(self, name: str):
-        mates = self._mates()
-        found = [m for m in mates if m.Name == name] or [m for m in mates if m.Name.lower() == str(name).lower()]
-        if len(found) != 1:
-            raise SolidWorksError(f"No mate '{name}' (there are: {', '.join(m.Name for m in mates) or 'none'}).")
-        return found[0]
+        return self._mates_by_name([name])[0]
 
-    def delete_mate(self, name: str) -> dict:
+    def _mates_by_name(self, names: list) -> list:
+        """The mates of these names, in that order: exact, else ignoring case."""
+        mates = self._mates()
+        found, missing = [], []
+        for name in names:
+            match = [m for m in mates if m.Name == name] or [m for m in mates if m.Name.lower() == str(name).lower()]
+            if len(match) == 1:
+                found.append(match[0])
+            else:
+                missing.append(name)
+        if missing:
+            raise SolidWorksError(f"No mate {', '.join(repr(str(n)) for n in missing)} "
+                                  f"(there are: {self._some_names([m.Name for m in mates])}).")
+        return found
+
+    @staticmethod
+    def _some_names(names: list, limit: int = 20) -> str:
+        """'a, b, c' -- or the first `limit` and how many more: an assembly
+        with 300 mates should not answer a typo with all of them. Pure."""
+        if not names:
+            return "none"
+        shown = ", ".join(names[:limit])
+        return shown if len(names) <= limit else f"{shown} ... and {len(names) - limit} more (list_components)"
+
+    def delete_mate(self, name) -> dict:
         """Delete a mate of the current assembly by name (list_components, or
-        add_mate's 'mate'); its components are free to move again."""
+        add_mate's 'mate'), or several at once from a list of names, with one
+        rebuild; their components are free to move again. Returns what was
+        deleted and how many mates are left."""
         model = self._require_model()
         asm = self._require_assembly()
-        mate = self._mate_by_name(name)
-        title = mate.Name
+        names = [name] if isinstance(name, str) else list(name or ())
+        if not names:
+            raise SolidWorksError("Give a mate name, or a list of them.")
+        mates = list({m.Name: m for m in self._mates_by_name(names)}.values())
+        titles = [m.Name for m in mates]
         model.ClearSelection2(True)
-        if not mate.Select2(False, 0):
-            raise SolidWorksError(f"Could not select mate '{title}'.")
+        for i, mate in enumerate(mates):
+            if not mate.Select2(i > 0, 0):
+                model.ClearSelection2(True)
+                raise SolidWorksError(f"Could not select mate '{mate.Name}'.")
         if not binding.wrap(model.Extension, self._mod.IModelDocExtension).DeleteSelection2(SW_DELETE_ABSORBED):
-            raise SolidWorksError(f"SolidWorks refused to delete mate '{title}'.")
+            model.ClearSelection2(True)
+            raise SolidWorksError(f"SolidWorks refused to delete mate(s) {', '.join(titles)}.")
         model.ClearSelection2(True)
         asm.EditRebuild()
-        return {"ok": True, "deleted": title, "mates": [m.Name for m in self._mates()]}
+        left = [m.Name for m in self._mates()]
+        stayed = [t for t in titles if t in left]
+        if stayed:
+            raise SolidWorksError(f"SolidWorks kept mate(s) {', '.join(stayed)}; "
+                                  f"deleted: {', '.join(t for t in titles if t not in stayed) or 'none'}.")
+        return {"ok": True, "deleted": titles[0] if isinstance(name, str) else titles, "mates_left": len(left)}
 
     def suppress_mate(self, name: str, suppress: bool = True) -> dict:
         """Suppress a mate, so it stops holding its components while it stays in
@@ -6077,8 +6179,8 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
 
     def delete_component(self, component: str) -> dict:
         """Remove a component from the current assembly, with the mates that
-        hold it. Returns the mates that went with it, the components left and the
-        assembly's mass properties."""
+        hold it. Returns the mates that went with it, how many components are
+        left and the assembly's mass properties."""
         model = self._require_model()
         asm = self._require_assembly()
         comp = self._component_by_name(asm, component)
@@ -6093,8 +6195,178 @@ class SolidWorksSession(DrawingTools, AdvancedTools):
         model.ClearSelection2(True)
         mates_after = {m.Name for m in self._mates()}
         return {"ok": True, "deleted": name, "mates_deleted": [m for m in mates_before if m not in mates_after],
-                "components": [c.Name2 for c in self._components(asm)],
+                "components_left": len(self._component_dispatches(asm)),
                 "mass_properties": self.get_mass_properties()["mass_properties"]}
+
+    def replace_component(self, component: str, path: str) -> dict:
+        """Swap a top-level component for another part or sub-assembly, in the
+        same place, and say what became of the mates that held it.
+
+        SolidWorks re-attaches each mate to the new part's matching face where
+        it can. The others are reported broken, each with what it held before
+        (the old face: type, normal or axis, centre, in the component's own
+        frame) and up to three candidate faces on the new part ('#index' for
+        add_mate) ranked by how near they lie, so re-mating is a delete_mate
+        and an add_mates call."""
+        abs_path = os.path.abspath(path)
+        doc_type = {".sldprt": SW_DOC_PART, ".sldasm": SW_DOC_ASSEMBLY}.get(os.path.splitext(abs_path)[1].lower())
+        if doc_type is None:
+            raise SolidWorksError(f"replace_component takes a .sldprt or a .sldasm (got '{path}').")
+        model = self._require_model()
+        asm = self._require_assembly()
+        if not os.path.isfile(abs_path):
+            raise SolidWorksError(f"Part not found: {abs_path}")
+        old = self._component_by_name(asm, component)
+        if "/" in old.Name2:
+            raise SolidWorksError(f"'{old.Name2}' sits inside a sub-assembly: open that assembly to replace it there.")
+        old_name, old_path = old.Name2, old.GetPathName()
+        if os.path.normcase(old_path) == os.path.normcase(abs_path):
+            raise SolidWorksError(f"'{old_name}' already is {abs_path}.")
+        before = {c.Name2 for c in self._components(asm)}
+        held = self._mates_holding(old)
+
+        # as insert_component: load the new file silently, then back to the assembly
+        title = model.GetTitle()
+        self._sw.OpenDoc6(abs_path, doc_type, SW_OPEN_DOC_SILENT, "", 0, 0)
+        self._sw.ActivateDoc3(title, True, 0, 0)
+        model.ClearSelection2(True)
+        selmgr = binding.wrap(model.SelectionManager, self._mod.ISelectionMgr)
+        if not old.Select4(False, selmgr.CreateSelectData(), False):
+            raise SolidWorksError(f"Could not select component '{old_name}'.")
+        replaced = asm.ReplaceComponents2(abs_path, "", False, SW_REPLACE_CONFIG_MATCH_NAME, True)
+        model.ClearSelection2(True)
+        if not replaced:
+            raise SolidWorksError(f"SolidWorks refused to replace '{old_name}' with {abs_path}.")
+        model.ForceRebuild3(False)
+
+        same_file = [c for c in self._components(asm) if os.path.normcase(c.GetPathName()) == os.path.normcase(abs_path)]
+        new = next((c for c in same_file if c.Name2 not in before), None) or \
+            next((c for c in same_file if c.Name2 == old_name), None)
+        if new is None:
+            raise SolidWorksError(f"SolidWorks replaced '{old_name}', but no component of {abs_path} came in.")
+        mates_now = {m.Name: m for m in self._mates()}
+        new_faces = None
+        kept, broken, lost = [], [], []
+        for entry in held:
+            mate = mates_now.get(entry["mate"])
+            if mate is None:
+                lost.append(entry)
+                continue
+            trouble = self._mate_trouble(mate)
+            if not trouble:
+                kept.append(entry["mate"])
+                continue
+            if new_faces is None:
+                new_faces = [self._face_entry(i, face, self._part_frame_in(new, part))
+                             for i, (face, part) in enumerate(self._component_faces(new))]
+            for face in entry["faces"]:
+                if "type" in face:
+                    face["candidates"] = self._rank_faces(face, new_faces)
+            broken.append({**entry, "error": trouble})
+        return {"ok": True, "replaced": old_name, "component": self._component_entry(new),
+                "mates_kept": kept, "mates_broken": broken, "mates_lost": lost}
+
+    _SELECT_TYPE_NAMES = {1: "edge", 2: "face", 3: "vertex", 4: "plane", 5: "axis", 6: "point"}  # swSelectType_e
+
+    def _mates_holding(self, comp) -> list:
+        """The mates holding `comp`: name, type, the other components, and what
+        each held on comp, described in comp's own frame as list_faces gives it
+        (a face also with its index), so it can be found again on another part."""
+        faces = None
+        out = []
+        for mate in self._mates():
+            entities = self._mate_entities(mate)
+            mine, others = [], []
+            for entity in entities:
+                ref_comp = None if entity is None else binding.wrap(entity.ReferenceComponent, self._mod.IComponent2)
+                if ref_comp is None or not self._holds(ref_comp.Name2, comp.Name2):
+                    others.append(None if ref_comp is None else ref_comp.Name2)
+                    continue
+                kind = self._SELECT_TYPE_NAMES.get(int(entity.ReferenceType2), "other")
+                reference = entity.Reference
+                if kind != "face" or reference is None:
+                    mine.append({"kind": kind})
+                    continue
+                if faces is None:
+                    faces = self._component_faces(comp)
+                face = binding.wrap(reference, self._mod.IFace2)
+                order = self._face_order(face)
+                index = next((i for i, (f, part) in enumerate(faces)
+                              if part.Name2 == ref_comp.Name2 and self._face_order(f) == order), None)
+                frame = self._part_frame_in(comp, ref_comp)
+                mine.append({"kind": "face", **self._face_entry(index, face, frame)})
+            if mine:
+                out.append({"mate": mate.Name, "type": mate.GetTypeName2(),
+                            "with": [o for o in others if o is not None], "faces": mine})
+        return out
+
+    @staticmethod
+    def _rank_faces(old: dict, faces: list, limit: int = 3) -> list:
+        """The faces (list_faces entries) that could take over a mate from
+        `old`: planar ones with the same normal, or cylinders with a parallel
+        axis (the same radius first: a hole may have grown), nearest first, as
+        '#index' plus how far the plane or axis lies from the old one (mm).
+        Pure, unit-tested."""
+        def dot(a, b):
+            return abs(sum(x * y for x, y in zip(a, b)))
+
+        found = []
+        for face in faces:
+            if old.get("normal") is not None and face.get("normal") is not None:
+                if sum(x * y for x, y in zip(old["normal"], face["normal"])) < 0.9999:
+                    continue
+                # how far the planes lie apart; between faces on one plane, the nearer centre first
+                gap = abs(sum((c - o) * n for c, o, n in zip(face["center_mm"], old["center_mm"], old["normal"])))
+                found.append((gap, 0.0, math.dist(face["center_mm"], old["center_mm"]), face))
+            elif old.get("cylinder") and face.get("cylinder"):
+                a, b = old["cylinder"], face["cylinder"]
+                if dot(a["axis"], b["axis"]) < 0.9999:
+                    continue
+                offset = [q - p for p, q in zip(a["point_mm"], b["point_mm"])]
+                along = sum(o * d for o, d in zip(offset, a["axis"]))
+                gap = math.dist(offset, [along * d for d in a["axis"]])  # how far apart the axes lie
+                found.append((gap, abs(a["radius_mm"] - b["radius_mm"]), math.dist(face["center_mm"], old["center_mm"]), face))
+        found.sort(key=lambda item: (round(item[0], 3), round(item[1], 3), item[2], item[3]["index"]))
+        return [{"face": f"#{face['index']}", "off_mm": round(gap, 4) + 0.0,
+                 **{k: face[k] for k in ("normal", "cylinder", "center_mm") if k in face}}
+                for gap, _, _, face in found[:limit]]
+
+    _ADD_MATE_KEYS = ("comp_a", "face_a", "comp_b", "face_b", "mate_type", "distance_mm", "angle_deg", "flip")
+
+    def add_mates(self, mates: list, stop_on_error: bool = True) -> dict:
+        """Add several mates in one call, each as add_mate takes it ({comp_a,
+        face_a, comp_b, face_b, mate_type, distance_mm, angle_deg, flip}) and
+        each measured back the same way. A mate that fails is removed again;
+        with stop_on_error the rest are not tried. The ones before it stay."""
+        self._require_assembly()
+        if not mates:
+            raise SolidWorksError("Give a list of mates, each as add_mate takes it.")
+        for i, spec in enumerate(mates):
+            if not isinstance(spec, dict):
+                raise SolidWorksError(f"Mate {i} is not an object like add_mate's arguments.")
+            unknown = sorted(set(spec) - set(self._ADD_MATE_KEYS))
+            missing = [k for k in self._ADD_MATE_KEYS[:4] if k not in spec]
+            if unknown or missing:
+                raise SolidWorksError(f"Mate {i}: " + "; ".join(
+                    ([f"unknown {', '.join(unknown)}"] if unknown else []) + ([f"missing {', '.join(missing)}"] if missing else []))
+                    + f". Each takes {', '.join(self._ADD_MATE_KEYS)}.")
+        results = []
+        for i, spec in enumerate(mates):
+            try:
+                made = self.add_mate(**spec)
+            except SolidWorksError as exc:
+                results.append({"index": i, "ok": False, "error": str(exc)})
+                if stop_on_error:
+                    break
+                continue
+            results.append({"index": i, "ok": True, "mate": made["mate"],
+                            **({"dimension": made["dimension"]} if "dimension" in made else {})})
+        failed = [r for r in results if not r["ok"]]
+        out = {"ok": not failed, "added": len(results) - len(failed), "failed": len(failed),
+               "not_tried": len(mates) - len(results), "results": results, "mates_total": len(self._mates())}
+        if failed:
+            out["error"] = f"Mate {failed[0]['index']} failed: {failed[0]['error']}"
+        return out
 
     def set_component_transform(self, name: str, x_mm: float, y_mm: float, z_mm: float,
                                 rx_deg: float = 0.0, ry_deg: float = 0.0,

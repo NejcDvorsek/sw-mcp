@@ -218,7 +218,8 @@ def test_a_suppressed_angle_mate_moves_nothing_and_check_motion_says_so(linkage)
 def test_a_deleted_mate_is_gone(linkage):
     angle = knee(linkage, 90)
     gone = linkage.delete_mate(angle["mate"])
-    assert gone["deleted"] == angle["mate"] and angle["mate"] not in gone["mates"] and len(gone["mates"]) == 2
+    assert gone["deleted"] == angle["mate"] and gone["mates_left"] == 2
+    assert angle["mate"] not in [m["name"] for m in linkage.list_components()["mates"]]
     with pytest.raises(SolidWorksError, match=rf"No mate '{angle['mate']}'"):
         linkage.delete_mate(angle["mate"])
 
@@ -311,4 +312,80 @@ def test_a_coincident_mate_holds_on_slanted_faces(sw, tmp_path):
     finally:
         sw.close_part()
         for path in (wedge, block):
+            sw._sw.CloseDoc(path)
+
+
+def test_several_mates_go_in_and_out_in_one_call(linkage):
+    """add_mates makes the knee in one call, each mate measured back as
+    add_mate does; delete_mate takes the list and answers with a count, not
+    every mate left (an assembly of 300 mates sent all 300 each time)."""
+    made = linkage.add_mates([
+        {"comp_a": "link_shin", "face_a": hole(linkage, "link_shin"),
+         "comp_b": "link_thigh", "face_b": hole(linkage, "link_thigh"), "mate_type": "concentric"},
+        {"comp_a": "link_shin", "face_a": "-z", "comp_b": "link_thigh", "face_b": "+z"},
+        {"comp_a": "link_shin", "face_a": "-y", "comp_b": "link_thigh", "face_b": "-y",
+         "mate_type": "angle", "angle_deg": 90},
+    ])
+    assert made["ok"] and made["added"] == 3 and made["mates_total"] == 3, made
+    assert made["results"][2]["dimension"], "the angle mate's dimension, to drive the joint"
+    names = [r["mate"] for r in made["results"]]
+    gone = linkage.delete_mate(names[1:])
+    assert gone["deleted"] == names[1:] and gone["mates_left"] == 1, gone
+    assert [m["name"] for m in linkage.list_components()["mates"]] == names[:1]
+
+
+def test_add_mates_stops_at_the_first_that_fails_and_keeps_the_ones_before(linkage):
+    made = linkage.add_mates([
+        {"comp_a": "link_shin", "face_a": "-z", "comp_b": "link_thigh", "face_b": "+z"},
+        {"comp_a": "link_shin", "face_a": "-z", "comp_b": "link_thigh", "face_b": "+x", "mate_type": "concentric"},
+        {"comp_a": "link_shin", "face_a": "-y", "comp_b": "link_thigh", "face_b": "-y", "mate_type": "parallel"},
+    ])
+    assert not made["ok"] and (made["added"], made["failed"], made["not_tried"]) == (1, 1, 1), made
+    assert "cylindrical" in made["error"]
+    assert made["mates_total"] == 1
+    with pytest.raises(SolidWorksError, match="Mate 0: unknown comp"):
+        linkage.add_mates([{"comp": "link_shin"}])
+
+
+def test_list_components_narrows_to_a_name_and_the_mates_that_hold_it(linkage):
+    knee(linkage, 90)
+    shin = linkage.list_components(name="shin")
+    assert [c["name"] for c in shin["components"]] == ["link_shin-1"] and shin["total"] == 3
+    assert len(shin["mates"]) == 3 and all("link_shin-1" in m["components"] for m in shin["mates"]), shin["mates"]
+    stop = linkage.list_components(name="link_st*")
+    assert [c["name"] for c in stop["components"]] == ["link_stop-1"] and stop["mates"] == []
+    brief = linkage.list_components(mates=False, brief=True)
+    assert "mates" not in brief and set(brief["components"][0]) == {"name", "path", "fixed"}
+
+
+def test_replace_component_reports_the_mates_it_broke_with_candidate_faces(sw, linkage_parts, tmp_path):
+    """The shin is swapped for a longer bar whose hole sits 10 mm further
+    along: every mate is accounted for, and one that broke says which face it
+    held and where the new part's nearest matching faces lie."""
+    sw.new_part()
+    sw.add_box(70, 10, 5)
+    sw.add_hole(4, 65, 5)
+    longer = sw.save_part(str(tmp_path / "link_long.sldprt"))["path"]
+    sw.close_part()
+    sw.new_assembly()
+    try:
+        sw.insert_component(linkage_parts["link_thigh"], 0, 0, 0)
+        sw.insert_component(linkage_parts["link_shin"], 30, 40, 20)
+        knee(sw, 90)
+        swapped = sw.replace_component("link_shin-1", longer)
+        assert swapped["replaced"] == "link_shin-1" and swapped["component"]["name"].startswith("link_long"), swapped
+        reported = swapped["mates_kept"] + [m["mate"] for m in swapped["mates_broken"] + swapped["mates_lost"]]
+        assert len(reported) == 3, swapped
+        names = {m["name"] for m in sw.list_components()["mates"]}
+        for mate in swapped["mates_broken"]:
+            assert mate["mate"] in names and mate["with"] == ["link_thigh-1"], mate
+            for face in mate["faces"]:
+                if face.get("cylinder"):  # the old hole at (55, 5); the new one lies 10 mm along x
+                    assert face["cylinder"]["point_mm"][:2] == pytest.approx([55, 5], abs=1e-3), face
+                    assert face["candidates"][0]["off_mm"] == pytest.approx(10, abs=1e-3), face
+        with pytest.raises(SolidWorksError, match="already is"):
+            sw.replace_component(swapped["component"]["name"], longer)
+    finally:
+        sw.close_part()
+        for path in (longer, *linkage_parts.values()):
             sw._sw.CloseDoc(path)

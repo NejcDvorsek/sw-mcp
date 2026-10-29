@@ -3,9 +3,9 @@
 Spawns `python -m solidworks_mcp.server` as a subprocess, speaks the MCP
 protocol to it, and runs the M3 verification loop against the live SolidWorks:
 
-    get_status -> new_part -> add_box(40x20x10) -> measure (expect 8000 mm^3)
+    get_status -> new_document -> add_box(40x20x10) -> measure (expect 8000 mm^3)
     -> set_dimension depth=25 -> measure (expect 20000 mm^3) -> bounding box
-    -> export STEP + STL -> screenshot -> close_part
+    -> export STEP + STL -> screenshot -> close_document
 
 Run with the venv python (the server module must be importable there):
     .venv\\Scripts\\python.exe scripts\\test_mcp_server.py
@@ -63,8 +63,8 @@ async def run() -> int:
             r = payload(await session.call_tool("get_status", {}))
             check("verbonden", r.get("connected") is True, f"revision={r.get('revision')}")
 
-            print("[2] new_part")
-            r = payload(await session.call_tool("new_part", {}))
+            print("[2] new_document")
+            r = payload(await session.call_tool("new_document", {}))
             check("part created", r.get("ok") is True, f"title={r.get('title')}")
 
             print("[3] add_box 40x20x10")
@@ -120,8 +120,8 @@ async def run() -> int:
             check("screenshot png", r.get("ok") is True and os.path.isfile(png),
                   f"{r.get('bytes')} bytes")
 
-            print("[8] close_part")
-            r = payload(await session.call_tool("close_part", {}))
+            print("[8] close_document")
+            r = payload(await session.call_tool("close_document", {}))
             check("part closed", r.get("ok") is True, f"closed={r.get('closed')}")
 
     print()

@@ -17,13 +17,20 @@ API facts this depends on (SOLIDWORKS 2026 SP4.1):
 """
 
 import contextlib
+import importlib
 import io
+import itertools
 import json
 import math
+import os
+import sys
+import tempfile
+import time
 import traceback
 
 from . import binding
-from .constants import SW_REF_PLANE_COINCIDENT, SW_REF_PLANE_PERPENDICULAR
+from .constants import SW_REF_PLANE_COINCIDENT, SW_REF_PLANE_PERPENDICULAR, VIEWS
+from .image_sheet import png_bytes, read_bmp, tile
 from .errors import SolidWorksError
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
@@ -249,47 +256,215 @@ class AdvancedTools:
 
     # --- run_script ----------------------------------------------------------------------
 
-    def run_script(self, code: str) -> dict:
+    _SHEET_VIEWS = ("iso", "right", "top", "bottom")  # 2 x 2, row by row
+    _SHEET_WIDTH = 640                                # pixels per view, across
+    _CLASH_MM3 = 1e-3                                 # less overlap than this is touching
+
+    def run_script(self, code: str | None = None, path: str | None = None, image: str | None = None) -> dict:
         """Run Python against the live SolidWorks on the server's COM thread.
+
+        The script comes as `code`, or as a file at `path`: then it can import
+        helper modules from its own folder, which are loaded fresh on every run,
+        so a part is rebuilt by editing the file and running it again.
 
         The script sees: sw (ISldWorks), model (current IModelDoc2 or None),
         drawing (current drawing or None), mod (the typed interfaces), wrap
         (re-type a COM object: wrap(obj, mod.IFeature)), mm (mm -> m), to_mm
         (m -> mm), doubles (a VARIANT array of doubles), session (the server's
         own tools, e.g. session.list_faces()), math, json. print() is captured;
-        whatever the script puts in `result` comes back. Afterwards the part is
-        rebuilt and reported like any modelling call. A script that raises is
+        whatever the script puts in `result` comes back. A script that raises is
         rolled back like any failed tool.
+
+        Afterwards a part is rebuilt and reported in one go: the features the
+        script added, features that fail to rebuild, each body with its volume
+        and box, overlaps between bodies, sketches it left under defined, mass
+        properties, and with `image` (default for a file: the script's name as
+        .png) one picture of the iso, right, top and bottom views.
         """
+        if (code is None) == (path is None):
+            raise SolidWorksError("Give the script as code='...' or as path='part.py' (one of them).")
+        folder, filename = None, "<run_script>"
+        if path is not None:
+            filename = os.path.abspath(str(path))
+            if not os.path.isfile(filename):
+                raise SolidWorksError(f"No script at {filename}.")
+            with open(filename, encoding="utf-8") as handle:
+                code = handle.read()
+            folder = os.path.dirname(filename)
+            if image is None:
+                image = os.path.splitext(filename)[0] + ".png"
         if not isinstance(code, str) or not code.strip():
-            raise SolidWorksError("Give the script as code='...'.")
+            raise SolidWorksError("The script is empty.")
+        if image is not None and os.path.splitext(str(image))[1].lower() != ".png":
+            raise SolidWorksError(f"The image is written as PNG: give a .png path (got {image}).")
         sw = self._ensure()
+        started = time.perf_counter()
+        model_before = self._model
+        features_before, loose_before = self._script_baseline()
         namespace = {
             "sw": sw, "model": self._model, "drawing": self._drawing, "mod": self._mod, "wrap": binding.wrap,
             "mm": mm_to_m, "to_mm": m_to_mm, "doubles": self._doubles, "session": self, "math": math,
-            "json": json, "result": None,
+            "json": json, "result": None, "__name__": "__main__", "__file__": filename,
         }
         output = io.StringIO()
         try:
-            compiled = compile(code, "<run_script>", "exec")
+            compiled = compile(code, filename, "exec")
         except SyntaxError as exc:
             raise SolidWorksError(f"The script does not parse: {exc}") from exc
         try:
-            with contextlib.redirect_stdout(output):
+            with contextlib.redirect_stdout(output), script_folder(folder):
                 exec(compiled, namespace)  # noqa: S102 - the point of the tool; off unless allowed
         except SolidWorksError:
             raise
         except Exception as exc:  # noqa: BLE001 - relay the script's own error with its line
             trace = traceback.format_exception(type(exc), exc, exc.__traceback__)
-            lines = [t for t in trace if "<run_script>" in t] or trace[-1:]
+            ours = [t for t in trace if filename in t or (folder and folder in t)] or trace[-1:]
             raise SolidWorksError(f"The script failed: {type(exc).__name__}: {exc} "
-                                  f"({lines[-1].strip()}). Output so far: {output.getvalue()[-2000:]}") from exc
+                                  f"({ours[-1].strip()}). Output so far: {output.getvalue()[-2000:]}") from exc
+        ran = time.perf_counter() - started
         out = {"ok": True, "output": output.getvalue()[-20000:], "result": json_safe(namespace.get("result"))}
         if self._model is not None and int(self._model.GetType()) == 1:  # a part: rebuild and report it
-            self._model.ForceRebuild3(False)
-            failing = self._failing_features()
-            if failing:
-                out["failing_features"] = failing
-            out.update({k: v for k, v in self.get_mass_properties().items() if k != "ok"})
+            if self._model is not model_before:  # the script started a part of its own: all of it is new
+                features_before, loose_before = set(), set()
+            out.update(self._script_report(features_before, loose_before, image))
+        out["seconds"] = {"script": round(ran, 2), "report": round(time.perf_counter() - started - ran, 2)}
         return out
+
+    def _script_baseline(self) -> tuple:
+        """The feature names and under-defined sketches of the current part before
+        a script runs, so the report names only what the script did."""
+        if self._model is None or int(self._model.GetType()) != 1:
+            return set(), set()
+        return {f.Name for f in self._iter_features()}, set(self._under_defined_sketches())
+
+    def _script_report(self, features_before: set, loose_before: set, image: str | None) -> dict:
+        """One report of the part after a script: what it added, what fails, its
+        bodies and their overlaps, loose sketches, mass, and the picture."""
+        self._model.ForceRebuild3(False)
+        report = {"features_added": self._features_added(features_before)}
+        failing = self._failing_features()
+        if failing:
+            report["failing_features"] = failing
+        loose = [s for s in self._under_defined_sketches() if s not in loose_before]
+        if loose:
+            report["under_defined_sketches"] = loose
+        bodies = self._part_bodies()
+        report["bodies"] = [{"name": body.Name, "volume_mm3": round(body.GetMassProperties(1.0)[3] * 1e9, 4),
+                             "bounding_box_mm": self._body_box(body)} for body in bodies]
+        if len(bodies) > 1:
+            report["clashes"] = self._body_clashes(bodies, [b["bounding_box_mm"] for b in report["bodies"]])
+        report.update({k: v for k, v in self.get_mass_properties().items() if k != "ok"})
+        if image is not None and bodies:
+            report["image"] = {"path": self._view_sheet(os.path.abspath(str(image))),
+                               "views": " | ".join(self._SHEET_VIEWS[:2]) + " / " + " | ".join(self._SHEET_VIEWS[2:])}
+        return report
+
+    # What every new part's tree holds, which a script did not add in any sense
+    _TREE_FURNITURE = {"CommentsFolder", "FavoriteFolder", "HistoryFolder", "SelectionSetFolder", "SensorFolder",
+                       "DocsFolder", "DetailCabinet", "SurfaceBodyFolder", "SolidBodyFolder", "EnvFolder",
+                       "InkMarkupFolder", "EqnFolder", "MaterialFolder", "OriginProfileFeature"}
+
+    def _features_added(self, before: set) -> list:
+        """'Name (type)' for each feature not in `before`, in tree order; leaves
+        out the tree's folders, the three standard planes and sketches that a
+        feature took up, so a part a script started reads as its features."""
+        added, planes = [], 0
+        for feat in self._iter_features():
+            kind = feat.GetTypeName2()
+            planes += kind == "RefPlane"
+            if (feat.Name in before or kind in self._TREE_FURNITURE or (kind == "RefPlane" and planes <= 3)
+                    or (kind == "ProfileFeature" and feat.GetChildren())):
+                continue
+            added.append(f"{feat.Name} ({kind})")
+        return added
+
+    def _body_clashes(self, bodies: list, boxes: list) -> list:
+        """Pairs of bodies that share material, with the shared volume: the
+        intersection of copies of the two, so the part is left as it was. Pairs
+        whose boxes do not meet are not computed."""
+        common = self._BODY_OPERATIONS["common"]
+        clashes = []
+        for (a, box_a), (b, box_b) in itertools.combinations(zip(bodies, boxes), 2):
+            if not boxes_overlap(box_a, box_b):
+                continue
+            copy = binding.wrap(a.Copy(), self._mod.IBody2)
+            found = copy.Operations2(common, binding.wrap(b.Copy(), self._mod.IBody2))
+            pieces = found[0] if isinstance(found, tuple) else found
+            volume = sum(binding.wrap(p, self._mod.IBody2).GetMassProperties(1.0)[3] for p in (pieces or ())) * 1e9
+            if volume > self._CLASH_MM3:
+                clashes.append({"bodies": [a.Name, b.Name], "volume_mm3": round(volume, 4)})
+        return clashes
+
+    def _view_sheet(self, path: str) -> str:
+        """The iso, right, top and bottom views of the current part, zoomed to
+        fit, on one PNG at `path`; planes and axes hidden.
+
+        SaveBMP scales the view window to the height asked for and cuts off
+        what is wider (SP4.1, verified): each view keeps the window's shape.
+        """
+        import win32gui  # Windows only, as this whole mixin's SolidWorks side is
+
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        views = []
+        handle, scratch = tempfile.mkstemp(suffix=".bmp")
+        os.close(handle)
+        try:
+            with self._view_drawn() as model:
+                view = binding.wrap(model.ActiveView, self._mod.IModelView)
+                _, _, window_w, window_h = win32gui.GetClientRect(view.GetViewHWnd())
+                width, height = sheet_tile(window_w, window_h, self._SHEET_WIDTH)
+                for key in self._SHEET_VIEWS:
+                    model.ShowNamedView2("", VIEWS[key])
+                    model.ViewZoomtofit2()
+                    if not model.SaveBMP(scratch, width, height):
+                        raise SolidWorksError(f"SolidWorks could not draw the {key} view.")
+                    with open(scratch, "rb") as bmp:
+                        views.append(read_bmp(bmp.read()))
+        finally:
+            os.remove(scratch)
+        with open(path, "wb") as png:
+            png.write(png_bytes(*tile(views, 2)))
+        return path
+
+
+def sheet_tile(window_w: int, window_h: int, width: int) -> tuple:
+    """(width, height) of one view on the sheet, shaped like the view window;
+    4:3 for a window too small to tell; pure, unit-tested."""
+    if window_w < 16 or window_h < 16:
+        return width, width * 3 // 4
+    return width, max(16, min(2 * width, round(width * window_h / window_w)))
+
+
+def boxes_overlap(a: dict | None, b: dict | None) -> bool:
+    """Whether two boxes ({min_mm, max_mm}) share more than a face; pure, unit-tested."""
+    if not a or not b:
+        return False
+    return all(a["min_mm"][i] < b["max_mm"][i] and b["min_mm"][i] < a["max_mm"][i] for i in range(3))
+
+
+@contextlib.contextmanager
+def script_folder(folder: str | None):
+    """Let a script file import helper modules from its own folder, and forget
+    them afterwards: the server lives on, so a cached module would keep running
+    the code from before the helper was edited. No bytecode is written either:
+    a .pyc only notes the source's size and whole-second time, so a helper
+    edited within the second to the same size would load as it was."""
+    if folder is None:
+        yield
+        return
+    loaded = set(sys.modules)
+    writes, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    sys.path.insert(0, folder)
+    importlib.invalidate_caches()  # the folder's file listing is cached too
+    try:
+        yield
+    finally:
+        sys.dont_write_bytecode = writes
+        with contextlib.suppress(ValueError):
+            sys.path.remove(folder)
+        inside = os.path.normcase(os.path.join(folder, ""))
+        for name in set(sys.modules) - loaded:
+            source = getattr(sys.modules[name], "__file__", None)
+            if source and os.path.normcase(os.path.abspath(source)).startswith(inside):
+                del sys.modules[name]
 

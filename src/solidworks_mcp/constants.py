@@ -173,6 +173,9 @@ SKETCH_STATUSES = {1: "status unknown", 2: "under defined", 3: "fully defined", 
 SW_DELETE_CHILDREN = 1
 SW_DELETE_ABSORBED = 2   # the sketches the feature consumed go with it
 
+# swReplaceComponentsConfiguration_e (IAssemblyDoc.ReplaceComponents2)
+SW_REPLACE_CONFIG_MATCH_NAME = 0   # the new file's configuration of the same name, else its active one
+
 # swMoveLocation_e (IModelDocExtension.ReorderFeature): the feature lands before the
 # location feature, with the sketch it absorbed
 SW_MOVE_BEFORE = 2
@@ -232,6 +235,7 @@ SW_TOGGLE_STL_DONT_TRANSLATE = 71  # keep STL output in model coordinates (defau
 SW_TOGGLE_STL_ONE_FILE = 72        # swSTLComponentsIntoOneFile: an assembly's STL as one file, not one per part
 SW_TOGGLE_DISPLAY_AXES = 4         # swDisplayAxes: a document's View > Axes
 SW_TOGGLE_DISPLAY_PLANES = 5       # swDisplayPlanes: a document's View > Planes
+SW_VIEW_ANIMATION_SPEED = 38       # swViewAnimationSpeed (a double): 0 shows view changes at once
 # swMultiCAD_Enable3DInterconnect: with it on, an imported assembly arrives as ONE
 # wrapped sub-assembly, so its parts cannot be listed or mated (verified)
 SW_TOGGLE_3D_INTERCONNECT = 691

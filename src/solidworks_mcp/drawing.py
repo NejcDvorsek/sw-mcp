@@ -199,7 +199,7 @@ class DrawingTools:
             raise SolidWorksError("No current part: give part='<path to .sldprt>' or open the part first.")
         path = self._model.GetPathName()
         if not path:
-            raise SolidWorksError("Save the part first (save_part): a drawing refers to its file.")
+            raise SolidWorksError("Save the part first (save_document): a drawing refers to its file.")
         return path
 
     def open_drawing(self, path: str) -> dict:
@@ -272,7 +272,7 @@ class DrawingTools:
         part = self._require_part()
         part_path = self._model.GetPathName()
         if not part_path:
-            raise SolidWorksError("Save the part first (save_part): the drawing refers to its file.")
+            raise SolidWorksError("Save the part first (save_document): the drawing refers to its file.")
         abs_path = os.path.abspath(path)
         model, drawing = self._start_drawing(sheet)
         self._drawing_model = part_path

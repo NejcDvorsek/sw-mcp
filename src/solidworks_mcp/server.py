@@ -25,8 +25,8 @@ Conventions
 - Millimetres and degrees. New geometry starts on the Front plane (XY) and extrudes along +Z from z = 0. add_box spans x 0..w, y 0..h; add_disc is centred on the origin; revolves turn about Y.
 - Faces are picked by direction: '+z', '-x', ... *_on_face tools take 3D points on the face and use the face facing that way through them (the top, a pocket floor, a step); '+z:outer' / '+z:inner' force the outermost / innermost one. Other tools use the outermost face.
 - Every sketch is fully defined. Tools return `dimensions` ({role: 'width@Sketch1', ...}): change one with set_dimension, or drive several from a global variable via set_equation.
-- Other orientations: add_plane (an offset, or turned about x/y/z) and build on it with add_extruded_profile_on_plane or cut_profile_through_plane.
-- In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror and cut_profile_through_plane.
+- Other orientations: add_plane (an offset, or turned about x/y/z) and build on it with add_extruded_profile or cut_profile, plane='Plane1'.
+- In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror, add_extruded_profile and cut_profile.
 - Flowing outlines (an S-bend, a hub running into a beam): add_sketch with lines, tangent arcs and splines, then extrude_sketch / cut_sketch.
 - A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
 
@@ -117,9 +117,13 @@ async def get_status() -> dict:
 
 
 @mcp.tool()
-async def new_part() -> dict:
-    """Create a new empty part document; it becomes the current part."""
-    return await _call(_session.new_part)
+async def new_document(kind: str = "part") -> dict:
+    """Create a new empty part (kind='part') or assembly (kind='assembly'); it becomes the current document.
+
+    Assemblies compose saved parts: insert_component places each part, add_mate
+    constrains them, check_interference proves nothing overlaps. Drawings: drawing_file.
+    """
+    return await _call(_session.new_document, kind)
 
 
 @mcp.tool()
@@ -135,38 +139,32 @@ async def add_box(width_mm: float, height_mm: float, depth_mm: float,
 
 
 @mcp.tool()
-async def add_extruded_profile(points_mm: list, depth_mm: float, name: str = "Extrude",
+async def add_extruded_profile(points_mm: list, depth_mm: float, face: str | None = None, plane: str | None = None,
+                               reverse: bool = False, name: str | None = None,
                                corner_radii_mm: float | list | None = None, rotate_deg: float = 0.0,
-                               about_mm: list | None = None, draft_deg: float = 0.0, merge: bool = True) -> dict:
-    """Extrude a closed polygon into a solid: points_mm = [[x,y], ...] in mm.
+                               about_mm: list | None = None, draft_deg: float = 0.0, merge: bool = True,
+                               spline: bool = False) -> dict:
+    """Extrude a closed polygon into a solid; it is auto-closed.
 
-    The polygon (first-plane coordinates, same as add_box) is auto-closed and
-    extruded by depth_mm. Unlocks arbitrary prismatic shapes (brackets, profiles,
-    polygons). corner_radii_mm rounds the corners with real sketch fillets: one
-    radius for all, or one per vertex (0 = sharp); equal radii share one
-    dimension ('radius', else 'r<i>'). rotate_deg turns the profile
-    counterclockwise about about_mm ([x, y], the origin by default) first: draw
-    a crank or a lug straight, then set it at its angle. draft_deg tapers the
-    walls inwards as they rise (negative: outwards), a dimension 'draft' (a
-    moulded boss, a printable taper). merge=False keeps the result a separate
-    body: list_bodies, combine_bodies. Returns mass properties (volume = polygon
-    area * depth; a right-angled corner of radius r loses r^2 (1 - pi/4), a
-    concave one gains it).
+    - Default: points_mm = [[x,y], ...] on the first plane (same as add_box), extruded by depth_mm along +Z.
+      rotate_deg turns the profile counterclockwise about about_mm ([x, y], the origin by default) first:
+      draw a crank or a lug straight, then set it at its angle. spline=True runs a smooth closed spline
+      through the points instead (organic shapes).
+    - face='+z' (or '-x', ...): a boss grown out of ANY planar face; points_mm = [[x,y,z], ...] on that
+      face (the face facing that way through them, as for add_hole). For pads, ledges, mounting blocks.
+    - plane='Plane1' (add_plane, or 'front'/'top'/'right'): points_mm = 3D [x, y, z] points ON the plane
+      (origin + u x_axis + v y_axis from add_plane); depth_mm along its normal, the other way with
+      reverse=True.
+
+    corner_radii_mm rounds the corners with real sketch fillets: one radius for all, or one per vertex
+    (0 = sharp); equal radii share one dimension ('radius', else 'r<i>'). draft_deg tapers the walls
+    inwards as they rise (negative: outwards), a dimension 'draft' (a moulded boss, a printable taper).
+    merge=False keeps the result a separate body: list_bodies, combine_bodies. An argument that does not
+    go with the variant is refused. Returns mass properties (volume = polygon area * depth; a
+    right-angled corner of radius r loses r^2 (1 - pi/4), a concave one gains it).
     """
-    return await _call(_session.add_extruded_profile, points_mm, depth_mm, name, corner_radii_mm, rotate_deg,
-                       about_mm, draft_deg, merge)
-
-
-@mcp.tool()
-async def add_extruded_spline(points_mm: list, depth_mm: float, name: str = "Spline") -> dict:
-    """Extrude a smooth CLOSED spline through points: points_mm = [[x,y], ...] in mm.
-
-    Like add_extruded_profile but the outline is a smooth curve through the points
-    (free-form/organic shapes: cams, rounded outlines, aesthetic bosses), auto-closed
-    and extruded by depth_mm. A spline's area is not analytic, so the returned volume
-    is the measured value. Returns mass properties. Use new_part first.
-    """
-    return await _call(_session.add_extruded_spline, points_mm, depth_mm, name)
+    return await _call(_session.extruded_profile, points_mm, depth_mm, face, plane, reverse, name,
+                       corner_radii_mm, rotate_deg, about_mm, draft_deg, merge, spline)
 
 
 @mcp.tool()
@@ -176,7 +174,7 @@ async def add_disc(diameter_mm: float, thickness_mm: float, name: str = "Disc",
 
     Flat faces are +Z/-Z, so add_hole and add_circular_pattern compose with it
     (round-flange bolt circles). The centre defaults to the origin; off it, its
-    x and y are dimensions. Returns mass properties. Use new_part first.
+    x and y are dimensions. Returns mass properties. Use new_document first.
     """
     return await _call(_session.add_disc, diameter_mm, thickness_mm, name, x_mm, y_mm)
 
@@ -186,7 +184,7 @@ async def add_cylinder(diameter_mm: float, height_mm: float, name: str = "Revolv
     """Create a cylinder by revolving a profile 360° about an axis.
 
     The first revolve-based primitive. Returns the resulting mass properties
-    (volume = π · r² · h). Use new_part first.
+    (volume = π · r² · h). Use new_document first.
     """
     return await _call(_session.add_cylinder, diameter_mm, height_mm, name)
 
@@ -197,7 +195,7 @@ async def add_cone(bottom_diameter_mm: float, top_diameter_mm: float,
     """Create a cone/frustum by revolving a trapezoidal profile 360°.
 
     top_diameter_mm = 0 gives a full cone. Returns mass properties
-    (volume = π·h/3 · (rb² + rb·rt + rt²)). Use new_part first.
+    (volume = π·h/3 · (rb² + rb·rt + rt²)). Use new_document first.
     """
     return await _call(_session.add_cone, bottom_diameter_mm, top_diameter_mm, height_mm, name)
 
@@ -215,7 +213,7 @@ async def add_revolved_profile(profile_mm: list, angle_deg: float = 360.0,
     angle_deg (default 360°). Points on the axis give a solid (shafts, vases); a
     profile away from it gives a ring. The profile may not cross the axis.
     corner_radii_mm rounds corners as for add_extruded_profile (not those on the
-    axis). Returns mass properties. Use new_part first.
+    axis). Returns mass properties. Use new_document first.
     """
     return await _call(_session.add_revolved_profile, profile_mm, angle_deg, name, corner_radii_mm, axis_mm)
 
@@ -230,7 +228,7 @@ async def add_swept_pipe(path_mm: list, diameter_mm: float,
     needs none); smooth=True runs a spline through the points instead, a
     flowing curve. diameter_mm = outer Ø; the round profile is auto-generated
     perpendicular to the path. Returns mass properties (pi r^2 x
-    path_length_mm). Use new_part first.
+    path_length_mm). Use new_document first.
     """
     return await _call(_session.add_swept_pipe, path_mm, diameter_mm, bend_radius_mm, name, smooth)
 
@@ -247,45 +245,49 @@ async def add_swept_profile(profile_mm: list, path_mm: list,
     perpendicular to the path there). Path corners are rounded with bend_radius_mm;
     corner_radii_mm rounds the profile's corners as for add_extruded_profile.
     Volume = profile_area · path_length. For non-round extrusions along a path
-    (rails, gaskets, trim, channels). Returns mass properties. Use new_part first.
+    (rails, gaskets, trim, channels). Returns mass properties. Use new_document first.
     """
     return await _call(_session.add_swept_profile, profile_mm, path_mm, bend_radius_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
-async def add_lofted_solid(profiles_mm: list, heights_mm: list, name: str = "Loft") -> dict:
-    """Loft (blend) 2+ closed profiles on parallel planes stacked along +Z.
+async def add_loft(sketches: list | None = None, cut: bool = False, profiles_mm: list | None = None,
+                   heights_mm: list | None = None, name: str | None = None) -> dict:
+    """Loft (blend) 2+ closed profiles, given one of two ways.
 
-    profiles_mm: per profile a polygon [[x,y],…] (mm) in Front-plane coords, or a
-    round section {"center_mm": [x, y], "diameter_mm": d} (thick at the knee,
-    thin at the foot, centres free to wander). heights_mm = the +Z offset (mm)
-    of each profile, same length, strictly increasing, starting at 0. A
-    2-profile loft is a ruled transition; 3+ blend smoothly. Each profile
-    starts at its first vertex (a round one on +x): give polygons in a
-    consistent vertex order to avoid twist. Returns mass properties. Use
-    new_part first.
+    - sketches=['Heel', 'Toe']: closed sketches by name (add_sketch on any planes), in order; cut=True
+      cuts the lofted shape away (a straight bevel gear's tooth gap is a loft cut between heel and toe
+      profiles).
+    - profiles_mm + heights_mm: per profile a polygon [[x,y], ...] (mm) in Front-plane coords, or a round
+      section {"center_mm": [x, y], "diameter_mm": d}, on parallel planes at heights_mm along +Z (same
+      length, strictly increasing, starting at 0). A 2-profile loft is a ruled transition; 3+ blend
+      smoothly. Each profile starts at its first vertex (a round one on +x).
+
+    Give profiles in the same order and sense so they do not twist. Returns mass properties.
     """
-    return await _call(_session.add_lofted_solid, profiles_mm, heights_mm, name)
+    return await _call(_session.loft, sketches, cut, profiles_mm, heights_mm, name)
 
 
 @mcp.tool()
-async def cut_profile_through_plane(points_mm: list, plane: str, depth_mm: float | None = None,
-                                    name: str = "Cut", corner_radii_mm: float | list | None = None,
-                                    keep_inside: bool = False) -> dict:
-    """Cut a polygon sketched on a reference plane, symmetric about that plane.
+async def cut_profile(points_mm: list, depth_mm: float | None = None, face: str | None = None,
+                      plane: str | None = None, name: str = "Cut", corner_radii_mm: float | list | None = None,
+                      rotate_deg: float = 0.0, about_mm: list | None = None, keep_inside: bool = False) -> dict:
+    """Cut a polygonal pocket, slot or window; the polygon is auto-closed.
 
-    plane: 'front' (z = 0), 'top' (y = 0), 'right' (x = 0) or the name of another
-    plane in the part ('Plane1'); points_mm = 3D [x, y, z] points ON that plane
-    (e.g. x = 0 for 'right'). Cuts through all in
-    both directions (depth_mm omitted) or depth_mm in total, centred on the
-    plane. For shapes seen from the side: wedges, windows, symmetric recesses.
-    corner_radii_mm rounds the corners as for add_extruded_profile.
-    keep_inside=True cuts away everything OUTSIDE the profile (through all):
-    extrude the front view, cut the side view with keep_inside, and the part is
-    the 3D shape both views agree on. Returns mass properties.
+    - Default: points_mm = [[x,y], ...] cut down from the +Z face. rotate_deg turns the profile about
+      about_mm as for add_extruded_profile (notches at +/-60 degrees around a pivot).
+    - face='+x' (or ...): points_mm = [[x,y,z], ...] on one face facing that way, found through them;
+      for side pockets and cutouts.
+    - plane='right' ('front' z = 0, 'top' y = 0, 'right' x = 0, or 'Plane1'): points_mm = 3D points ON
+      that plane, cut symmetric about it. For shapes seen from the side: wedges, windows, symmetric
+      recesses. keep_inside=True cuts away everything OUTSIDE the profile (through all): extrude the
+      front view, cut the side view with keep_inside, and the part is the 3D shape both views agree on.
+
+    Blind by depth_mm (with plane=: in total, centred on the plane), or through all when omitted.
+    corner_radii_mm rounds the corners as for add_extruded_profile. Returns mass properties.
     """
-    return await _call(_session.cut_profile_through_plane, points_mm, plane, depth_mm, name, corner_radii_mm,
-                       keep_inside)
+    return await _call(_session.profile_cut, points_mm, depth_mm, face, plane, name, corner_radii_mm,
+                       rotate_deg, about_mm, keep_inside)
 
 
 @mcp.tool()
@@ -304,22 +306,6 @@ async def add_plane(base: str = "front", offset_mm: float = 0.0, angle_deg: floa
     on it is origin + u x_axis + v y_axis.
     """
     return await _call(_session.add_plane, base, offset_mm, angle_deg, about, name, normal, through)
-
-
-@mcp.tool()
-async def add_extruded_profile_on_plane(points_mm: list, plane: str, depth_mm: float, reverse: bool = False,
-                                        name: str = "Extrude",
-                                        corner_radii_mm: float | list | None = None, draft_deg: float = 0.0,
-                                        merge: bool = True) -> dict:
-    """Extrude a polygon drawn on a reference plane, such as one add_plane made at an angle.
-
-    points_mm = 3D [x, y, z] points ON the plane (origin + u x_axis + v y_axis
-    from add_plane). depth_mm along the plane's normal, or the other way with
-    reverse=True; merged with the part. corner_radii_mm, draft_deg and merge
-    work as for add_extruded_profile. Returns mass properties.
-    """
-    return await _call(_session.add_extruded_profile_on_plane, points_mm, plane, depth_mm, reverse, name,
-                       corner_radii_mm, draft_deg, merge)
 
 
 @mcp.tool()
@@ -384,59 +370,29 @@ async def add_rib(start_mm: list, end_mm: list, toward_mm: list, thickness_mm: f
 
 
 @mcp.tool()
-async def add_hole(diameter_mm: float, x_mm: float, y_mm: float, name: str = "Hole") -> dict:
-    """Cut a circular through-hole at (x_mm, y_mm), through the part's depth axis.
+async def add_hole(x_mm: float, y_mm: float, z_mm: float | None = None, diameter_mm: float | None = None,
+                   face: str | None = None, depth_mm: float | None = None, cbore_diameter_mm: float | None = None,
+                   cbore_depth_mm: float | None = None, iso: str | None = None, size: str | None = None,
+                   fit: str = "normal", thread: str = "cosmetic", name: str | None = None) -> dict:
+    """Cut a round hole. Which one follows from the arguments:
 
-    The hole runs straight through the thickness (the add_box extrude direction),
-    perpendicular to the width x height profile face. Coordinates share add_box's
-    system (the centre of a 40x20 profile is x=20, y=10). Returns mass properties.
+    - diameter_mm at (x, y): straight through the thickness (the add_box extrude direction); coordinates
+      share add_box's system (the centre of a 40x20 profile is x=20, y=10).
+    - + face='+z' (or '-x', ...) and z_mm: on ANY planar face, centred at 3D point (x, y, z), the face
+      facing that way through the point (a pocket floor or a step works too). Through all, or depth_mm
+      deep (blind: heat-set inserts, screw pilots). Returns `dimensions` (diameter, x, y, depth).
+    - + cbore_diameter_mm and cbore_depth_mm: a counterbored screw hole from the +Z face, a flat-bottom
+      pocket over the clearance shank so a cap-head screw or heat-set insert sits flush.
+    - iso='clearance' (ISO 273), 'counterbore' (socket head cap screw), 'countersink' (socket
+      countersunk screw) or 'tapped', with size='M6', face and z_mm: SolidWorks' Hole Wizard, sized by
+      the standard's tables and carried into drawing callouts. fit 'close' / 'normal' / 'loose';
+      thread='modeled' cuts a real, printable ISO thread in a tapped hole instead of the cosmetic one.
+      Returns the standard's sizes in `hole`.
+
+    Prefer iso= for standard fasteners. Returns mass properties.
     """
-    return await _call(_session.add_hole, diameter_mm, x_mm, y_mm, name)
-
-
-@mcp.tool()
-async def add_counterbore_hole(clearance_diameter_mm: float, cbore_diameter_mm: float,
-                               cbore_depth_mm: float, x_mm: float, y_mm: float,
-                               name: str = "Counterbore") -> dict:
-    """Cut a counterbored screw hole on the +Z face at (x_mm, y_mm).
-
-    A clearance shank through the thickness plus a larger coaxial flat-bottom
-    pocket of cbore_depth_mm from the top — so a cap-head screw or heat-set insert
-    sits flush/recessed (common for 3D-printed parts). cbore_diameter must exceed
-    clearance_diameter. Coordinates share add_box's system. Returns mass properties.
-    """
-    return await _call(_session.add_counterbore_hole, clearance_diameter_mm,
-                       cbore_diameter_mm, cbore_depth_mm, x_mm, y_mm, name)
-
-
-@mcp.tool()
-async def add_hole_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: float, z_mm: float,
-                           depth_mm: float | None = None, name: str = "Hole") -> dict:
-    """Drill a round hole on ANY planar face, centred at 3D point (x, y, z) mm.
-
-    face is "+x"/"-x"/"+y"/"-y"/"+z"/"-z": the face facing that way through the
-    point is drilled, so a pocket floor or a step works too. Through all, or
-    depth_mm deep (blind: heat-set inserts, screw pilots). Returns mass
-    properties and `dimensions` (diameter, x, y, depth).
-    """
-    return await _call(_session.add_hole_on_face, diameter_mm, face, x_mm, y_mm, z_mm, depth_mm, name)
-
-
-@mcp.tool()
-async def add_hole_wizard(kind: str, size: str, face: str, x_mm: float, y_mm: float, z_mm: float,
-                          depth_mm: float | None = None, fit: str = "normal", thread: str = "cosmetic",
-                          name: str | None = None) -> dict:
-    """An ISO hole from SolidWorks' Hole Wizard, sized by its standard tables.
-
-    kind: 'clearance' (ISO 273), 'counterbore' (socket head cap screw),
-    'countersink' (socket countersunk screw) or 'tapped'; size e.g. 'M3'.
-    Centred at (x, y, z) mm on the face through that point; through all, or
-    depth_mm deep. fit: 'close' / 'normal' / 'loose'. For tapped holes
-    thread='modeled' cuts a real, printable ISO thread instead of SolidWorks'
-    cosmetic one. Returns the standard's sizes in `hole` and mass properties.
-    """
-    return await _call(_session.add_hole_wizard, kind, size, face, x_mm, y_mm, z_mm,
-                       depth_mm, fit, thread, name)
+    return await _call(_session.hole, x_mm, y_mm, z_mm, diameter_mm, face, depth_mm, cbore_diameter_mm,
+                       cbore_depth_mm, iso, size, fit, thread, name)
 
 
 @mcp.tool()
@@ -444,22 +400,10 @@ async def add_boss_on_face(diameter_mm: float, face: str, x_mm: float, y_mm: flo
                            height_mm: float, name: str = "Boss") -> dict:
     """Grow a round boss (standoff, peg) height_mm out of ANY planar face, centred at (x, y, z) mm.
 
-    The face is found as for add_hole_on_face. For a PCB standoff, add a blind
+    The face is found as for add_hole with face=. For a PCB standoff, add a blind
     hole in its top. Returns mass properties and `dimensions`.
     """
     return await _call(_session.add_boss_on_face, diameter_mm, face, x_mm, y_mm, z_mm, height_mm, name)
-
-
-@mcp.tool()
-async def add_extruded_profile_on_face(points_mm: list, face: str, depth_mm: float,
-                                       name: str = "Boss", corner_radii_mm: float | list | None = None) -> dict:
-    """Grow a polygon boss depth_mm out of ANY planar face: points_mm = [[x,y,z], ...] in mm.
-
-    The 3D points lie on the face (found as for add_hole_on_face). For pads,
-    ledges and mounting blocks on an existing part. corner_radii_mm rounds the
-    corners as for add_extruded_profile. Returns mass properties.
-    """
-    return await _call(_session.add_extruded_profile_on_face, points_mm, face, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
@@ -478,34 +422,6 @@ async def add_text_on_face(text: str, face: str, x_mm: float, y_mm: float, z_mm:
     """
     return await _call(_session.add_text_on_face, text, face, x_mm, y_mm, z_mm,
                        height_mm, depth_mm, emboss, font, name)
-
-
-@mcp.tool()
-async def cut_profile(points_mm: list, depth_mm: float | None = None, name: str = "Cut",
-                      corner_radii_mm: float | list | None = None, rotate_deg: float = 0.0,
-                      about_mm: list | None = None) -> dict:
-    """Cut a polygonal pocket/slot from the +Z face: points_mm = [[x,y], ...] in mm.
-
-    Auto-closed polygon, cut blind by depth_mm or all the way through when depth_mm
-    is omitted. For pockets, slots, cutouts. corner_radii_mm rounds the corners
-    and rotate_deg turns the profile about about_mm, as for add_extruded_profile
-    (notches at +/-60 degrees around a pivot). Returns mass properties.
-    """
-    return await _call(_session.cut_profile, points_mm, depth_mm, name, corner_radii_mm, rotate_deg, about_mm)
-
-
-@mcp.tool()
-async def cut_profile_on_face(points_mm: list, face: str,
-                             depth_mm: float | None = None, name: str = "Cut",
-                             corner_radii_mm: float | list | None = None) -> dict:
-    """Cut a polygon pocket/slot on ANY planar face: points_mm = [[x,y,z], ...] in mm.
-
-    The 3D points must lie on one face facing `face` ("+x"/"-x"/...), which is
-    found through them; cut blind by depth_mm or through when omitted. For side
-    pockets/cutouts. corner_radii_mm rounds the corners as for
-    add_extruded_profile. Returns mass properties.
-    """
-    return await _call(_session.cut_profile_on_face, points_mm, face, depth_mm, name, corner_radii_mm)
 
 
 @mcp.tool()
@@ -691,30 +607,27 @@ async def add_axis(through: list | None = None, planes: list | None = None, name
 
 
 @mcp.tool()
-async def add_loft(sketches: list, cut: bool = False, name: str | None = None) -> dict:
-    """Loft through closed sketches by name (add_sketch on any planes), in order; cut=True cuts the lofted shape away.
+async def run_script(code: str | None = None, path: str | None = None, image: str | None = None) -> dict:
+    """Run Python against the live SolidWorks: a whole part in one call, or what no tool covers; only when the server runs with --allow-scripts.
 
-    A straight bevel gear's tooth gap is a loft cut between heel and toe
-    profiles. Draw the profiles in the same order and sense so they do not twist.
-    """
-    return await _call(_session.add_loft, sketches, cut, name)
+    Give the script as code, or as a file at path: it may import helpers
+    from its own folder (reloaded every run), so fix a part by editing the
+    file and running it again. The script sees sw, model (current part/
+    assembly), drawing, mod (typed interfaces), wrap(obj, mod.IFeature),
+    mm (mm -> m), to_mm, doubles([..]) (a VARIANT array) and session (this
+    server's tools: session.new_part(), session.add_box(...)). print() is
+    captured and `result = ...` comes back. All or nothing: a script that
+    raises leaves the part as it was.
 
-
-@mcp.tool()
-async def run_script(code: str) -> dict:
-    """Run Python against the live SolidWorks, for what no tool covers; only when the server runs with --allow-scripts.
-
-    The script sees sw, model (current part/assembly), drawing, mod (typed
-    interfaces), wrap(obj, mod.IFeature), mm (mm -> m), to_mm, doubles([..])
-    (a VARIANT array) and session (this server's tools). print() is captured
-    and `result = ...` comes back. The part is rebuilt and reported like any
-    modelling call; a script that raises is rolled back. Promote anything you
-    script twice into a real tool.
+    One report comes back for a part: features_added, failing_features,
+    bodies (volume, box), clashes between bodies, under_defined_sketches,
+    mass properties, seconds, and image: one PNG of the iso, right, top and
+    bottom views (for a path, next to the script; image='x.png' elsewhere).
     """
     if not _ALLOW_SCRIPTS:
         return {"ok": False, "error": "run_script is off: it runs any Python on this computer. Start the server "
                                       "with --allow-scripts (or SOLIDWORKS_MCP_ALLOW_SCRIPTS=1) to allow it."}
-    return await _call(_session.run_script, code)
+    return await _call(_session.run_script, code, path, image)
 
 
 @mcp.tool()
@@ -876,28 +789,19 @@ async def set_material(name: str, database: str = "", density_kg_m3: float | Non
 
 
 @mcp.tool()
-async def set_equation(equation: str) -> dict:
+async def set_equation(equation: str | list) -> dict:
     """Add an equation, or replace the one that sets the same name; rebuild and remeasure.
 
     A SolidWorks equation string, e.g. '"D1@BlockExtrude" = 25' or
     '"D1@BlockExtrude" = 2 * "D1@Sketch1"'. A global variable is '"W" = 40';
     link a dimension to it with '"width@Sketch1" = "W"', and set '"W" = 45'
-    again to change it. Persists a relation (unlike set_dimension). Returns
-    the index, whether it replaced one, the features that fail to rebuild
-    (failing_features) and mass properties.
+    again to change it. Persists a relation (unlike set_dimension). A list of
+    equations is set in order with one rebuild at the end (later ones may use
+    earlier ones), and a refused one undoes the whole list. Returns the index
+    (per equation for a list), whether it replaced one, the features that fail
+    to rebuild (failing_features) and mass properties.
     """
-    return await _call(_session.set_equation, equation)
-
-
-@mcp.tool()
-async def set_equations(equations: list) -> dict:
-    """Add or replace a list of equations at once, with one rebuild at the end.
-
-    As set_equation for each, in order (later ones may use earlier ones). A
-    refused equation undoes the whole list. Returns per equation its index and
-    whether it replaced one, failing_features and mass properties.
-    """
-    return await _call(_session.set_equations, equations)
+    return await _call(_session.equation, equation)
 
 
 @mcp.tool()
@@ -936,17 +840,19 @@ async def list_documents() -> dict:
 async def activate_document(title: str) -> dict:
     """Make an open document current again by its title, also a new one that was never saved.
 
-    For after open_part / close_part on another document; list_documents gives
+    For after open_document / close_document on another document; list_documents gives
     the titles.
     """
     return await _call(_session.activate_document, title)
 
 
 @mcp.tool()
-async def delete_mate(name: str) -> dict:
+async def delete_mate(name: str | list[str]) -> dict:
     """Delete a mate of the current assembly by name (list_components, or add_mate's 'mate').
 
-    Its components are free to move again. Returns the mates left.
+    A list of names deletes them all at once, with one rebuild. Their
+    components are free to move again. Returns what was deleted and how many
+    mates are left (list_components lists them).
     """
     return await _call(_session.delete_mate, name)
 
@@ -965,10 +871,24 @@ async def delete_component(component: str) -> dict:
     """Remove a component from the current assembly, with the mates that hold it.
 
     component: its name in list_components ("Bracket-1", or "Bracket" while
-    there is one). Returns the mates deleted, the components left and the
-    assembly's mass properties.
+    there is one). Returns the mates deleted, how many components are left and
+    the assembly's mass properties.
     """
     return await _call(_session.delete_component, component)
+
+
+@mcp.tool()
+async def replace_component(component: str, path: str) -> dict:
+    """Swap a top-level component for another .sldprt or .sldasm, in the same place.
+
+    SolidWorks re-attaches each mate to the new part's matching face where it
+    can. Returns the new component, the mates kept, and the mates that broke
+    or went: each with its type, the other components, and what it held on
+    the old part (the face's type, normal or axis and centre in the
+    component's own frame), plus up to three candidate faces on the new part
+    ('#index', nearest first). Re-mate with delete_mate and add_mate(mates=[...]).
+    """
+    return await _call(_session.replace_component, component, path)
 
 
 @mcp.tool()
@@ -989,8 +909,8 @@ async def get_mass_properties() -> dict:
 
 @mcp.tool()
 async def get_bounding_box() -> dict:
-    """Get the tight bounding box of the current part (min/max/size in mm)."""
-    return await _call(_session.get_bounding_box)
+    """Get the bounding box (min/max/size in mm) of the current part, tight, or of the whole assembly."""
+    return await _call(_session.bounding_box)
 
 
 @mcp.tool()
@@ -1091,7 +1011,7 @@ async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, k
     identical Hole Wizard holes ('4X ...'), their centres dimensioned, and the
     title block shows material and mass. Returns `problems` (check_drawing).
     keep_open=True keeps it as the current drawing to refine with the other
-    drawing tools. Save the part first (save_part): the drawing refers to its file.
+    drawing tools. Save the part first (save_document): the drawing refers to its file.
     """
     return await _call(_session.make_drawing, path, sheet, scale, keep_open)
 
@@ -1301,61 +1221,45 @@ async def render_drawing(path: str, zoom_mm: list | None = None) -> dict:
 
 
 @mcp.tool()
-async def close_part(save: bool = False) -> dict:
-    """Close the current part or assembly without saving (export/save first if needed).
+async def close_document(title: str | None = None, save: bool = False) -> dict:
+    """Close one open document by its title (list_documents): a part, assembly or drawing.
 
-    With no current document it closes SolidWorks' active one, but only when
-    that has no unsaved changes.
+    Without a title it closes the current part or assembly. save=True saves it
+    over its own file first; otherwise closing never asks and unsaved changes
+    are lost (the result says discarded_changes). Parts that an open assembly
+    loaded (visible false) close with that assembly and are refused here. With
+    no title and no current document it closes SolidWorks' active one, but
+    only when that has no unsaved changes.
     """
-    return await _call(_session.close_part, save)
+    return await _call(_session.close_document, title, save)
 
 
 @mcp.tool()
-async def save_part(path: str) -> dict:
-    """Save the current part to a native .sldprt file (so it can be reopened/edited)."""
-    return await _call(_session.save_part, path)
+async def save_document(path: str | None = None) -> dict:
+    """Save the current part (.sldprt) or assembly (.sldasm) to path, or over its own file without one.
+
+    Saves silently and checks the file was really written. Drawings: drawing_file(action='save').
+    """
+    return await _call(_session.save_document, path)
 
 
 @mcp.tool()
-async def open_part(path: str) -> dict:
-    """Open a .sldprt, or import a STEP/IGES/Parasolid file as a new part; it becomes the current part.
+async def open_document(path: str, kind: str | None = None) -> dict:
+    """Open a .sldprt or .sldasm, or import a STEP/IGES/Parasolid file; it becomes the current document.
 
-    list_features shows its history, list_dimensions its dimensions. An
-    imported body has no history, but the tools work on it (holes and pockets
-    on its faces, bosses, fillets); an import returns its solid body count and
-    mass properties. A file holding an assembly is refused.
+    A neutral file opens as a part, or as an assembly if it holds one
+    (kind='part' / 'assembly' says which up front). A part shows its history in
+    list_features and its dimensions in list_dimensions; an imported body has
+    no history, but the tools work on it (holes and pockets on its faces,
+    bosses, fillets), and the result gives its solid body count and mass
+    properties. An imported assembly's parts arrive as components at their
+    places, ready for list_components and add_mate; the result gives the
+    component count. Drawings: drawing_file(action='open').
     """
-    return await _call(_session.open_part, path)
+    return await _call(_session.open_document, path, kind)
 
 
 # --- assemblies ---------------------------------------------------------------
-
-
-@mcp.tool()
-async def new_assembly() -> dict:
-    """Create a new empty assembly document; it becomes the current document.
-
-    Assemblies compose saved parts: insert_component places each part, add_mate
-    constrains them, check_interference proves nothing overlaps.
-    """
-    return await _call(_session.new_assembly)
-
-
-@mcp.tool()
-async def open_assembly(path: str) -> dict:
-    """Open a .sldasm, or import a STEP/IGES/Parasolid assembly; it becomes the current document.
-
-    An imported assembly's parts arrive as components at their places, ready
-    for list_components and add_mate; the result gives the component count.
-    A file holding a single part is refused (use open_part).
-    """
-    return await _call(_session.open_assembly, path)
-
-
-@mcp.tool()
-async def save_assembly(path: str) -> dict:
-    """Save the current assembly to a native .sldasm file (so it can be reopened)."""
-    return await _call(_session.save_assembly, path)
 
 
 @mcp.tool()
@@ -1372,15 +1276,18 @@ async def insert_component(path: str, x_mm: float = 0.0, y_mm: float = 0.0,
 
 
 @mcp.tool()
-async def list_components() -> dict:
+async def list_components(name: str | None = None, mates: bool = True, brief: bool = False) -> dict:
     """List the assembly's components (name, path, fixed, position, rotation, bounding box) and mates.
 
     Positions are in mm and rotations in degrees, both in assembly coordinates;
     the bounding box of each component is in assembly coordinates too. Each
-    mate gives its name, SolidWorks type, the dimension of a distance or angle
-    mate, and an error when SolidWorks flags it.
+    mate gives its name, SolidWorks type, the components it holds, the
+    dimension of a distance or angle mate, and an error when SolidWorks flags it.
+    On a big assembly, narrow it: name keeps the matching components ('Bolt*'
+    as a wildcard, 'bolt' anywhere in the name) and the mates holding them;
+    mates=False leaves the mates out; brief=True gives only name, path, fixed.
     """
-    return await _call(_session.list_components)
+    return await _call(_session.list_components, name, mates, brief)
 
 
 @mcp.tool()
@@ -1400,10 +1307,11 @@ async def set_component_transform(name: str, x_mm: float, y_mm: float, z_mm: flo
 
 
 @mcp.tool()
-async def add_mate(comp_a: str, face_a: str, comp_b: str, face_b: str,
-                   mate_type: str = "coincident", distance_mm: float = 0.0,
-                   angle_deg: float = 0.0, flip: bool = False) -> dict:
-    """Mate a face of one component to a face of another.
+async def add_mate(comp_a: str | None = None, face_a: str | None = None, comp_b: str | None = None,
+                   face_b: str | None = None, mate_type: str = "coincident", distance_mm: float = 0.0,
+                   angle_deg: float = 0.0, flip: bool = False, mates: list[dict] | None = None,
+                   stop_on_error: bool = True) -> dict:
+    """Mate a face of one component to a face of another, or add several mates in one call.
 
     comp_a/comp_b are component names ('Bed' or 'Bed-1'; 'Leg-1/Thigh-1' inside
     a sub-assembly). face_a/face_b select a face in that component's OWN frame:
@@ -1422,9 +1330,15 @@ async def add_mate(comp_a: str, face_a: str, comp_b: str, face_b: str,
     the other way, the same turn as 330). The result is measured back
     after the rebuild; a mate that does not hold is removed and the components
     are put back.
+
+    Several at once: mates=[{"comp_a": "Bolt-1", "face_a": "#3", "comp_b":
+    "Plate-1", "face_b": "#12", "mate_type": "concentric"}, ...], each with the
+    arguments above. stop_on_error=True stops at the first that fails; the mates
+    before it stay. Returns a result per mate (its name and dimension, or the
+    error), how many were added, failed and not tried, and the mate count.
     """
-    return await _call(_session.add_mate, comp_a, face_a, comp_b, face_b,
-                       mate_type, distance_mm, angle_deg, flip)
+    return await _call(_session.mate, comp_a, face_a, comp_b, face_b, mate_type, distance_mm, angle_deg, flip,
+                       mates, stop_on_error)
 
 
 @mcp.tool()
@@ -1485,12 +1399,6 @@ async def swept_region(component: str, dimension: str, values: list, heights_mm:
     """
     return await _call(_session.swept_region, component, dimension, values, heights_mm, axis,
                        margin_mm, tolerance_mm, frame)
-
-
-@mcp.tool()
-async def get_assembly_bounding_box() -> dict:
-    """Get the bounding box of the whole assembly (min/max/size in mm)."""
-    return await _call(_session.get_assembly_bounding_box)
 
 
 def main() -> None:

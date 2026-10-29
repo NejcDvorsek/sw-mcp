@@ -44,7 +44,7 @@ def test_a_component_goes_with_its_mates(assembly, blocks):
     assembly.insert_component(blocks["block_b"], 0, 0, 10)
     assembly.add_mate("block_b-1", "-z", "block_a-1", "+z", "coincident")
     gone = assembly.delete_component("block_b-1")
-    assert gone["components"] == ["block_a-1"] and len(gone["mates_deleted"]) == 1
+    assert gone["components_left"] == 1 and len(gone["mates_deleted"]) == 1
     assert gone["mass_properties"]["volume_mm3"] == pytest.approx(40 * 20 * 10)
     assert not assembly.list_components().get("mates")
 

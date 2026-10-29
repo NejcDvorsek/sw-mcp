@@ -71,7 +71,7 @@ def test_a_failed_tool_call_through_the_server_leaves_the_part_as_it_was():
     def call(tool, *args):
         return asyncio.run(tool(*args))
 
-    call(server.new_part)
+    call(server.new_document)
     try:
         block = call(server.add_box, 40, 20, 10)
         before = call(server.list_features)["features"]
@@ -82,4 +82,4 @@ def test_a_failed_tool_call_through_the_server_leaves_the_part_as_it_was():
         assert call(server.list_features)["features"] == before, "the failed call left its sketch in the tree"
         assert call(server.get_bounding_box)["bounding_box_mm"] == block["mass_properties"]["bounding_box_mm"]
     finally:
-        call(server.close_part)
+        call(server.close_document)

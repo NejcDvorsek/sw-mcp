@@ -987,3 +987,45 @@ def test_a_name_the_english_database_lacks_has_no_translation():
     local_by_id = SolidWorksSession._materials_by_id(_CHINESE_MATERIALS)
     assert SolidWorksSession._localized_material("Unobtainium", local_by_id) is None
     assert SolidWorksSession._localized_material("ABS", local_by_id) is None  # not in this database
+
+
+def test_component_names_match_a_wildcard_or_a_part_of_the_name():
+    match = SolidWorksSession._name_matches
+    assert match("Bolt M8x25-3", "bolt*") and match("Bolt M8x25-3", "M8x25")
+    assert not match("Washer-1", "bolt*") and not match("Bolt-1", "*nut*")
+    assert match("Plate-2", "plate-?") and not match("Plate-12", "plate-?")
+
+
+def test_a_long_list_of_names_is_cut_short():
+    assert SolidWorksSession._some_names([]) == "none"
+    assert SolidWorksSession._some_names(["a", "b"]) == "a, b"
+    many = SolidWorksSession._some_names([f"Mate{i}" for i in range(300)])
+    assert many.startswith("Mate0, Mate1") and "and 280 more" in many and "Mate25" not in many
+
+
+def test_replacement_faces_are_ranked_by_how_near_they_lie():
+    """A broken mate's old face against the new part's faces: the same normal
+    (or a parallel cylinder axis) only, the nearest plane or axis first."""
+    old_top = {"index": 4, "normal": [0, 0, 1], "center_mm": [30, 5, 5]}
+    faces = [
+        {"index": 0, "normal": [0, 0, -1], "center_mm": [35, 5, 0]},
+        {"index": 1, "normal": [0, 0, 1], "center_mm": [35, 5, 8]},
+        {"index": 2, "normal": [0, 0, 1], "center_mm": [35, 5, 5]},
+        {"index": 3, "cylinder": {"axis": [0, 0, 1], "point_mm": [65, 5, 2.5], "radius_mm": 2},
+         "center_mm": [65, 5, 2.5]},
+    ]
+    ranked = SolidWorksSession._rank_faces(old_top, faces)
+    assert [r["face"] for r in ranked] == ["#2", "#1"] and ranked[1]["off_mm"] == pytest.approx(3)
+    old_hole = {"index": 5, "cylinder": {"axis": [0, 0, -1], "point_mm": [55, 5, 2.5], "radius_mm": 2},
+                "center_mm": [55, 5, 2.5]}
+    holes = [
+        {"index": 6, "cylinder": {"axis": [0, 0, 1], "point_mm": [65, 5, 2.5], "radius_mm": 2},
+         "center_mm": [65, 5, 2.5]},
+        {"index": 7, "cylinder": {"axis": [0, 0, 1], "point_mm": [55, 5, 0], "radius_mm": 3},
+         "center_mm": [55, 5, 0]},
+        {"index": 8, "cylinder": {"axis": [1, 0, 0], "point_mm": [55, 5, 2.5], "radius_mm": 2},
+         "center_mm": [55, 5, 2.5]},
+    ]
+    ranked = SolidWorksSession._rank_faces(old_hole, holes)
+    assert [r["face"] for r in ranked] == ["#7", "#6"], "the same axis first, even at another radius; never a crossing axis"
+    assert ranked[1]["off_mm"] == pytest.approx(10)

@@ -8,7 +8,7 @@ short connect-time instructions first; this is the long version.
 - All lengths are **millimetres**, angles **degrees**. The server converts to
   SolidWorks' metres and radians.
 - New geometry starts on the **Front plane** (XY) and extrudes along **+Z** from
-  z = 0: `add_box`, `add_extruded_profile`, `add_extruded_spline`, `add_disc`,
+  z = 0: `add_box`, `add_extruded_profile` (also `spline=True`), `add_disc`,
   `cut_profile` and the lofts all use this frame.
   - `add_box` spans x 0..width, y 0..height, z 0..depth (corner at the origin).
   - `add_disc` is centred on the origin, `add_cylinder` and
@@ -96,7 +96,7 @@ stray drag in SolidWorks can change the part.
   can still move, so say so before you build on it.
 - Drive several dimensions from one number with a global variable:
   `set_equation('"W" = 40')`, then `set_equation('"width@Sketch1" = "W"')`;
-  `set_equation('"W" = 45')` changes it again. `set_equations([...])` sets a
+  `set_equation('"W" = 45')` changes it again. `set_equation([...])` sets a
   list with one rebuild, and every result names the features that fail to
   rebuild (`failing_features`): set a variable over a range to find where a
   part breaks. `list_equations` marks equations left broken by a deleted
@@ -107,11 +107,12 @@ stray drag in SolidWorks can change the part.
 
 ## 4. Recipes
 
-- **Holes**: `add_hole` (through, along Z), `add_counterbore_hole` (on +Z),
-  `add_hole_on_face` (any planar face, through or blind with `depth_mm`: a
+- **Holes**: one tool, `add_hole`. `diameter_mm` at (x, y) goes through along
+  Z; `cbore_diameter_mm` + `cbore_depth_mm` make a counterbore from +Z; `face`
+  and `z_mm` put it on any planar face, through or blind with `depth_mm` (a
   heat-set insert hole, a screw pilot).
-- **Standard holes**: `add_hole_wizard` sizes a hole from SolidWorks' own ISO
-  tables: `clearance` (ISO 273; M3 is 3.2 / 3.4 / 3.6 for a close / normal /
+- **Standard holes**: `add_hole(iso=..., size="M6", face=..., x, y, z)` sizes a
+  hole from SolidWorks' own Hole Wizard ISO tables: `clearance` (ISO 273; M3 is 3.2 / 3.4 / 3.6 for a close / normal /
   loose fit), `counterbore` (socket head cap screw), `countersink` (socket
   countersunk screw) and `tapped` (ISO tap drill plus a cosmetic thread). The
   sizes it used come back in `hole`, ready for your hand calculation. A blind
@@ -120,10 +121,9 @@ stray drag in SolidWorks can change the part.
   ISO basic minor diameter and cuts a real, printable thread with the Thread
   feature, over the standard depth (2 x D) or all the way through.
 - **Adding material to a part**: `add_boss_on_face` (a round boss: standoff,
-  peg) and `add_extruded_profile_on_face` (a polygon pad or ledge) grow out of
+  peg) and `add_extruded_profile(face=...)` (a polygon pad or ledge) grow out of
   any planar face. A PCB standoff is a boss plus a blind hole in its top.
-- **Pockets and slots**: `cut_profile` (+Z face), `cut_profile_on_face` (any
-  face), `cut_slot` (obround on +Z). A rounded tab or lug between two points
+- **Pockets and slots**: `cut_profile` (+Z face, or any face with `face=`), `cut_slot` (obround on +Z). A rounded tab or lug between two points
   is `add_extruded_slot(start, end, width, depth)`: the round ends are centred
   on the points, so nothing needs working out. `cut_offset_pocket(face, x, y,
   z, rim_mm, depth_mm)` pockets a whole face and leaves a rim along its
@@ -131,7 +131,7 @@ stray drag in SolidWorks can change the part.
   link, a tray, or a frame when cut through. Hand calculation: the face's area
   shrunk by the rim (a corner of radius R keeps radius R - rim).
 - **Rounded outlines**: give `corner_radii_mm` to `add_extruded_profile`,
-  `cut_profile`, the `*_on_face` profile tools, `cut_profile_through_plane`,
+  `cut_profile` (with or without `face=` / `plane=`),
   `add_revolved_profile` (rounded edges of a turned part; not corners on the
   axis) or `add_swept_profile`: one radius for every corner, or one per vertex
   (0 = sharp). Hand calculation: a right-angled corner of radius r loses
@@ -158,24 +158,24 @@ stray drag in SolidWorks can change the part.
   arc turns towards its end point: from (30, 0) heading +x, an arc to (50, 20)
   is a quarter circle round (30, 20).
 - **Side-view shapes** (wedges, windows, symmetric recesses):
-  `cut_profile_through_plane` on the Front/Top/Right plane or another plane by
+  `cut_profile(plane=...)` on the Front/Top/Right plane or another plane by
   name, through all or a depth centred on the plane.
 - **Planes at an angle**: `add_plane("front", angle_deg=30, about="y")` turns a
   default plane about a model axis it holds (right-hand rule: positive turns
   counterclockwise seen from the axis's positive end); `add_plane("Plane1", offset_mm=5)`
   moves any plane. Both return `origin_mm`, `x_axis` and `y_axis`: the point
   (u, v) on the plane is origin + u x_axis + v y_axis, which is what
-  `add_extruded_profile_on_plane` and `cut_profile_through_plane` take. The
+  `add_extruded_profile` and `cut_profile` take with `plane=`. The
   angle or offset is a dimension, and what is built on the plane follows it.
 - **Parts at an angle on the Front plane**: draw the profile straight and give
   `rotate_deg` and `about_mm` (the pivot) to `add_extruded_profile` or
   `cut_profile`; the turned points are dimensioned like any profile.
-- **Tapered walls**: `draft_deg` on `add_extruded_profile` (and
-  `add_extruded_profile_on_plane`) leans every wall inwards as it rises
+- **Tapered walls**: `draft_deg` on `add_extruded_profile` (also with
+  `plane=`) leans every wall inwards as it rises
   (negative: outwards); the angle is a dimension, `draft`. Hand calculation
   for a w x h rectangle extruded d with t = tan(draft): w h d - (w + h) t d^2
   + 4/3 t^2 d^3.
-- **Organic shapes**: `add_lofted_solid` takes round sections,
+- **Organic shapes**: `add_loft(profiles_mm=..., heights_mm=...)` takes round sections,
   `{"center_mm": [x, y], "diameter_mm": d}`: a leg thick at the knee and thin
   at the foot, the centres free to wander. Two sections hold
   pi h (R^2 + Rr + r^2) / 3 wherever the centres lie (a steep slant comes out
@@ -189,7 +189,7 @@ stray drag in SolidWorks can change the part.
   one from `add_plane`. Faces, edges, fillets and the printability check see
   the first body only: combine the bodies before you work on their faces.
 - **A shape from two views**: extrude the front view, then cut the side view
-  with `cut_profile_through_plane(..., keep_inside=True)`: everything outside
+  with `cut_profile(..., plane=..., keep_inside=True)`: everything outside
   the side outline goes, and what is left matches both views.
 - **Fillets and chamfers**: edges by axis (`x`/`y`/`z`), by index, `all`, or a
   face's outline (`+z:outline`: the outer edges of the top face, not the rims of
@@ -231,6 +231,14 @@ stray drag in SolidWorks can change the part.
   runs Python with `sw`, `model`, `mod`, `wrap` and `session` at hand; the part
   is rebuilt and reported afterwards and rolled back if the script raises.
   Script it once, then ask for a tool.
+- **A whole part in one call**: write the part as a script file that calls the
+  tools (`session.new_part()`, `session.add_box(...)`, ...) and run
+  `run_script(path='part.py')`. Instead of one call per feature you get one
+  report: `features_added`, `failing_features`, `bodies` (volume, box),
+  `clashes` between bodies, `under_defined_sketches`, mass properties, and
+  `image`, a PNG of the iso, right, top and bottom views next to the script.
+  Fix the file and run it again; helpers in its folder reload every run. Check
+  the report against your hand calculation as you would after each tool.
 - **Mirror**: `add_mirror(plane, offset_mm, features)` mirrors features about
   the Front/Top/Right plane moved `offset_mm` (z / y / x = offset). Put the
   plane where the copies land in material: a box spans x 0..w, so mirror about
@@ -250,13 +258,13 @@ stray drag in SolidWorks can change the part.
   the result's `text_area_mm2` is what the next steps change by (area x depth).
   `font` must be an installed font; an unknown one is refused, because Windows
   would quietly draw another.
-- **A supplier's model**: `open_part` imports a STEP (`.step`/`.stp`), IGES or
+- **A supplier's model**: `open_document` imports a STEP (`.step`/`.stp`), IGES or
   Parasolid (`.x_t`/`.x_b`) file as a new part. The imported body has no
   history, but the tools work on it: holes, pockets and bosses on its faces,
   fillets. The result has `solid_bodies` and mass properties: read the bounding
   box to see where the model lies before you place anything. With several
-  bodies the tools act on the first. A file holding an assembly opens with
-  `open_assembly` instead: its parts come in as components at their places,
+  bodies the tools act on the first. A file holding an assembly opens as an
+  assembly (`kind="assembly"` skips trying it as a part): its parts come in as components at their places,
   ready for `list_components` and `add_mate`.
 - **Drawings**: save the part, then `make_drawing("part.pdf", sheet="A3")`
   lays out front, top and side views (first angle) and an iso view on an ISO
@@ -303,10 +311,20 @@ stray drag in SolidWorks can change the part.
     from a spec, so fine-tuning is editing the spec, not the sheet.
 - **Open documents**: `list_documents` lists what SolidWorks has open;
   `activate_document(title)` makes one current again, also a new part that was
-  never saved (after `open_part` and `close_part` on another).
+  never saved (after `open_document` and `close_document` on another).
+  `close_document(title)` closes any one of them, part, assembly or drawing,
+  without making it current first; `save=True` saves it over its file first.
+  Parts an assembly loaded close with that assembly.
 - **Assemblies**: `insert_component` puts a part's origin at a point; a
   `.sldasm` goes in whole as a sub-assembly (save an imported servo first).
-  `delete_component` takes one out again, with its mates.
+  `delete_component` takes one out again, with its mates, and
+  `replace_component(component, path)` swaps it for another part in the same
+  place: the mates that broke come back with the face each held on the old
+  part and candidate faces (`#index`) on the new one, to re-mate.
+  On a big assembly, `list_components(name="Bolt*")` keeps the components
+  that match and the mates that hold them; `brief=True` and `mates=False`
+  shorten it further. Several mates go in with one `add_mate(mates=[...])` call
+  and out with one `delete_mate([...])`.
   `list_faces(component=...)` then lists every part's faces in the
   sub-assembly's own frame, naming the part, and `add_mate` takes them;
   transforms are read back, mates are measured back after the rebuild, and
@@ -351,7 +369,7 @@ stray drag in SolidWorks can change the part.
   through that point instead, also where "next" fails because a side of the
   profile lies on a face. Change the person's dimensions with
   `set_dimension` (names from `read_sketch` or `list_dimensions`). Their
-  planes work by name in `add_mirror` and `cut_profile_through_plane`.
+  planes work by name in `add_mirror`, `add_extruded_profile` and `cut_profile` (`plane=`).
 
 ## 5. 3D printing
 
@@ -408,13 +426,13 @@ a proven battery socket:
 
 - Not available: importing meshes as bodies (slice them instead), sketches on
   arbitrary planes (a person's planes work in `add_mirror` and
-  `cut_profile_through_plane`), free arcs inside polygon profiles (round corners with
+  `plane=` of the profile tools), free arcs inside polygon profiles (round corners with
   `corner_radii_mm`; other curves need revolves, splines, slots or holes).
 - SolidWorks' memory grows over long sessions. If it warns about low memory,
   save your work and restart SolidWorks. Never restart it during a run: the COM
   connection breaks and every later call fails.
 - Close documents you no longer need; saving over a file that is still open in
-  SolidWorks fails. With no current document, `close_part` closes SolidWorks'
+  SolidWorks fails. With no title and no current document, `close_document` closes SolidWorks'
   active one if it is saved; `get_status` shows which one that is.
 - Tools failing in ways this guide does not explain? Ask the user to run
   `uvx solidworks-mcp --selftest` with SolidWorks open: it shows which tool
