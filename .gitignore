@@ -24,3 +24,7 @@ Thumbs.db
 
 # Claude Code local machine overrides (keep shared settings.json if added)
 .claude/settings.local.json
+
+# Local working notes, not published
+docs/DEVELOPMENT.md
+docs/PROGRESS.md

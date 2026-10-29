@@ -15,13 +15,13 @@ by Henk Jan Baard and the SolidWorks connector of
 <!-- mcp-name: io.github.NejcDvorsek/sw-mcp -->
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/bracket.png" width="32%" alt="3D-print mounting bracket with counterbored holes, bolt circle and cable slot">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/thread.png" width="32%" alt="M10 bolt with a real, printable ISO metric thread">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/vase.png" width="32%" alt="Revolved and shelled vase">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/bracket.png" width="32%" alt="3D-print mounting bracket with counterbored holes, bolt circle and cable slot">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/thread.png" width="32%" alt="M10 bolt with a real, printable ISO metric thread">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/vase.png" width="32%" alt="Revolved and shelled vase">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/pipe.png" width="32%" alt="Swept pipe with rounded bends">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/Docs/images/loft.png" width="32%" alt="Lofted and shelled horn">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/pipe.png" width="32%" alt="Swept pipe with rounded bends">
+  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/loft.png" width="32%" alt="Lofted and shelled horn">
 </p>
 <p align="center"><sub>All built by an agent through sw-mcp: a mounting bracket, an M10 bolt with a real thread, a vase, a swept pipe and a lofted horn.</sub></p>
 
@@ -95,12 +95,9 @@ by Henk Jan Baard and the SolidWorks connector of
   See the [changelog](https://github.com/NejcDvorsek/sw-mcp/blob/main/CHANGELOG.md).
 - **Local:** it talks only to the SolidWorks on your computer and makes no
   network calls.
-- **Scripts are off by default:** `run_script` runs any Python it's given, so
-  it only works when you start the server with `--allow-scripts`.
+- **Scripts are on by default:** `run_script` runs any Python it's given on
+  your computer. Start the server with `--no-scripts` to turn it off.
 - **Multibody parts:** face and edge tools only see the first body.
-
-All tools, the architecture and how to run the tests are in
-[Docs/DEVELOPMENT.md](https://github.com/NejcDvorsek/sw-mcp/blob/main/Docs/DEVELOPMENT.md).
 
 ## Help and feedback
 

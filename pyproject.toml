@@ -9,7 +9,7 @@ description = "MCP server that drives a local SolidWorks instance over COM for p
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Nejc Dvorsek" }, { name = "Henk Jan Baard" }]
+authors = [{ name = "Nejc Dvorsek" }]
 keywords = ["solidworks", "mcp", "cad", "com", "parametric", "3d-printing"]
 classifiers = [
     "Development Status :: 3 - Alpha",

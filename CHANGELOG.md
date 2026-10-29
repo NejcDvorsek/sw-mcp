@@ -50,8 +50,8 @@ server keep their materials. Entries below 0.1.0 are the upstream history.
 - `add_sketch(fixed=True)` freezes computed geometry with Fix relations
   instead of dimensions.
 - `run_script`: Python against the live SolidWorks on the server's COM
-  thread, rolled back when it raises. Off unless the server runs with
-  `--allow-scripts` or `SOLIDWORKS_MCP_ALLOW_SCRIPTS=1`. A whole part in one
+  thread, rolled back when it raises. On by default; start the server with
+  `--no-scripts` or `SOLIDWORKS_MCP_ALLOW_SCRIPTS=0` to turn it off. A whole part in one
   call: `path=` runs a script file, whose helper modules in the same folder
   load fresh on every run, so a part is fixed by editing the file and
   running it again. One report comes back: the features it added, features

@@ -189,7 +189,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
     def _revision(self):
         # On the early-bound wrapper RevisionNumber may come back as a property
         # (string) or as a method, depending on how makepy generated it; handle
-        # both. See Docs/PROGRESS.md.
+        # both. See docs/PROGRESS.md.
         rev = self._sw.RevisionNumber
         return rev() if callable(rev) else rev
 
@@ -2560,7 +2560,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
         (x, y, z) is the lower-left corner of the text, on the face (found as
         for add_hole_on_face); the text runs along the face sketch's horizontal
         axis: upright along +x on the +z and -y faces, turned on the others
-        (see Docs/PROGRESS.md). height_mm is the character height, depth_mm how
+        (see docs/PROGRESS.md). height_mm is the character height, depth_mm how
         deep the letters go or how high they stand. The position is two
         dimensions from the origin ('x', 'y') and the depth a third; font is an
         installed font (default SolidWorks' own). Letters have no hand

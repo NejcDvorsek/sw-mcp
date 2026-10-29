@@ -47,9 +47,9 @@ Read the resource solidworks://guide for the full guide: recipes (holes, ribs, t
 
 mcp = FastMCP("sw-mcp", instructions=INSTRUCTIONS)
 
-# run_script executes any Python it is given: off unless the person starting
-# the server allows it
-_ALLOW_SCRIPTS = os.environ.get("SOLIDWORKS_MCP_ALLOW_SCRIPTS", "").strip().lower() in ("1", "true", "yes")
+# run_script executes any Python it is given: on unless the person starting
+# the server turns it off
+_ALLOW_SCRIPTS = os.environ.get("SOLIDWORKS_MCP_ALLOW_SCRIPTS", "").strip().lower() not in ("0", "false", "no")
 
 
 @mcp.resource("solidworks://guide", name="guide", mime_type="text/markdown",
@@ -608,7 +608,7 @@ async def add_axis(through: list | None = None, planes: list | None = None, name
 
 @mcp.tool()
 async def run_script(code: str | None = None, path: str | None = None, image: str | None = None) -> dict:
-    """Run Python against the live SolidWorks: a whole part in one call, or what no tool covers; only when the server runs with --allow-scripts.
+    """Run Python against the live SolidWorks: a whole part in one call, or what no tool covers; off when the server runs with --no-scripts.
 
     Give the script as code, or as a file at path: it may import helpers
     from its own folder (reloaded every run), so fix a part by editing the
@@ -625,8 +625,8 @@ async def run_script(code: str | None = None, path: str | None = None, image: st
     bottom views (for a path, next to the script; image='x.png' elsewhere).
     """
     if not _ALLOW_SCRIPTS:
-        return {"ok": False, "error": "run_script is off: it runs any Python on this computer. Start the server "
-                                      "with --allow-scripts (or SOLIDWORKS_MCP_ALLOW_SCRIPTS=1) to allow it."}
+        return {"ok": False, "error": "run_script is off: the server was started with --no-scripts "
+                                      "(or SOLIDWORKS_MCP_ALLOW_SCRIPTS=0). Start it without that to allow it."}
     return await _call(_session.run_script, code, path, image)
 
 
@@ -1406,12 +1406,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="sw-mcp", description="MCP server for a running SolidWorks.")
     parser.add_argument("--selftest", action="store_true",
                         help="check this machine's SolidWorks with a few small parts, print a report and exit")
+    parser.add_argument("--no-scripts", action="store_true",
+                        help="turn off the run_script tool, which runs any Python against SolidWorks")
     parser.add_argument("--allow-scripts", action="store_true",
-                        help="let the run_script tool run Python against SolidWorks (it can run anything)")
+                        help=argparse.SUPPRESS)  # the default now; still accepted for older configs
     args = parser.parse_args()
     selftest = args.selftest
-    if args.allow_scripts:
-        global _ALLOW_SCRIPTS
+    global _ALLOW_SCRIPTS
+    if args.no_scripts:
+        _ALLOW_SCRIPTS = False
+    elif args.allow_scripts:
         _ALLOW_SCRIPTS = True
     try:
         if not selftest:

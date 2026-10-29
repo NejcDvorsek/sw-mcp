@@ -5,6 +5,7 @@ The pure helpers run everywhere; the rest is marked `solidworks`.
 """
 
 import math
+import os
 
 import pytest
 
@@ -124,11 +125,13 @@ def test_a_failing_script_is_rolled_back(part):
     assert part.list_features()["features"] == before
 
 
-def test_scripts_are_off_unless_the_server_allows_them(monkeypatch):
+def test_scripts_are_on_unless_the_server_turns_them_off(monkeypatch):
     import asyncio
 
     from sw_mcp import server
 
+    if not os.environ.get("SOLIDWORKS_MCP_ALLOW_SCRIPTS"):
+        assert server._ALLOW_SCRIPTS
     monkeypatch.setattr(server, "_ALLOW_SCRIPTS", False)
     refused = asyncio.run(server.run_script("result = 1"))
-    assert not refused["ok"] and "--allow-scripts" in refused["error"]
+    assert not refused["ok"] and "--no-scripts" in refused["error"]
