@@ -7,8 +7,8 @@ Two layers of tests live under tests/:
 
 Run only the fast layer with:  pytest -m "not solidworks"
 
-Before adding a SolidWorks test, read "Writing SolidWorks tests" in
-docs/DEVELOPMENT.md: every new part makes the slow layer slower.
+Before adding a SolidWorks test, read tests/README.md: every new part makes
+the slow layer slower.
 """
 
 import pytest
