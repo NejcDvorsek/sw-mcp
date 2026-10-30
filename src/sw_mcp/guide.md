@@ -322,8 +322,12 @@ stray drag in SolidWorks can change the part.
   sheet with a title block, at the largest standard scale with room for
   dimensions. It brings in the model's dimensions once each, one callout per
   set of identical Hole Wizard holes ('4X ...', linked to the model), their
-  centres, and material and mass in the title block. Read its `problems`
-  (the same list `check_drawing` gives) before sending it out.
+  centres, and material and mass in the title block. Then it moves each view
+  with its annotations until nothing reaches off the frame, onto the title
+  block or into another view; when that cannot be done it leaves the iso view
+  out, then tries the next larger sheet, up to `max_sheet` (default A1).
+  `sheet` and `fit` say where it ended. Read its `problems` (the same list
+  `check_drawing` gives) before sending it out.
   - To refine it, `make_drawing(..., keep_open=True)` and use the drawing
     tools; they work on the current drawing, apart from the current part.
     Everything is in sheet mm from the bottom-left corner; `list_views` gives
@@ -356,7 +360,9 @@ stray drag in SolidWorks can change the part.
     on the part as custom properties and it reads them. `add_table(rows)`
     takes any other table.
   - Views in a tangle after adding a few: `auto_layout()` lays them all out
-    again at the largest scale that fits.
+    again at the largest scale that fits, then moves each view with its
+    annotations (and the notes and tables) clear of the frame, the title
+    block and each other.
   - Look with `render_drawing(path, zoom_mm=[[x1, y1], [x2, y2]])`; fix
     what `check_drawing` lists. `build_drawing(spec)` rebuilds a drawing
     from a spec, so fine-tuning is editing the spec, not the sheet.

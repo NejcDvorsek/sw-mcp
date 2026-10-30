@@ -125,6 +125,10 @@ _CALLOUT_OFFSET_MM = 12.0       # how far a hole callout's text sits off the vie
 _EDGE_ON_FACE_M = 1e-5          # an edge lies on a face when its midpoint is this close
 
 
+UNFIT = ("Views or annotations still reach off the frame, onto the title block or into another view on {}: "
+         "leave a view out, show it as a section or detail, or use a larger sheet (max_sheet).")
+
+
 class DrawingTools:
     """Drawing tools; a mixin for SolidWorksSession, whose __init__ sets the
     state they keep: _drawing, _drawing_model, _frames and _view_aliases."""
@@ -262,7 +266,8 @@ class DrawingTools:
                 pass
         return {"ok": True, "closed": title}
 
-    def make_drawing(self, path: str, sheet: str = "A4", scale=None, keep_open: bool = False) -> dict:
+    def make_drawing(self, path: str, sheet: str = "A4", scale=None, keep_open: bool = False,
+                     max_sheet: str | None = "A1") -> dict:
         """A manufacturing drawing of the current (saved) part in one call.
 
         Front, top and side views in first angle projection plus an isometric
@@ -273,6 +278,12 @@ class DrawingTools:
         dimensioned; the title block shows the part's material and mass.
         Weld beads come in with their weld symbols, and a weldment gets its
         cut list as a table.
+        Then the views move with their annotations until nothing reaches off
+        the frame, onto the title block or into another view (fit_sheet). When
+        that cannot be done, the iso view is left out (unless it carries
+        dimensions), then the next larger sheet is tried, up to `max_sheet`
+        (None: `sheet` only), at the scale picked there or, failing that, the
+        one tried on the smaller sheet. `fit` says what was tried.
         Saved to `path` (PDF, .slddrw, DXF, DWG); keep_open=True keeps it as the
         current drawing to refine with the other drawing tools.
         """
@@ -284,43 +295,116 @@ class DrawingTools:
         if not part_path:
             raise SolidWorksError("Save the part first (save_document): the drawing refers to its file.")
         abs_path = os.path.abspath(path)
-        model, drawing = self._start_drawing(sheet)
-        self._drawing_model = part_path
-        try:
-            sheet_metal = self._sheet_metal_feature() is not None
-            result = self._lay_out_standard_views(drawing, part_path, scale, flat=sheet_metal)
-            imported = self.import_dimensions()
-            if sheet_metal and "flat_pattern" in result:
-                flat = self._view(result["flat_pattern"])
-                for annotation in self._annotations(flat):  # the folded part's sizes, shown in the views already
-                    if int(annotation.GetType()) == SW_ANNOTATION_DIMENSION:
-                        self._delete_annotation(annotation)
-                result["flat_dimensions"] = len(self._dimension_flat_blank(flat))
-                result["sheet_metal"] = self._sheet_metal_parameters()
-            if self._weld_beads():
-                result["weld_beads"] = self._import_welds()
-            members = self._cut_list_items()
-            if members:
-                try:
-                    self.add_cut_list_table()
-                    result["cut_list"] = len(members)
-                except SolidWorksError as exc:
-                    result.setdefault("warnings", []).append(f"No cut list table: {exc}")
-            result["dimensions"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "dimension")
-            result["hole_callouts"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "hole_callout")
-            result["hole_locations"] = len(imported.get("hole_locations", ()))
-            result["part_properties"] = self._link_title_block(part)
-            check = self.check_drawing()
-            result["problems"] = check["problems"]
-            model.ForceRebuild3(False)
-            self._write_via_saveas3(abs_path, model)
-        except BaseException:
+        sheets = lay.sheets_up_to(sheet, max_sheet or sheet)
+        sheet_metal = self._sheet_metal_feature() is not None
+        tried, linked = [], None
+        for i, attempt in enumerate(sheets):
+            model, drawing = self._start_drawing(attempt)
+            self._drawing_model = part_path
+            try:
+                result = self._draw_part(drawing, part, part_path, scale, sheet_metal)
+                linked = result["part_properties"] if linked is None else linked
+                fits = self._fit_standard_views(result, scale, tried[-1].split()[1] if tried else None)
+                tried.append(f"{attempt} {result['scale']}")
+                if fits or i == len(sheets) - 1:
+                    result["part_properties"] = linked
+                    result["problems"] = self.check_drawing()["problems"]
+                    result["fit"] = {"fits": fits, "tried": tried}
+                    if not fits:
+                        result.setdefault("warnings", []).append(UNFIT.format(attempt))
+                    model.ForceRebuild3(False)
+                    self._write_via_saveas3(abs_path, model)
+                    break
+            except BaseException:
+                self.close_drawing()
+                raise
             self.close_drawing()
-            raise
         if not keep_open:
             self.close_drawing()
-        return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "sheet": sheet.upper(),
+        return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "sheet": attempt,
                 **result, "open": bool(keep_open)}
+
+    def _fit_standard_views(self, result: dict, scale, earlier: str | None) -> bool:
+        """fit_sheet for make_drawing's views; failing that, again without the
+        iso view (unless it carries annotations, or the rest does not fit
+        without it either), then (no scale given) at `earlier`, the scale that
+        did not fit the smaller sheet."""
+        if self.fit_sheet()["fits"]:
+            return True
+        iso = result.get("iso")
+        if (iso and not self._annotations(self._view(iso))
+                and self._plan_footprints(leave_out={iso})[-1] is not None):
+            self.delete_view(iso)
+            result["views"].remove(iso)
+            for key in ("iso", "iso_scale"):
+                result.pop(key, None)
+            result["left_out"] = [f"{iso} (iso)"]
+            if self.fit_sheet()["fits"]:
+                return True
+
+        def decimal(text):
+            num, den = lay.as_ratio(text)
+            return num / den
+
+        if scale is None and earlier and decimal(earlier) < decimal(result["scale"]):
+            self._scale_down_extra_view(result, decimal(earlier))
+            laid = self.auto_layout(earlier)
+            result["scale"] = laid["scale"]
+            return not lay.fit_problems(laid["problems"])
+        return False
+
+    def _scale_down_extra_view(self, result: dict, s: float) -> None:
+        """Keep make_drawing's iso view a standard step below a sheet scale
+        lowered to `s`, and its flat pattern no larger than it, and say so in
+        `result`."""
+        flat = "flat_pattern" in result
+        name = result.get("flat_pattern" if flat else "iso")
+        if not name:
+            return
+        view = self._view(name)
+        key = "flat_scale" if flat else "iso_scale"
+        if view.UseSheetScale:  # follows the sheet down
+            result.pop(key, None)
+            return
+        own = float(view.ScaleDecimal)
+        if (own <= s + 1e-9) if flat else (own < s - 1e-9):
+            return
+        ratio = next((r for r in lay.STANDARD_SCALES
+                      if (r[0] / r[1] <= s + 1e-9 if flat else r[0] / r[1] < s - 1e-9)), lay.STANDARD_SCALES[-1])
+        if flat and abs(ratio[0] / ratio[1] - s) < 1e-9:
+            view.UseSheetScale = True
+            result.pop(key, None)
+        else:
+            view.ScaleDecimal = ratio[0] / ratio[1]
+            result[key] = lay.scale_text(ratio)
+        self._drawing.ForceRebuild3(False)
+
+    def _draw_part(self, drawing, part, part_path: str, scale, sheet_metal: bool) -> dict:
+        """make_drawing's views, dimensions, callouts and title block on the
+        current (new) drawing."""
+        result = self._lay_out_standard_views(drawing, part_path, scale, flat=sheet_metal)
+        imported = self.import_dimensions()
+        if sheet_metal and "flat_pattern" in result:
+            flat = self._view(result["flat_pattern"])
+            for annotation in self._annotations(flat):  # the folded part's sizes, shown in the views already
+                if int(annotation.GetType()) == SW_ANNOTATION_DIMENSION:
+                    self._delete_annotation(annotation)
+            result["flat_dimensions"] = len(self._dimension_flat_blank(flat))
+            result["sheet_metal"] = self._sheet_metal_parameters()
+        if self._weld_beads():
+            result["weld_beads"] = self._import_welds()
+        members = self._cut_list_items()
+        if members:
+            try:
+                self.add_cut_list_table()
+                result["cut_list"] = len(members)
+            except SolidWorksError as exc:
+                result.setdefault("warnings", []).append(f"No cut list table: {exc}")
+        result["dimensions"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "dimension")
+        result["hole_callouts"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "hole_callout")
+        result["hole_locations"] = len(imported.get("hole_locations", ()))
+        result["part_properties"] = self._link_title_block(part)
+        return result
 
     def _lay_out_standard_views(self, drawing, part_path: str, scale, flat: bool = False) -> dict:
         """Front, top, side and iso views placed by drawing_layout at one scale;
@@ -367,14 +451,12 @@ class DrawingTools:
         for view in views.values():
             view.UseSheetScale = True
         placed = arranged(s, iso_ratio[0] / iso_ratio[1]) if iso_ratio else three(s)
-        if iso_ratio is None:
-            self._select_view(iso)
-            binding.wrap(self._drawing.Extension, self._mod.IModelDocExtension).DeleteSelection2(SW_DELETE_NO_OPTION)
-            iso = None
-        else:
-            iso.UseSheetScale = iso_ratio == ratio
-            if iso_ratio != ratio:
-                iso.ScaleDecimal = iso_ratio[0] / iso_ratio[1]
+        if iso_ratio is None:  # no room by the margins: fit_sheet places it by its footprint, or it is left out
+            iso_ratio = ratio if flat else next((r for r in lay.STANDARD_SCALES if r[0] / r[1] < s),
+                                                lay.STANDARD_SCALES[-1])
+        iso.UseSheetScale = iso_ratio == ratio
+        if iso_ratio != ratio:
+            iso.ScaleDecimal = iso_ratio[0] / iso_ratio[1]
         self._drawing.ForceRebuild3(False)
         if placed is None:  # a scale given that does not fit: keep SolidWorks' places
             placed = {}
@@ -384,19 +466,9 @@ class DrawingTools:
                 self._move_view_box(view, placed[key])
         self._drawing.ForceRebuild3(False)
         names = [v.GetName2() for v in self._views()]
-        out = {"views": names, "scale": lay.scale_text(ratio)}
-        if iso is not None and flat:
-            out["flat_pattern"] = iso.GetName2()
-        if iso is not None and iso_ratio != ratio:
+        out = {"views": names, "scale": lay.scale_text(ratio), "flat_pattern" if flat else "iso": iso.GetName2()}
+        if iso_ratio != ratio:
             out["flat_scale" if flat else "iso_scale"] = lay.scale_text(iso_ratio)
-        warnings = []
-        if not placed:
-            warnings.append(f"The views do not fit the {lay.scale_text(ratio)} scale with room for dimensions.")
-        if flat and iso is None:
-            warnings.append("The flat pattern did not fit beside the views: use a larger sheet, or add it with "
-                            "add_view(kind='flat_pattern').")
-        if warnings:
-            out["warnings"] = warnings
         return out
 
     def _link_title_block(self, part) -> dict:
@@ -417,16 +489,47 @@ class DrawingTools:
     def build_drawing(self, spec: dict, path: str | None = None) -> dict:
         """A drawing built from scratch from a spec (see the build_drawing tool),
         so fine-tuning is editing the spec and building again: nothing drifts.
-        A failing entry closes the half-built drawing and names the entry."""
+        A failing entry closes the half-built drawing and names the entry.
+        Last, fit_sheet moves the views with their annotations, and the notes
+        and tables, until nothing reaches off the frame, onto the title block
+        or into another view (spec 'fit': false leaves them where they are);
+        when they cannot fit, the drawing is built again on the next larger
+        sheet, up to spec 'max_sheet' (default A1)."""
         if not isinstance(spec, dict):
             raise SolidWorksError("spec is a dict: {'sheet': 'A3', 'views': [...], 'dims': [...], ...}.")
-        known = {"part", "sheet", "scale", "views", "layout", "import", "dims", "callouts", "symbols", "notes",
-                 "tables", "gear_table", "props"}
+        known = {"part", "sheet", "max_sheet", "fit", "scale", "views", "layout", "import", "dims", "callouts",
+                 "symbols", "notes", "tables", "gear_table", "props"}
         unknown = sorted(set(spec) - known)
         if unknown:
             raise SolidWorksError(f"Unknown spec keys {unknown}; use {sorted(known)}.")
         model_path = self._drawing_model_path(spec.get("part"))
-        self._start_drawing(str(spec.get("sheet", "A3")))
+        first = str(spec.get("sheet", "A3"))
+        fit = spec.get("fit", True)
+        sheets = lay.sheets_up_to(first, spec.get("max_sheet") or "A1") if fit else [first]
+        tried = []
+        for i, sheet in enumerate(sheets):
+            out = self._build_on(spec, sheet, model_path, path if not fit else None)
+            tried.append(f"{sheet.upper()} {lay.scale_text(self._sheet_scale())}")
+            if not fit:
+                return out
+            if out["fits"] or i == len(sheets) - 1:
+                out["fit"] = {"fits": out.pop("fits"), "tried": tried}
+                out["sheet"] = sheet.upper()
+                if not out["fit"]["fits"]:
+                    out["warnings"] = [UNFIT.format(sheet.upper())]
+                if path:
+                    try:
+                        out["saved"] = self.export_drawing(path)["path"]
+                    except SolidWorksError as exc:
+                        self.close_drawing()
+                        raise SolidWorksError(f"build_drawing stopped at save: {exc} The drawing was closed.") from exc
+                return out
+            self.close_drawing()
+
+    def _build_on(self, spec: dict, sheet: str, model_path: str, path: str | None) -> dict:
+        """build_drawing on one sheet; the drawing stays open. `fits` (with
+        spec 'fit') says whether fit_sheet cleared the sheet."""
+        self._start_drawing(sheet)
         self._drawing_model = model_path
         made = {"views": [], "dimensions": [], "callouts": [], "notes": []}
         step = "sheet"
@@ -473,6 +576,10 @@ class DrawingTools:
             if spec.get("props"):
                 step = "props"
                 self.set_drawing_properties(spec["props"])
+            if spec.get("fit", True):
+                step = "fit"
+                fitted = self.fit_sheet()
+                made["fits"] = fitted["fits"]
             step = "check"
             problems = self.check_drawing()["problems"]
             out = {"ok": True, "title": self._drawing.GetTitle(), **made, "problems": problems}
@@ -1261,6 +1368,11 @@ class DrawingTools:
             # a flat pattern's bend notes sit on their bend lines
             entry["type"] = "bend_note" if note is not None and note.IsBendLineNote else "note"
             entry["leaders"] = lines
+            extent = note.GetExtent() if note is not None else None
+            if extent and len(extent) >= 6:  # the text's real size: the estimate runs short on capitals
+                text_box = lay.rect(*(m_to_mm(extent[i]) for i in (0, 1, 3, 4)))
+                entry["text_boxes"] = [text_box]
+                entry["box"] = lay.union([lay.rect(*l) for l in lines] + [text_box])
         else:
             entry["type"] = ANNOTATION_TYPES.get(kind, f"type {kind}")
             entry["text_boxes"] = []  # marks and lines carry no text to clash
@@ -2082,15 +2194,49 @@ class DrawingTools:
         views = self._views()
         if not views:
             raise SolidWorksError("The sheet has no views to lay out.")
-        root = self._view(main) if main else next(
-            (v for v in views if VIEW_TYPES.get(int(v.Type)) in ("standard", "named") and self._looks_along_axis(v)),
-            views[0])
         frame, block = self._sheet_frame()
         areas = lay.drawing_area(frame, block)
         sheet_scale = self._sheet_scale()
         current = sheet_scale[0] / sheet_scale[1]
         boxes = {v.GetName2(): self._view_geometry_box(v) for v in views}
         follows = {v.GetName2(): bool(v.UseSheetScale) for v in views}
+        root, children, others = self._view_family(views, boxes, main)
+
+        def size(name, s):
+            box = boxes[name]
+            k = s / current if follows[name] else 1.0
+            return lay.width(box) * k, lay.height(box) * k
+
+        def arranged(s):
+            return lay.arrange_views(size(root.GetName2(), s), [(n, side, size(n, s)) for n, side, _ in children],
+                                     [(n, size(n, s)) for n in others], areas)
+
+        ratio = lay.as_ratio(scale) if scale is not None else lay.pick_scale(lambda s: arranged(s) is not None)
+        placed = arranged(ratio[0] / ratio[1])
+        sheet = binding.wrap(drawing.GetCurrentSheet(), self._mod.ISheet)
+        sheet.SetScale(float(ratio[0]), float(ratio[1]), False, False)
+        model.ForceRebuild3(False)
+        order = [root.GetName2()] + [n for n, _, _ in children] + others
+        if placed is not None:
+            for name in order:
+                self._move_view_box(self._view(name), placed["main" if name == root.GetName2() else name])
+            model.ForceRebuild3(False)
+        fit = self.fit_sheet(main=root.GetName2())  # by the real footprints, where the margins ran out
+        out = {"ok": True, "scale": lay.scale_text(ratio), "main": root.GetName2(),
+               "moved": order if placed is not None else fit["moved"]}
+        if not fit["fits"]:
+            out["warnings"] = [f"The views do not fit at {lay.scale_text(ratio)} with their annotations; "
+                               "leave a view out, or use a larger sheet."]
+        out["views"] = [self._view_entry(self._view(n), with_mapping=False) for n in order]
+        out["problems"] = fit["problems"]
+        return out
+
+    def _view_family(self, views, boxes, main=None):
+        """(main view, [(name, side, distance)] of the views projected or cut
+        from it, nearest first, [names] of the rest)."""
+        root = self._view(main) if main else next(
+            (v for v in views if VIEW_TYPES.get(int(v.Type)) in ("standard", "named") and self._looks_along_axis(v)),
+            views[0])
         rc = lay.center(boxes[root.GetName2()])
         children, others = [], []
         for v in views:
@@ -2107,33 +2253,56 @@ class DrawingTools:
             else:
                 others.append(name)
         children.sort(key=lambda c: c[2])  # nearest first, so stacks keep their order
+        return root, children, others
 
-        def size(name, s):
-            box = boxes[name]
-            k = s / current if follows[name] else 1.0
-            return lay.width(box) * k, lay.height(box) * k
-
-        def arranged(s):
-            return lay.arrange_views(size(root.GetName2(), s), [(n, side, size(n, s)) for n, side, _ in children],
-                                     [(n, size(n, s)) for n in others], areas)
-
-        ratio = lay.as_ratio(scale) if scale is not None else lay.pick_scale(lambda s: arranged(s) is not None)
-        placed = arranged(ratio[0] / ratio[1])
-        sheet = binding.wrap(drawing.GetCurrentSheet(), self._mod.ISheet)
-        sheet.SetScale(float(ratio[0]), float(ratio[1]), False, False)
-        model.ForceRebuild3(False)
+    def fit_sheet(self, main: str | None = None) -> dict:
+        """Clear what check_drawing finds off the frame, on the title block, or
+        clashing between views: every view moves with its annotations as one
+        footprint, the main view and its projections top left, the rest
+        (iso, details, the sheet's notes and tables) in the room left.
+        Nothing moves while the sheet is clean or when the footprints cannot
+        fit; `fits` says whether the sheet is clear afterwards."""
+        model, _ = self._require_drawing()
+        problems = self.check_drawing()["problems"]
+        if not lay.fit_problems(problems):
+            return {"fits": True, "moved": [], "problems": problems}
+        root, children, others, geometry, loose, placed = self._plan_footprints(main)
         if placed is None:
-            return {"ok": True, "scale": lay.scale_text(ratio), "moved": [],
-                    "warnings": [f"The views do not fit at {lay.scale_text(ratio)} with room for dimensions; "
-                                 "try a smaller scale or a larger sheet."]}
-        order = [root.GetName2()] + [n for n, _, _ in children] + others
-        for name in order:
-            self._move_view_box(self._view(name), placed["main" if name == root.GetName2() else name])
+            return {"fits": False, "moved": [], "problems": problems}
+        moved = []
+        for name in [root.GetName2()] + [n for n, _, _ in children] + others:
+            target = placed["main" if name == root.GetName2() else name]
+            if math.dist(target, lay.center(geometry[name])) > 0.05:
+                self._move_view_box(self._view(name), target)
+                moved.append(name)
+        for annotation_id, box in loose.items():
+            dx, dy = (t - c for t, c in zip(placed[annotation_id], lay.center(box)))
+            if math.hypot(dx, dy) > 0.05:
+                annotation, _ = self._find_annotation(annotation_id)
+                x, y, _ = annotation.GetPosition()
+                annotation.SetPosition2(x + mm_to_m(dx), y + mm_to_m(dy), 0.0)
+                moved.append(annotation_id)
         model.ForceRebuild3(False)
-        check = self.check_drawing()
-        return {"ok": True, "scale": lay.scale_text(ratio), "main": root.GetName2(), "moved": order,
-                "views": [self._view_entry(self._view(n), with_mapping=False) for n in order],
-                "problems": check["problems"]}
+        problems = self.check_drawing()["problems"]
+        return {"fits": not lay.fit_problems(problems), "moved": moved, "problems": problems}
+
+    def _plan_footprints(self, main: str | None = None, leave_out=()):
+        """fit_sheet's plan: (main view, children, others, {view: geometry
+        box}, {sheet annotation id: box}, geometry centres from
+        arrange_footprints or None), without the views in `leave_out`."""
+        views = [v for v in self._views() if v.GetName2() not in leave_out]
+        frame, block = self._sheet_frame()
+        geometry = {v.GetName2(): self._view_geometry_box(v) for v in views}
+        entries = [e for e in self._all_annotation_entries() if e.get("box") is not None]
+        extents = {name: lay.extents(box, lay.union([box] + [e["box"] for e in entries if e["view"] == name]))
+                   for name, box in geometry.items()}
+        loose = {e["id"]: e["box"] for e in entries if e["view"] == "sheet"}
+        root, children, others = self._view_family(views, geometry, main)
+        placed = lay.arrange_footprints(
+            extents[root.GetName2()], [(n, side, extents[n]) for n, side, _ in children],
+            [(n, extents[n]) for n in others] + [(i, lay.extents(b, b)) for i, b in loose.items()],
+            lay.drawing_area(frame, block))
+        return root, children, others, geometry, loose, placed
 
     def _looks_along_axis(self, view) -> bool:
         try:

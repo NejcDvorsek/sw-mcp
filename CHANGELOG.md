@@ -6,6 +6,13 @@ All notable changes to this project are documented here. This project follows
 ## [0.2.0] - unreleased
 
 ### Added
+- Drawings fit their sheet. `make_drawing`, `build_drawing` and
+  `auto_layout` measure each view with its dimensions, callouts and symbols as
+  one footprint and move it, and the sheet's notes and tables, until nothing
+  reaches off the frame, onto the title block or into another view (projected
+  views stay lined up). When they cannot fit, `make_drawing` leaves out the
+  iso view, then both build the drawing again on the next larger sheet, up to
+  `max_sheet` (default A1). The result's `sheet` and `fit` say what was tried.
 - `read_model`: everything a design review reads of the current part in one
   read-only call, in sw-mcp's own schema `sw-mcp/model@1`, where a client
   needed some 60 calls of `list_features`, `list_dimensions`, `list_faces`,
@@ -70,6 +77,11 @@ All notable changes to this project are documented here. This project follows
 - `make_drawing` and `import_dimensions` brought in none of the model's
   dimensions on a drawing not yet saved: SolidWorks counts the dimensions of
   sketches their features absorbed as hidden there. They now come in.
+- `make_drawing` deleted the iso view, and a sheet metal part's flat pattern,
+  whenever the 22 mm room it keeps round each view ran out; they now stay
+  and are placed by their real size. `check_drawing` measured a note by its
+  character count, so a note in capitals could run past the frame unseen; it
+  now uses the note's real extent.
 
 
 First release of sw-mcp, a fork of [solidworks-mcp](https://github.com/hjbaard/SolidWorks-MCP)

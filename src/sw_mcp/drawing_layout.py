@@ -318,6 +318,107 @@ def arrange_views(main, children, others, areas, margin: float = DIMENSION_MARGI
     return {k: center(r) for k, r in boxes.items()}
 
 
+def next_sheet(sheet: str) -> str | None:
+    """The next larger ISO sheet, or None after A0."""
+    names = list(SHEETS)
+    i = names.index(str(sheet).strip().upper())
+    return names[i + 1] if i + 1 < len(names) else None
+
+
+def sheets_up_to(first: str, last: str) -> list:
+    """The ISO sheets from `first` up to `last`; `first` alone when `last` is not larger."""
+    first, last = str(first).strip().upper(), str(last).strip().upper()
+    sheet_size(first)
+    sheet_size(last)
+    out = [first]
+    while out[-1] != last and next_sheet(out[-1]):
+        out.append(next_sheet(out[-1]))
+    return out if out[-1] == last else [first]
+
+
+# Check problems about where things sit on the sheet rather than what the
+# drawing says: moving views and annotations clears them
+FIT_KINDS = {"view_outside_frame", "view_over_title_block", "views_overlap", "outside_frame", "over_title_block"}
+# ... and these when their items belong to different views (or one to the sheet)
+CROSS_VIEW_KINDS = {"text_on_view", "texts_overlap", "leaders_cross"}
+
+
+def _owner(item: str) -> str:
+    """The view an annotation id ('RD1@Drawing View1') or a view name belongs to."""
+    return item.rsplit("@", 1)[1] if "@" in item else item
+
+
+def fit_problems(problems) -> list:
+    """The problems that moving views and annotations can clear: anything off
+    the frame or on the title block, views overlapping, and an annotation of
+    one view clashing with another view or its annotations."""
+    return [p for p in problems if p["kind"] in FIT_KINDS
+            or (p["kind"] in CROSS_VIEW_KINDS and len({_owner(i) for i in p["items"]}) > 1)]
+
+
+# Room between two footprints (a view with its annotations), and between the
+# views and the frame, sheet mm
+FOOTPRINT_GAP_MM = 8.0
+
+
+def extents(geometry, footprint) -> tuple:
+    """(left, bottom, right, top): how far the footprint reaches out from the
+    centre of the geometry box, so a view can be placed by its geometry."""
+    cx, cy = center(geometry)
+    fp = union([geometry, footprint])
+    return cx - fp[0], cy - fp[1], fp[2] - cx, fp[3] - cy
+
+
+def _around(c, e) -> tuple:
+    return c[0] - e[0], c[1] - e[1], c[0] + e[2], c[1] + e[3]
+
+
+def arrange_footprints(main, children, others, areas, gap: float = FOOTPRINT_GAP_MM):
+    """Geometry centres for a sheet of views placed by their real footprints,
+    or None when they do not fit.
+
+    Each item is given by its extents (see `extents`). main is the view the
+    others are projected from; children [(key, side, extents)] stack outward
+    on their side of it, lined up with it (projected views stay aligned);
+    others [(key, extents)] (iso, details, the sheet's notes and tables) go
+    into the room left, largest first. The group sits top left, `gap` inside
+    the frame, and footprints stay `gap` apart.
+    """
+    boxes = {"main": _around((0.0, 0.0), main)}
+    for side in SIDES:
+        anchor = boxes["main"]
+        for key, s, e in children:
+            if s != side:
+                continue
+            if side == "right":
+                c = (anchor[2] + gap + e[0], 0.0)
+            elif side == "left":
+                c = (anchor[0] - gap - e[2], 0.0)
+            elif side == "above":
+                c = (0.0, anchor[3] + gap + e[1])
+            else:
+                c = (0.0, anchor[1] - gap - e[3])
+            boxes[key] = anchor = _around(c, e)
+    group, full = union(boxes.values()), union(areas)
+    dx, dy = full[0] + gap - group[0], full[3] - gap - group[3]
+    boxes = {k: shift(b, dx, dy) for k, b in boxes.items()}
+    placed = list(boxes.values())
+    half = gap / 2.0
+    if not _fits(placed, areas, half) or any(overlap(grow(a, half), grow(b, half), 0.01)
+                                             for i, a in enumerate(placed) for b in placed[i + 1:]):
+        return None
+    centres = {"main": (dx, dy)}
+    for key, _, e in children:
+        centres[key] = (boxes[key][0] + e[0], boxes[key][1] + e[1])
+    for key, e in sorted(others, key=lambda o: -(o[1][0] + o[1][2]) * (o[1][1] + o[1][3])):
+        spot = _free_spot((e[0] + e[2], e[1] + e[3]), placed, areas, half)
+        if spot is None:
+            return None
+        placed.append(spot)
+        centres[key] = (spot[0] + e[0], spot[1] + e[1])
+    return centres
+
+
 def _fits(boxes, areas, margin) -> bool:
     return all(any(inside(grow(b, margin), a, 0.01) for a in areas) for b in boxes)
 

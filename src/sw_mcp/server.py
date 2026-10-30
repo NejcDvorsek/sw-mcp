@@ -1161,7 +1161,8 @@ async def screenshot(path: str, view: str = "iso", zoom_mm: list | None = None,
 
 
 @mcp.tool()
-async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, keep_open: bool = False) -> dict:
+async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, keep_open: bool = False,
+                       max_sheet: str | None = "A1") -> dict:
     """Make a manufacturing drawing of the current part in one call: PDF, .slddrw, DXF or DWG.
 
     Front, top and side views (first angle) plus an iso view on an ISO sheet
@@ -1172,11 +1173,15 @@ async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, k
     title block shows material and mass. A sheet metal part gets its flat
     pattern in place of the iso view, with bend lines, bend notes and the
     blank's overall size. Weld beads come in with their weld symbols; a
-    weldment gets its cut list table. Returns `problems` (check_drawing).
+    weldment gets its cut list table. Then every view moves with its
+    annotations until nothing reaches off the frame, onto the title block or
+    into another view; when they cannot fit, the iso view is left out, then the
+    next larger sheet is tried, up to max_sheet (None: `sheet` only). Returns
+    `sheet`, `fit` ({fits, tried}) and `problems` (check_drawing).
     keep_open=True keeps it as the current drawing to refine with the other
     drawing tools. Save the part first (save_document): the drawing refers to its file.
     """
-    return await _call(_session.make_drawing, path, sheet, scale, keep_open)
+    return await _call(_session.make_drawing, path, sheet, scale, keep_open, max_sheet)
 
 
 @mcp.tool()
@@ -1198,8 +1203,13 @@ async def build_drawing(spec: dict, path: str | None = None) -> dict:
     "tolerance": "0.05", "datums": ["A"]}, {"type": "surface_finish", ...}],
     "notes": ["..."], "tables": [[["a", "b"], ...]], "gear_table": {"kind":
     "spur", "teeth": 20, "module": 2}, "props": {"material": "from part"},
-    "layout": "auto"}. Saved to path when given. Returns what was made and the
-    problems check_drawing finds.
+    "layout": "auto", "max_sheet": "A1", "fit": true}. Last, every view moves
+    with its annotations, and the notes and tables, until nothing reaches off
+    the frame, onto the title block or into another view; when they cannot fit,
+    it is built again on the next larger sheet, up to max_sheet ("fit": false
+    leaves everything where the spec put it). Saved to path when given. Returns
+    what was made, `sheet`, `fit` ({fits, tried}) and the problems
+    check_drawing finds.
     """
     return await _call(_session.build_drawing, spec, path)
 
@@ -1368,7 +1378,9 @@ async def edit_annotation(annotation_id: str, prefix: str | None = None, suffix:
 @mcp.tool()
 async def auto_layout(scale: str | None = None, main: str | None = None, arrange_dimensions: bool = False) -> dict:
     """Lay all views out again: the main view top left, its projected and section views beside it, the
-    rest in the room left, with room for dimensions, at the largest standard scale that fits (or scale).
+    rest in the room left, with room for dimensions, at the largest standard scale that fits (or scale);
+    then, if anything still reaches off the frame, onto the title block or into another view, each view
+    moves with its annotations as one footprint (the notes and tables too) to clear it.
     arrange_dimensions=True then lets SolidWorks space each view's dimensions evenly."""
     return await _call(_session.lay_out, scale, main, arrange_dimensions)
 

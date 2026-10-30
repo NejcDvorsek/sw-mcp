@@ -227,3 +227,49 @@ def test_views_left_and_above_push_the_main_view_in():
     assert placed["l"][0] - 15.0 >= 10.0          # the left view's box keeps its margin from the sheet edge
     assert placed["a"][1] + 10.0 <= 290.0
     assert lay.arrange_views((500.0, 50.0), [], [], areas, margin=10.0) is None
+
+
+def test_sheets_grow_one_size_at_a_time():
+    assert lay.next_sheet("a4") == "A3" and lay.next_sheet("A0") is None
+    assert lay.sheets_up_to("A4", "A2") == ["A4", "A3", "A2"]
+    assert lay.sheets_up_to("A2", "A3") == ["A2"]  # never smaller than asked for
+    with pytest.raises(SolidWorksError, match="Unknown sheet"):
+        lay.sheets_up_to("A4", "B4")
+
+
+def test_only_placement_problems_are_for_fitting():
+    problems = [{"kind": "outside_frame", "items": ["RD1@View1"]},
+                {"kind": "over_title_block", "items": ["Note1@sheet"]},
+                {"kind": "text_on_view", "items": ["RD2@View1", "View1"]},      # its own view: arranging dimensions
+                {"kind": "text_on_view", "items": ["RD3@View1", "View2"]},      # another view: moving views
+                {"kind": "texts_overlap", "items": ["RD4@View1", "Note2@sheet"]},
+                {"kind": "duplicate_dimension", "items": ["RD5@View1", "RD6@View2"]},
+                {"kind": "undimensioned_feature", "items": ["Fillet1"]}]
+    assert [p["items"][0] for p in lay.fit_problems(problems)] == ["RD1@View1", "Note1@sheet", "RD3@View1",
+                                                                     "RD4@View1"]
+
+
+def test_a_footprint_reaches_out_from_the_geometry():
+    # dimensions 30 mm to the left and 20 mm below a 100 x 50 view
+    assert lay.extents((100.0, 100.0, 200.0, 150.0), (70.0, 80.0, 200.0, 150.0)) == (80.0, 45.0, 50.0, 25.0)
+
+
+def test_views_are_placed_by_their_footprints():
+    areas = lay.drawing_area((20.0, 10.0, 410.0, 287.0), (230.0, 10.0, 410.0, 65.2))
+    front = (80.0, 45.0, 50.0, 25.0)                # dimensions left of and below the front view
+    top = (50.0, 10.0, 60.0, 10.0)
+    side = (10.0, 25.0, 25.0, 25.0)
+    placed = lay.arrange_footprints(front, [("top", "below", top), ("side", "right", side)],
+                                    [("iso", (20.0, 20.0, 20.0, 20.0)), ("note", (40.0, 3.0, 40.0, 3.0))],
+                                    areas, gap=8.0)
+    main = placed["main"]
+    assert main == (20.0 + 8.0 + 80.0, 287.0 - 8.0 - 25.0)        # the footprint, not the geometry, top left
+    assert placed["top"][0] == main[0] and placed["side"][1] == main[1]  # projected views stay lined up
+    assert main[1] - 45.0 - 8.0 == pytest.approx(placed["top"][1] + 10.0)  # footprints 8 mm apart
+    assert placed["side"][0] - 10.0 == pytest.approx(main[0] + 50.0 + 8.0)
+    boxes = [(c[0] - e[0], c[1] - e[1], c[0] + e[2], c[1] + e[3]) for c, e in
+             [(placed["iso"], (20.0, 20.0, 20.0, 20.0)), (placed["note"], (40.0, 3.0, 40.0, 3.0))]]
+    assert all(any(lay.inside(b, a) for a in areas) for b in boxes)
+    assert not lay.overlap(*boxes)
+    # a footprint wider than the frame does not fit
+    assert lay.arrange_footprints((300.0, 10.0, 300.0, 10.0), [], [], areas) is None

@@ -65,6 +65,11 @@ def test_make_drawing_shows_every_dimension_once_and_closes_again(part, tmp_path
         assert drawing["bytes"] > 1000
         assert drawing["dimensions"] == part.list_dimensions()["count"] == 6  # width height depth, hole d x y
         assert len(drawing["views"]) == 4  # front, top, side and isometric
+        assert drawing["fit"] == {"fits": True, "tried": [f"A4 {drawing['scale']}"]}
+        # at 5:1 the views and their dimensions do not fit an A4 sheet: the next larger sheet that holds them
+        big = part.make_drawing(str(tmp_path / "big.pdf"), "A4", "5:1")
+        assert big["sheet"] != "A4" and big["fit"]["fits"] and big["fit"]["tried"][0] == "A4 5:1", big["fit"]
+        assert not [p for p in big["problems"] if p["kind"] in ("outside_frame", "over_title_block", "views_overlap")]
         kept = part.make_drawing(str(tmp_path / "holed_box.slddrw"))
         assert kept["path"].lower().endswith(".slddrw") and kept["bytes"] > 1000
         documents = part.list_documents()["documents"]
@@ -244,6 +249,7 @@ def test_a_spec_builds_a_clean_drawing(sheet, tmp_path):
     assert built["views"] == ["front", "side", "Section View A-A"]
     assert len(built["dimensions"]) == 4 and len(built["callouts"]) == 1
     assert built["problems"] == [], built["problems"]
+    assert built["sheet"] == "A3" and built["fit"]["fits"]
     assert os.path.getsize(built["saved"]) > 1000
     _close_drawings(sheet)
 
