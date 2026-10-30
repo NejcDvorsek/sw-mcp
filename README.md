@@ -12,6 +12,8 @@ sw-mcp is a fork of [SolidWorks-MCP](https://github.com/hjbaard/SolidWorks-MCP)
 by Henk Jan Baard and the SolidWorks connector of
 [Jig](https://github.com/NejcDvorsek/jig). It works with any MCP client.
 
+<!-- mcp-name: io.github.NejcDvorsek/sw-mcp -->
+
 ## What it can do
 
 - **Parts:** sketches, extrudes, revolves, sweeps and lofts; holes, threads,
