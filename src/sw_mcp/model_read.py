@@ -36,6 +36,7 @@ import win32com.client
 from . import __version__, binding
 from .constants import (
     RAY_HIT_WIDTH,
+    SOLIDWORKS_DRIVEN_SKETCH_OWNERS,
     SKETCH_STATUSES,
     SW_ANGULAR_DIMENSION,
     SW_BODY_SOLID,
@@ -960,8 +961,11 @@ class ModelReader:
 
     def _reading_under_defined(self, reading) -> list:
         """_under_defined_sketches from the tree already walked."""
-        found, seen = [], set()
-        for feat, kind, subs in self._reading_tree(reading):
+        tree = list(self._reading_tree(reading))
+        # sketches SolidWorks drives itself, such as an edge flange's profile
+        found, seen = [], {sub.Name for _, kind, subs in tree if kind in SOLIDWORKS_DRIVEN_SKETCH_OWNERS
+                           for sub, _ in subs}
+        for feat, kind, subs in tree:
             for candidate, candidate_kind in [(feat, kind), *subs]:
                 if candidate_kind != "ProfileFeature" or candidate.Name in seen:
                     continue

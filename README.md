@@ -35,11 +35,16 @@ by Henk Jan Baard and the SolidWorks connector of
   instead of producing wrong geometry. `read_model` reads a whole part for a
   review in one call: holes with their sizes, internal radii, sharp inside
   corners, setups, thin walls and draft.
+- **Sheet metal:** base flanges (flat tabs or bent L, U and Z sections) and
+  edge flanges with your thickness, bend radius and K-factor; the flat blank's
+  size, and the flat pattern with bend lines exported to DXF for laser
+  cutting.
 - **Assemblies:** insert and place components, mate them, swap parts, check
   interference and step joints through their range of motion.
 - **Drawings:** ISO sheets with a title block, views, sections and details,
   dimensions, hole callouts, surface finish and GD&T symbols, tables, and
-  export to PDF, DXF or DWG.
+  export to PDF, DXF or DWG. Sheet metal parts get their flat pattern with
+  bend lines, bend notes and the blank's size.
 - **Your own parts:** open existing parts and STEP files, change dimensions
   and equations, set materials, and build on sketches you drew.
 - **3D printing and export:** STEP, STL and 3MF export, screenshots,
@@ -78,6 +83,12 @@ by Henk Jan Baard and the SolidWorks connector of
    > Design a 100 × 80 × 8 mm mounting plate with a Ø16 mm centre bore, four
    > counterbored M5 holes 12 mm from the corners and R5 corners. Then export
    > an STL.
+
+   Or a sheet metal one:
+
+   > Make a 2 mm steel tray, 80 × 50 mm, with 20 mm flanges on the long sides
+   > and an inner bend radius of 3 mm. Give me the flat pattern as a DXF and a
+   > drawing as a PDF.
 
 ## Requirements
 

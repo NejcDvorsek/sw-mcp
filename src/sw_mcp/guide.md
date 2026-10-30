@@ -266,6 +266,24 @@ stray drag in SolidWorks can change the part.
   bodies the tools act on the first. A file holding an assembly opens as an
   assembly (`kind="assembly"` skips trying it as a part): its parts come in as components at their places,
   ready for `list_components` and `add_mate`.
+- **Sheet metal**: `add_base_flange(thickness_mm, bend_radius_mm, profile_mm)`
+  starts the part. A closed profile on the Front plane is a flat tab, the
+  sheet's thickness along +z; an open one (an L, U, Z or hat section) is bent
+  at its corners with the inner bend radius and extruded `depth_mm` along +z,
+  its thickness on the right of the profile walked from the start
+  (`flip_thickness=True`: the left). `add_edge_flange(at_mm, length_mm)` bends
+  a flange up from the straight edge through that point, the edge's whole
+  length; it rises the way the face at the edge looks (`flip=True`: the other
+  way), and `length_mm` is the outside length, from the outer corner of the
+  bend. With `position="material_inside"` (default) the part keeps its outer
+  size. Holes and cuts work as on any part. Hand calculation: a bend of
+  inner radius r in a sheet t thick keeps its neutral fibre, at r + K t:
+  pi/2 (r + K t) for a square bend, and each straight leg ends r + t short of
+  the outer corner. `flat_pattern("info")` gives the flat blank's size and
+  the bends; `"flatten"` / `"fold"` show it; `"export"` writes the DXF for
+  laser cutting (save the part first). `make_drawing` shows a sheet metal
+  part's flat pattern in place of the iso view, with bend lines, bend notes
+  and the blank's size; `add_view(kind="flat_pattern")` adds one to any drawing.
 - **Drawings**: save the part, then `make_drawing("part.pdf", sheet="A3")`
   lays out front, top and side views (first angle) and an iso view on an ISO
   sheet with a title block, at the largest standard scale with room for

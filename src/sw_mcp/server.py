@@ -29,6 +29,7 @@ Conventions
 - In a part a person drew, their sketches and planes work by name: read_sketch, extrude_sketch, cut_sketch; plane='Plane1' in add_mirror, add_extruded_profile and cut_profile.
 - Flowing outlines (an S-bend, a hub running into a beam): add_sketch with lines, tangent arcs and splines, then extrude_sketch / cut_sketch.
 - A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
+- Sheet metal: add_base_flange (a tab, or a bent section from an open profile), add_edge_flange on its edges, holes and cuts as usual; flat_pattern for the flat size and the DXF; make_drawing adds the flat pattern.
 
 Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
@@ -656,6 +657,51 @@ async def add_shell(thickness_mm: float, open_face: str = "+z") -> dict:
 
 
 @mcp.tool()
+async def add_base_flange(thickness_mm: float, bend_radius_mm: float, profile_mm: list | None = None,
+                          sketch: str | None = None, depth_mm: float | None = None, k_factor: float = 0.5,
+                          reverse: bool = False, flip_thickness: bool = False, name: str = "Base-Flange") -> dict:
+    """Start a sheet metal part: a flat tab from a closed profile, or a bent section from an open one.
+
+    profile_mm: [[x, y], ...] on the Front plane, closed when the last point is
+    the first (a tab, thickness_mm thick along +z); open (an L, U or Z section,
+    corners bent with bend_radius_mm inside) extruded depth_mm along +z.
+    sketch: a sketch of the part by name instead (add_sketch: arcs, other
+    planes). The thickness of an open profile lies on its right walked from
+    the start (flip_thickness: left); reverse: along -z. k_factor sets the flat
+    length. Returns the sheet's thickness, bend radius and K-factor.
+    """
+    return await _call(_session.add_base_flange, thickness_mm, bend_radius_mm, profile_mm, sketch, depth_mm,
+                       k_factor, reverse, flip_thickness, name)
+
+
+@mcp.tool()
+async def add_edge_flange(at_mm: list, length_mm: float, angle_deg: float = 90.0,
+                          bend_radius_mm: float | None = None, position: str = "material_inside",
+                          flip: bool = False, name: str = "Edge-Flange") -> dict:
+    """Bend a flange up from a straight edge of a sheet metal part, the edge's whole length.
+
+    at_mm: a model point [x, y, z] on the edge (list_edges). length_mm is the
+    flange's outside length, from the outer corner of the bend; angle_deg the
+    bend. It rises the way the face at the edge looks (from an edge of the
+    top face of a tab: up); flip=True folds it the other way. position:
+    'material_inside' (the part keeps its outer size), 'material_outside' or
+    'bend_outside'. bend_radius_mm defaults to the sheet's. Returns
+    dimensions 'length' and 'angle' for set_dimension.
+    """
+    return await _call(_session.add_edge_flange, at_mm, length_mm, angle_deg, bend_radius_mm, position, flip, name)
+
+
+@mcp.tool()
+async def flat_pattern(action: str = "info", path: str | None = None) -> dict:
+    """A sheet metal part's flat pattern: action 'info' (thickness, bend radius,
+    K-factor, number of bends, flat blank size), 'flatten' / 'fold' (show the
+    part flat or bent), or 'export' to path (.dxf or .dwg: the flat outline and
+    bend lines for laser cutting; save the part first).
+    """
+    return await _call(_session.flat_pattern, action, path)
+
+
+@mcp.tool()
 async def set_dimension(dimension_name: str, value_mm: float) -> dict:
     """Set a named driving dimension (e.g. 'D1@BlockExtrude') in mm, rebuild, and remeasure.
 
@@ -1037,7 +1083,9 @@ async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, k
     the largest standard scale that leaves room for dimensions (or scale='1:2').
     The model's dimensions come in once each, one hole callout per set of
     identical Hole Wizard holes ('4X ...'), their centres dimensioned, and the
-    title block shows material and mass. Returns `problems` (check_drawing).
+    title block shows material and mass. A sheet metal part gets its flat
+    pattern in place of the iso view, with bend lines, bend notes and the
+    blank's overall size. Returns `problems` (check_drawing).
     keep_open=True keeps it as the current drawing to refine with the other
     drawing tools. Save the part first (save_document): the drawing refers to its file.
     """
@@ -1052,7 +1100,8 @@ async def build_drawing(spec: dict, path: str | None = None) -> dict:
     "scale": "1:2", "views": [{"name": "front", "orient": "front", "at": [x, y]},
     {"name": "side", "projected_from": "front", "side": "right"},
     {"name": "A-A", "section_of": "front", "through": [x, y, z], "normal": "x"},
-    {"name": "B", "detail_of": "front", "center": [x, y, z], "radius": 5}],
+    {"name": "B", "detail_of": "front", "center": [x, y, z], "radius": 5},
+    {"name": "flat", "flat_pattern": true, "right_of": "front"}],
     "import": ["model", "callouts", "hole_locations"],
     "dims": [{"view": "front", "ref": "edge:-x", "to": "hole:H1"},
     {"view": "front", "chain": ["edge:-x", "hole:H1", "hole:H2"]}],
@@ -1108,6 +1157,8 @@ async def add_view(kind: str = "model", orientation: str = "front", parent: str 
       normal ('x'/'y'/'z'); label 'A'; flip=True looks the other way;
     - 'detail': of parent, the circle round model point center=[x, y, z] with model radius radius_mm,
       at scale (default about 2.5x the parent's).
+    - 'flat_pattern': a sheet metal part unfolded, with bend lines, bend notes and its overall size
+      dimensioned; at=[x, y], or beside='<view>' on side.
     Placed with room for dimensions, past views in the way (gap_mm to fix the gap). scale '1:2'.
     A section or detail view keeps its label's name; `name` becomes an alias for it.
     """

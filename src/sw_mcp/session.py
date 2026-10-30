@@ -33,7 +33,9 @@ from .advanced import AdvancedTools
 from .drawing import DrawingTools
 from .families import ToolFamilies
 from .model_read import ModelReader
+from .sheet_metal import SheetMetalTools
 from .constants import (
+    SOLIDWORKS_DRIVEN_SKETCH_OWNERS,
     FEATURE_ERRORS,
     EXPORT_FORMATS,
     IMPORT_FORMATS,
@@ -151,7 +153,7 @@ from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
-class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader):
+class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, SheetMetalTools):
     """Holds the SolidWorks connection and the current part document."""
 
     def __init__(self) -> None:
@@ -3469,8 +3471,11 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader):
         Includes sketches that exist only as sub-features, such as the position
         sketch of a Hole Wizard hole, which the feature walk does not visit.
         """
-        found, seen = [], set()
-        for feat in self._iter_features():
+        features = list(self._iter_features())
+        # sketches SolidWorks drives itself, such as an edge flange's profile
+        found, seen = [], {sub.Name for feat in features if feat.GetTypeName2() in SOLIDWORKS_DRIVEN_SKETCH_OWNERS
+                           for sub in self._sub_features(feat)}
+        for feat in features:
             for candidate in [feat, *self._sub_features(feat)]:
                 if candidate.GetTypeName2() != "ProfileFeature" or candidate.Name in seen:
                     continue

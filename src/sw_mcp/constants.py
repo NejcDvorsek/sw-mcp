@@ -348,3 +348,23 @@ IMPORT_FORMATS = {"step", "stp", "iges", "igs", "x_t", "x_b"}
 # extensions (png/jpg/tif) are here because `screenshot` writes via the same
 # SaveAs3 path; .bmp wrote nothing.
 EXPORT_FORMATS = {"step", "stp", "stl", "iges", "igs", "x_t", "x_b", "3mf", "png", "jpg", "tif"}
+
+# --- sheet metal ---------------------------------------------------------------
+# swBendAllowanceTypes_e
+SW_BEND_ALLOWANCE_K_FACTOR = 2
+# swInsertEdgeFlangeOptions_e (bits)
+SW_EDGE_FLANGE_DEFAULT_RADIUS = 1
+SW_EDGE_FLANGE_FLIP = 2
+SW_EDGE_FLANGE_DEFAULT_RELIEF = 128
+# swFlangePositionTypes_e: where the flange stands against the edge it grows from
+FLANGE_POSITIONS = {"material_inside": 1, "material_outside": 2, "bend_outside": 3}
+# swFlangeDimTypes_e
+SW_FLANGE_DIM_OUTER_VIRTUAL_SHARP = 1
+# swExportToDWG_e, and IPartDoc.ExportToDWG2's SheetMetalOptions bits
+SW_EXPORT_DWG_SHEET_METAL = 1
+SW_DXF_FLAT_GEOMETRY = 1
+SW_DXF_BEND_LINES = 4
+# Features whose sketches SolidWorks drives itself: an edge flange's profile
+# follows its length, the flat pattern's bend lines and bounding box the part.
+# They stay under defined in SolidWorks' own models too.
+SOLIDWORKS_DRIVEN_SKETCH_OWNERS = {"EdgeFlange", "FlatPattern"}

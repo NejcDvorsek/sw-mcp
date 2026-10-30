@@ -477,6 +477,8 @@ def find_problems(views, annotations, frame, title_block, min_text_mm: float = 2
         if overlap(box, title_block, 0.5):
             add("over_title_block", [a["id"]], f"{a['id']} ({a.get('text', '')}) lies over the title block.")
         for v in views:
+            if a.get("type") == "bend_note":
+                break  # it belongs on its bend line, in the view
             if any(overlap(t, v.get("box"), 0.3) for t in a.get("text_boxes", ())):
                 add("text_on_view", [a["id"], v["name"]],
                     f"The text of {a['id']} ({a.get('text', '')}) lies on the geometry of view {v['name']}.")

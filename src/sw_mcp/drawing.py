@@ -28,6 +28,10 @@ API facts this depends on, found on SOLIDWORKS 2026 SP4.1:
 - The title block evaluates SW-Mass in the DRAWING's mass unit.
 - SetupSheet5's scale gives way to SolidWorks' automatic scale once the first
   view goes in: views take the scale explicitly afterwards.
+- InsertModelAnnotations3 brings in nothing (None) on a drawing that was
+  never saved unless HiddenFeatureDims is set: the dimensions sit in sketches
+  their features absorbed, which are hidden. Once the drawing is saved or
+  exported it brings them in either way.
 """
 
 import math
@@ -277,8 +281,16 @@ class DrawingTools:
         model, drawing = self._start_drawing(sheet)
         self._drawing_model = part_path
         try:
-            result = self._lay_out_standard_views(drawing, part_path, scale)
+            sheet_metal = self._sheet_metal_feature() is not None
+            result = self._lay_out_standard_views(drawing, part_path, scale, flat=sheet_metal)
             imported = self.import_dimensions()
+            if sheet_metal and "flat_pattern" in result:
+                flat = self._view(result["flat_pattern"])
+                for annotation in self._annotations(flat):  # the folded part's sizes, shown in the views already
+                    if int(annotation.GetType()) == SW_ANNOTATION_DIMENSION:
+                        self._delete_annotation(annotation)
+                result["flat_dimensions"] = len(self._dimension_flat_blank(flat))
+                result["sheet_metal"] = self._sheet_metal_parameters()
             result["dimensions"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "dimension")
             result["hole_callouts"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "hole_callout")
             result["hole_locations"] = len(imported.get("hole_locations", ()))
@@ -295,8 +307,10 @@ class DrawingTools:
         return {"ok": True, "path": abs_path, "bytes": os.path.getsize(abs_path), "sheet": sheet.upper(),
                 **result, "open": bool(keep_open)}
 
-    def _lay_out_standard_views(self, drawing, part_path: str, scale) -> dict:
-        """Front, top, side and iso views placed by drawing_layout at one scale."""
+    def _lay_out_standard_views(self, drawing, part_path: str, scale, flat: bool = False) -> dict:
+        """Front, top, side and iso views placed by drawing_layout at one scale;
+        flat=True: a sheet metal part's flat pattern in place of the iso view,
+        at the same scale where it fits."""
         if not drawing.Create1stAngleViews2(part_path):
             raise SolidWorksError("SolidWorks could not place the front, top and side views.")
         views = {}
@@ -304,8 +318,11 @@ class DrawingTools:
             looking = self._view_direction(self._model_map(view))
             views[{2: "front", 1: "top", 0: "side"}[looking]] = view
         frame, block = self._sheet_frame()
-        iso = binding.wrap(drawing.CreateDrawViewFromModelView3(part_path, "*Isometric", mm_to_m(frame[2] - 40),
-                                                                mm_to_m(frame[3] - 40), 0.0), self._mod.IView)
+        if flat:
+            iso = self._create_flat_view(drawing, part_path, frame[2] - 40, frame[3] - 40)
+        else:
+            iso = binding.wrap(drawing.CreateDrawViewFromModelView3(part_path, "*Isometric", mm_to_m(frame[2] - 40),
+                                                                    mm_to_m(frame[3] - 40), 0.0), self._mod.IView)
         if iso is None:
             raise SolidWorksError("SolidWorks could not place the isometric view.")
         # sizes at scale 1 from the model box turned into each view
@@ -326,8 +343,10 @@ class DrawingTools:
 
         ratio = lay.as_ratio(scale) if scale is not None else lay.pick_scale(lambda s: three(s) is not None)
         s = ratio[0] / ratio[1]
-        # the iso view one standard step smaller than the others: it only shows the shape
-        iso_ratio = next((r for r in lay.STANDARD_SCALES if r[0] / r[1] < s and arranged(s, r[0] / r[1])), None)
+        # the iso view one standard step smaller than the others: it only shows the shape;
+        # a flat pattern is dimensioned, so at the same scale where it fits
+        iso_ratio = next((r for r in lay.STANDARD_SCALES
+                          if (r[0] / r[1] <= s if flat else r[0] / r[1] < s) and arranged(s, r[0] / r[1])), None)
         sheet = binding.wrap(drawing.GetCurrentSheet(), self._mod.ISheet)
         sheet.SetScale(float(ratio[0]), float(ratio[1]), False, False)
         for view in views.values():
@@ -351,10 +370,18 @@ class DrawingTools:
         self._drawing.ForceRebuild3(False)
         names = [v.GetName2() for v in self._views()]
         out = {"views": names, "scale": lay.scale_text(ratio)}
+        if iso is not None and flat:
+            out["flat_pattern"] = iso.GetName2()
         if iso is not None and iso_ratio != ratio:
-            out["iso_scale"] = lay.scale_text(iso_ratio)
+            out["flat_scale" if flat else "iso_scale"] = lay.scale_text(iso_ratio)
+        warnings = []
         if not placed:
-            out["warnings"] = [f"The views do not fit the {lay.scale_text(ratio)} scale with room for dimensions."]
+            warnings.append(f"The views do not fit the {lay.scale_text(ratio)} scale with room for dimensions.")
+        if flat and iso is None:
+            warnings.append("The flat pattern did not fit beside the views: use a larger sheet, or add it with "
+                            "add_view(kind='flat_pattern').")
+        if warnings:
+            out["warnings"] = warnings
         return out
 
     def _link_title_block(self, part) -> dict:
@@ -455,6 +482,12 @@ class DrawingTools:
             return self.add_detail_view(entry["detail_of"], entry["center"], entry["radius"], entry.get("scale"),
                                         entry.get("label", "B"), entry.get("at"), name)
         scale = entry.get("scale") or (lay.scale_text(ratio) if ratio is not None else None)
+        if entry.get("flat_pattern"):
+            beside = next((entry[k] for k in ("right_of", "left_of", "above", "below") if entry.get(k)), None)
+            side = next((s for k, s in (("right_of", "right"), ("left_of", "left"), ("above", "above"),
+                                        ("below", "below")) if entry.get(k)), None)
+            return self.add_flat_pattern_view(entry.get("at"), beside, side, entry.get("gap_mm"), scale, name,
+                                              dimensions=entry.get("dimensions", True))
         return self.add_view(entry.get("orient", "front"), entry.get("at"), entry.get("right_of"),
                              entry.get("left_of"), entry.get("above"), entry.get("below"), entry.get("gap_mm"),
                              scale, name)
@@ -1206,7 +1239,9 @@ class DrawingTools:
                 entry["lines"] = lines
                 entry["axis"] = self._dimension_axis(entry, lines, mapping)
         elif kind == SW_ANNOTATION_NOTE:
-            entry["type"] = "note"
+            note = binding.wrap(annotation.GetSpecificAnnotation(), self._mod.INote)
+            # a flat pattern's bend notes sit on their bend lines
+            entry["type"] = "bend_note" if note is not None and note.IsBendLineNote else "note"
             entry["leaders"] = lines
         else:
             entry["type"] = ANNOTATION_TYPES.get(kind, f"type {kind}")
@@ -1601,8 +1636,12 @@ class DrawingTools:
         if "model" in kinds:
             if view:
                 self._select_view(views[0])
-            drawing.InsertModelAnnotations3(SW_IMPORT_ENTIRE_MODEL, SW_INSERT_DIMENSIONS, view is None, True,
-                                            False, False)
+            # a drawing never saved gets nothing from the dimensions of absorbed (hidden)
+            # sketches, a box's own, until hidden features' dimensions are asked for too
+            for hidden in (False, True):
+                if drawing.InsertModelAnnotations3(SW_IMPORT_ENTIRE_MODEL, SW_INSERT_DIMENSIONS, view is None,
+                                                   True, hidden, False) is not None:
+                    break
             model.ClearSelection2(True)
             self._color_dimensions_black(views)
         holes = self._hole_view(views) if {"callouts", "hole_locations"} & set(kinds) else None
@@ -2307,7 +2346,8 @@ class DrawingTools:
                          part: str | None = None) -> dict:
         """A view of kind 'model' (orientation; at, or beside + side),
         'projected' (parent, side), 'section' (parent, through, normal, label,
-        side, flip) or 'detail' (parent, center, radius_mm, scale, label, at)."""
+        side, flip), 'detail' (parent, center, radius_mm, scale, label, at) or
+        'flat_pattern' (a sheet metal part unfolded; at, or beside + side)."""
         key = str(kind).lower()
         given = {"orientation": None if orientation == "front" else orientation, "parent": parent, "side": side,
                  "through": through, "normal": None if normal == "x" else normal, "label": label, "flip": flip,
@@ -2324,6 +2364,11 @@ class DrawingTools:
             elif side:
                 raise SolidWorksError("side places a model view beside another: give beside='<view>' too.")
             return self.add_view(orientation, at, *relative.values(), gap_mm, scale, name, part)
+        if key == "flat_pattern":
+            self._only("kind 'flat_pattern'", given, {"at", "beside", "side", "gap_mm", "scale", "part"})
+            if side and not beside:
+                raise SolidWorksError("side places the flat pattern beside another view: give beside='<view>' too.")
+            return self.add_flat_pattern_view(at, beside, side, gap_mm, scale, name, part)
         if not parent:
             raise SolidWorksError(f"A {key} view needs parent='<view>'.")
         if key == "projected":
@@ -2339,7 +2384,7 @@ class DrawingTools:
             if center is None or radius_mm is None:
                 raise SolidWorksError("A detail view needs center=[x, y, z] and radius_mm.")
             return self.add_detail_view(parent, center, radius_mm, scale, label or "B", at, name)
-        raise SolidWorksError(f"Unknown kind '{kind}'. Use model, projected, section or detail.")
+        raise SolidWorksError(f"Unknown kind '{kind}'. Use model, projected, section, detail or flat_pattern.")
 
     def edit_view(self, name: str, at: list | None = None, beside: str | None = None, side: str | None = None,
                   gap_mm: float | None = None, align: str = "center", scale=None, display: str | None = None,

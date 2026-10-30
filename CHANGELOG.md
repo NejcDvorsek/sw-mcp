@@ -27,10 +27,26 @@ All notable changes to this project are documented here. This project follows
   pocket corners, fillets of inside edges, slot ends) by feature.
 - `draft` gives each face's draft against the pull and the undercut faces a
   straight pull cannot clear.
+- Sheet metal: `add_base_flange` starts a part as a flat tab (closed
+  profile) or a bent section (open profile, extruded), with thickness, inner
+  bend radius and K-factor; `add_edge_flange` bends a flange up from a
+  straight edge, its length and angle dimensions for `set_dimension`;
+  `flat_pattern` reports the flat blank's size and bends, flattens and folds
+  the part, and exports the flat pattern with its bend lines to DXF / DWG.
+- Drawings of sheet metal: `make_drawing` shows the flat pattern in place of
+  the iso view, with bend lines, bend notes and the blank's overall size;
+  `add_view(kind="flat_pattern")` and `{"flat_pattern": true}` in
+  `build_drawing` add one to any drawing. `check_drawing` no longer counts a
+  bend note on its bend line as text on the geometry.
 
 ### Changed
 - `list_dimensions` and the dimensions every tool reads run several times
   faster: they no longer ask SolidWorks for each dimension's type information.
+
+### Fixed
+- `make_drawing` and `import_dimensions` brought in none of the model's
+  dimensions on a drawing not yet saved: SolidWorks counts the dimensions of
+  sketches their features absorbed as hidden there. They now come in.
 
 
 First release of sw-mcp, a fork of [solidworks-mcp](https://github.com/hjbaard/SolidWorks-MCP)
