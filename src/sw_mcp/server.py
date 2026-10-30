@@ -959,6 +959,34 @@ async def check_printability(up: str = "+z", overhang_deg: float = 45.0,
 
 
 @mcp.tool()
+async def read_model(sections: list[str] | None = None, wall_mm: float | None = None, pull: str | None = None,
+                     clearance_pairs: list | None = None) -> dict:
+    """Read everything a design review needs of the current part in one read-only call (schema sw-mcp/model@1).
+
+    Sections ('core' is always read; None reads core, material, holes, radii
+    and setups, plus walls with wall_mm and draft with pull):
+    - core: mass, volume, area, density, centre of mass, bbox, bodies, features
+      with rebuild errors, dimensions with their own tolerance (type, plus/minus,
+      ISO fit such as 'H7'), equations, under-defined sketches.
+    - material: name, database, density; null if none is assigned.
+    - holes: every hole of every body, identical ones grouped with count and
+      centres_mm (at the entrance). Hole Wizard holes give standard, size, fit
+      and sizes from the wizard (source 'wizard'); other holes are measured
+      from the geometry (source 'geometry'): kind simple / counterbore /
+      countersink / tapped, diameter, depth, through, drilling axis, entrance.
+    - radii: internal (concave) radii by feature, and sharp internal edges by
+      feature, direction (x/y/z, null if curved) and length.
+    - setups: planar face normals and the setup directions (+x ... or a vector).
+    - walls (needs wall_mm): the thinnest wall and up to 20 spots below wall_mm.
+    - draft (needs pull, '+z'...): each face's draft, the worst 20, and undercut faces.
+    A section that fails is null and named in `gaps`, with anything cut off
+    to keep the answer small. Nothing is selected, changed or saved.
+    clearance_pairs belongs to the assembly section, not available yet.
+    """
+    return await _call(_session.read_model, sections, wall_mm, pull, clearance_pairs)
+
+
+@mcp.tool()
 async def export(path: str, file_format: str | None = None, quality: str = "fine",
                  deviation_mm: float | None = None, angle_deg: float | None = None,
                  per_component: bool = False) -> dict:

@@ -370,6 +370,20 @@ stray drag in SolidWorks can change the part.
   profile lies on a face. Change the person's dimensions with
   `set_dimension` (names from `read_sketch` or `list_dimensions`). Their
   planes work by name in `add_mirror`, `add_extruded_profile` and `cut_profile` (`plane=`).
+- **Reviewing a part**: `read_model()` reads it in one call, without changing
+  it: mass, bodies, features, dimensions with their tolerances, equations,
+  material, holes, internal radii and sharp internal edges, and the setup
+  directions. Add `wall_mm=1.0` for the walls thinner than that and
+  `pull="+z"` for draft and undercuts, or ask for just the sections you need
+  (`sections=["holes"]`). Holes come grouped: `count` identical holes at
+  `centres_mm` (at the entrance), drilled along `axis` from `entrance`.
+  `source: "wizard"` holes carry the Hole Wizard's standard sizes;
+  `"geometry"` ones are measured, with `confidence` lower where the shape is
+  odd (another hole breaking into the side). `sharp_internal_edges` with
+  `direction: "z"` are inside corners along z that a milling cutter cannot
+  reach square; floor edges can be milled. Anything left out or cut short is
+  named in `gaps`. Walls take seconds on a large part (one ray per sample
+  point); the rest is about a second for 500 faces.
 
 ## 5. 3D printing
 

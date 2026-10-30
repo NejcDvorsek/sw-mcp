@@ -1,0 +1,915 @@
+{
+  "sections": [
+    "core",
+    "material",
+    "holes",
+    "radii",
+    "setups",
+    "walls",
+    "draft"
+  ],
+  "part": {
+    "configuration": "Default",
+    "mass_kg": 0.058298,
+    "volume_mm3": 58297.635,
+    "surface_area_mm2": 19925.6981,
+    "density_kg_m3": 1000.0,
+    "centre_of_mass_mm": [
+      50.0,
+      39.0854,
+      3.9742
+    ],
+    "bbox_mm": {
+      "min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max": [
+        100.0,
+        80.0,
+        8.0
+      ],
+      "size": [
+        100.0,
+        80.0,
+        8.0
+      ]
+    },
+    "bodies": [
+      {
+        "name": "Slot",
+        "volume_mm3": 58297.635,
+        "faces": 31
+      }
+    ],
+    "features": [
+      {
+        "name": "Sketch1",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "BlockExtrude",
+        "type": "Extrusion",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch2",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "MotorBore",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch3",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Bolt",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "CircularPattern",
+        "type": "CirPattern",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch4",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude3",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch5",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Counterbore",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch6",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude5",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch7",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude6",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch8",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude7",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch9",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude8",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch10",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude9",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch11",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Cut-Extrude10",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "CornerRound",
+        "type": "Fillet",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Sketch12",
+        "type": "ProfileFeature",
+        "suppressed": false,
+        "error": null
+      },
+      {
+        "name": "Slot",
+        "type": "ICE",
+        "suppressed": false,
+        "error": null
+      }
+    ],
+    "dimensions": [
+      {
+        "id": "width@Sketch1",
+        "feature": "Sketch1",
+        "value": 100.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "height@Sketch1",
+        "feature": "Sketch1",
+        "value": 80.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@BlockExtrude",
+        "feature": "BlockExtrude",
+        "value": 8.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch2",
+        "feature": "Sketch2",
+        "value": 50.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch2",
+        "feature": "Sketch2",
+        "value": 40.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch2",
+        "feature": "Sketch2",
+        "value": 16.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch3",
+        "feature": "Sketch3",
+        "value": 65.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch3",
+        "feature": "Sketch3",
+        "value": 40.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch3",
+        "feature": "Sketch3",
+        "value": 3.4,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D2@CircularPattern",
+        "feature": "CircularPattern",
+        "value": 90.0,
+        "unit": "deg",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@CircularPattern",
+        "feature": "CircularPattern",
+        "value": 4000.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch4",
+        "feature": "Sketch4",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch4",
+        "feature": "Sketch4",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch4",
+        "feature": "Sketch4",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch5",
+        "feature": "Sketch5",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch5",
+        "feature": "Sketch5",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch5",
+        "feature": "Sketch5",
+        "value": 10.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@Counterbore",
+        "feature": "Counterbore",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch6",
+        "feature": "Sketch6",
+        "value": 88.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch6",
+        "feature": "Sketch6",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch6",
+        "feature": "Sketch6",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch7",
+        "feature": "Sketch7",
+        "value": 88.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch7",
+        "feature": "Sketch7",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch7",
+        "feature": "Sketch7",
+        "value": 10.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@Cut-Extrude6",
+        "feature": "Cut-Extrude6",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch8",
+        "feature": "Sketch8",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch8",
+        "feature": "Sketch8",
+        "value": 68.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch8",
+        "feature": "Sketch8",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch9",
+        "feature": "Sketch9",
+        "value": 12.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch9",
+        "feature": "Sketch9",
+        "value": 68.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch9",
+        "feature": "Sketch9",
+        "value": 10.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@Cut-Extrude8",
+        "feature": "Cut-Extrude8",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch10",
+        "feature": "Sketch10",
+        "value": 88.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch10",
+        "feature": "Sketch10",
+        "value": 68.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch10",
+        "feature": "Sketch10",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "x@Sketch11",
+        "feature": "Sketch11",
+        "value": 88.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "y@Sketch11",
+        "feature": "Sketch11",
+        "value": 68.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "diameter@Sketch11",
+        "feature": "Sketch11",
+        "value": 10.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@Cut-Extrude10",
+        "feature": "Cut-Extrude10",
+        "value": 5.5,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "D1@CornerRound",
+        "feature": "CornerRound",
+        "value": 5.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "end1_x@Sketch12",
+        "feature": "Sketch12",
+        "value": 35.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "end2_x@Sketch12",
+        "feature": "Sketch12",
+        "value": 65.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "end1_y@Sketch12",
+        "feature": "Sketch12",
+        "value": 72.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      },
+      {
+        "id": "width@Sketch12",
+        "feature": "Sketch12",
+        "value": 6.0,
+        "unit": "mm",
+        "driving": true,
+        "tolerance": null
+      }
+    ],
+    "equations": [],
+    "under_defined_sketches": [],
+    "material": null,
+    "holes": [
+      {
+        "feature": "MotorBore",
+        "features": [
+          "MotorBore"
+        ],
+        "source": "geometry",
+        "confidence": "high",
+        "kind": "simple",
+        "standard": null,
+        "size": null,
+        "fit": null,
+        "diameter_mm": 16.0,
+        "depth_mm": 8.0,
+        "through": true,
+        "counterbore": null,
+        "countersink": null,
+        "thread": null,
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "entrance": "+z",
+        "body": "Slot",
+        "count": 1,
+        "centres_mm": [
+          [
+            50.0,
+            40.0,
+            8.0
+          ]
+        ]
+      },
+      {
+        "feature": "Bolt",
+        "features": [
+          "Bolt",
+          "CircularPattern"
+        ],
+        "source": "geometry",
+        "confidence": "high",
+        "kind": "simple",
+        "standard": null,
+        "size": null,
+        "fit": null,
+        "diameter_mm": 3.4,
+        "depth_mm": 8.0,
+        "through": true,
+        "counterbore": null,
+        "countersink": null,
+        "thread": null,
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "entrance": "+z",
+        "body": "Slot",
+        "count": 4,
+        "centres_mm": [
+          [
+            34.5,
+            40.0,
+            8.0
+          ],
+          [
+            50.0,
+            24.5,
+            8.0
+          ],
+          [
+            50.0,
+            55.5,
+            8.0
+          ],
+          [
+            65.5,
+            40.0,
+            8.0
+          ]
+        ]
+      },
+      {
+        "feature": "Cut-Extrude3",
+        "features": [
+          "Cut-Extrude3",
+          "Cut-Extrude5",
+          "Cut-Extrude7",
+          "Cut-Extrude9"
+        ],
+        "source": "geometry",
+        "confidence": "high",
+        "kind": "counterbore",
+        "standard": null,
+        "size": null,
+        "fit": null,
+        "diameter_mm": 5.5,
+        "depth_mm": 8.0,
+        "through": true,
+        "counterbore": {
+          "diameter_mm": 10.0,
+          "depth_mm": 5.5
+        },
+        "countersink": null,
+        "thread": null,
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "entrance": "+z",
+        "body": "Slot",
+        "count": 4,
+        "centres_mm": [
+          [
+            12.0,
+            12.0,
+            8.0
+          ],
+          [
+            12.0,
+            68.0,
+            8.0
+          ],
+          [
+            88.0,
+            12.0,
+            8.0
+          ],
+          [
+            88.0,
+            68.0,
+            8.0
+          ]
+        ]
+      }
+    ],
+    "internal_radii_mm": [
+      {
+        "radius": 3.0,
+        "feature": "Slot",
+        "count": 2
+      }
+    ],
+    "sharp_internal_edges": {
+      "count": 0,
+      "groups": []
+    },
+    "planar_face_normals": [
+      {
+        "normal": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "count": 5,
+        "area_mm2": 7437.8536
+      },
+      {
+        "normal": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "count": 1,
+        "area_mm2": 7437.8536
+      },
+      {
+        "normal": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "count": 2,
+        "area_mm2": 960.0
+      },
+      {
+        "normal": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "count": 2,
+        "area_mm2": 960.0
+      },
+      {
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "count": 1,
+        "area_mm2": 560.0
+      },
+      {
+        "normal": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "count": 1,
+        "area_mm2": 560.0
+      }
+    ],
+    "setup_directions": [
+      "+z",
+      "-z",
+      "+y",
+      "-y",
+      "+x",
+      "-x"
+    ],
+    "wall_check": {
+      "threshold_mm": 1.0,
+      "min_found_mm": 2.5,
+      "thin_spots": []
+    },
+    "draft_check": {
+      "pull": "+z",
+      "min_draft_deg": 0.0,
+      "faces_below_1deg": 25,
+      "faces": [
+        {
+          "body": "Slot",
+          "face": 5,
+          "draft_deg": 0.0,
+          "area_mm2": 720.0
+        },
+        {
+          "body": "Slot",
+          "face": 7,
+          "draft_deg": 0.0,
+          "area_mm2": 720.0
+        },
+        {
+          "body": "Slot",
+          "face": 4,
+          "draft_deg": 0.0,
+          "area_mm2": 560.0001
+        },
+        {
+          "body": "Slot",
+          "face": 6,
+          "draft_deg": 0.0,
+          "area_mm2": 560.0001
+        },
+        {
+          "body": "Slot",
+          "face": 10,
+          "draft_deg": 0.0,
+          "area_mm2": 400.9765
+        },
+        {
+          "body": "Slot",
+          "face": 28,
+          "draft_deg": 0.0,
+          "area_mm2": 240.0
+        },
+        {
+          "body": "Slot",
+          "face": 30,
+          "draft_deg": 0.0,
+          "area_mm2": 240.0
+        },
+        {
+          "body": "Slot",
+          "face": 16,
+          "draft_deg": 0.0,
+          "area_mm2": 172.2946
+        },
+        {
+          "body": "Slot",
+          "face": 18,
+          "draft_deg": 0.0,
+          "area_mm2": 172.2946
+        },
+        {
+          "body": "Slot",
+          "face": 20,
+          "draft_deg": 0.0,
+          "area_mm2": 172.2946
+        },
+        {
+          "body": "Slot",
+          "face": 22,
+          "draft_deg": 0.0,
+          "area_mm2": 172.2946
+        },
+        {
+          "body": "Slot",
+          "face": 11,
+          "draft_deg": 0.0,
+          "area_mm2": 85.2075
+        },
+        {
+          "body": "Slot",
+          "face": 12,
+          "draft_deg": 0.0,
+          "area_mm2": 85.2075
+        },
+        {
+          "body": "Slot",
+          "face": 13,
+          "draft_deg": 0.0,
+          "area_mm2": 85.2075
+        },
+        {
+          "body": "Slot",
+          "face": 14,
+          "draft_deg": 0.0,
+          "area_mm2": 85.2075
+        },
+        {
+          "body": "Slot",
+          "face": 27,
+          "draft_deg": 0.0,
+          "area_mm2": 75.1831
+        },
+        {
+          "body": "Slot",
+          "face": 29,
+          "draft_deg": 0.0,
+          "area_mm2": 75.1831
+        },
+        {
+          "body": "Slot",
+          "face": 25,
+          "draft_deg": 0.0,
+          "area_mm2": 62.6526
+        },
+        {
+          "body": "Slot",
+          "face": 26,
+          "draft_deg": 0.0,
+          "area_mm2": 62.6526
+        },
+        {
+          "body": "Slot",
+          "face": 23,
+          "draft_deg": 0.0,
+          "area_mm2": 62.6525
+        }
+      ],
+      "undercut_faces": []
+    }
+  },
+  "gaps": [
+    {
+      "what": "draft faces",
+      "section": "draft",
+      "why": "kept the 20 worst of 25"
+    }
+  ]
+}

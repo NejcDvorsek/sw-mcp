@@ -32,7 +32,9 @@ by Henk Jan Baard and the SolidWorks connector of
   mirrors. Every sketch is fully defined, so the part stays editable.
 - **Checking:** each step reports volume, mass and size; dimensions and mates
   are measured back. A step that can't be done fails with a clear reason
-  instead of producing wrong geometry.
+  instead of producing wrong geometry. `read_model` reads a whole part for a
+  review in one call: holes with their sizes, internal radii, sharp inside
+  corners, setups, thin walls and draft.
 - **Assemblies:** insert and place components, mate them, swap parts, check
   interference and step joints through their range of motion.
 - **Drawings:** ISO sheets with a title block, views, sections and details,
@@ -97,7 +99,8 @@ by Henk Jan Baard and the SolidWorks connector of
   network calls.
 - **Scripts are on by default:** `run_script` runs any Python it's given on
   your computer. Start the server with `--no-scripts` to turn it off.
-- **Multibody parts:** face and edge tools only see the first body.
+- **Multibody parts:** face and edge tools only see the first body;
+  `read_model` reads them all.
 
 ## Help and feedback
 

@@ -3,7 +3,35 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - unreleased
+## [0.2.0] - unreleased
+
+### Added
+- `read_model`: everything a design review reads of the current part in one
+  read-only call, in sw-mcp's own schema `sw-mcp/model@1`, where a client
+  needed some 60 calls of `list_features`, `list_dimensions`, `list_faces`,
+  `list_edges` and the rest before. Sections: `core` (mass, volume, area,
+  density, centre of mass, tight box, bodies, features with rebuild errors,
+  dimensions with their own tolerance and ISO fit, equations, under-defined
+  sketches), `material`, `holes`, `radii`, `setups`, `walls` (with
+  `wall_mm`) and `draft` (with `pull`). A section that fails is null and
+  named in `gaps`, as is anything cut off to keep the answer small; nothing is
+  selected, changed or saved.
+- Holes are read from every body. Hole Wizard holes, also when patterned,
+  give their standard, size, fit and sizes from the wizard; other holes are
+  measured from the faces: a cylinder whose material lies outside it, the
+  cylinders, cones and steps on its axis line stacked into a bore, a
+  counterbore, a countersink, a flat floor or a drill point. Identical holes
+  come as one entry with `count` and `centres_mm`, also across features.
+- Concave edges are told from convex ones, so `radii` gives the sharp
+  internal edges by feature, axis and length, and the internal radii (rounded
+  pocket corners, fillets of inside edges, slot ends) by feature.
+- `draft` gives each face's draft against the pull and the undercut faces a
+  straight pull cannot clear.
+
+### Changed
+- `list_dimensions` and the dimensions every tool reads run several times
+  faster: they no longer ask SolidWorks for each dimension's type information.
+
 
 First release of sw-mcp, a fork of [solidworks-mcp](https://github.com/hjbaard/SolidWorks-MCP)
 0.16.3 by Henk Jan Baard. The package is now `sw-mcp` and the module `sw_mcp`.

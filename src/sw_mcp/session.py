@@ -32,6 +32,7 @@ from . import __version__, binding, free_sketch
 from .advanced import AdvancedTools
 from .drawing import DrawingTools
 from .families import ToolFamilies
+from .model_read import ModelReader
 from .constants import (
     FEATURE_ERRORS,
     EXPORT_FORMATS,
@@ -150,7 +151,7 @@ from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
-class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
+class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader):
     """Holds the SolidWorks connection and the current part document."""
 
     def __init__(self) -> None:
@@ -2305,23 +2306,42 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
             model.ClearSelection2(True)
             sk.InsertSketch(True)  # leave the position sketch
 
-    def _wizard_hole_info(self, feat, kind: str, size: str, fit: str) -> dict:
-        """The sizes SolidWorks took from its standard table for this hole (mm, degrees)."""
+    def _wizard_hole_info(self, feat) -> dict:
+        """The sizes SolidWorks took from its standard table for a Hole Wizard
+        hole (mm, degrees), all read from the hole itself. kind is
+        'counterbore', 'countersink', 'tapped', 'pipe_tapped' or 'simple',
+        told by which of its diameters are set (IWizardHoleFeatureData2.Type
+        holds the specific type: 14, 44, 46, ...); end_condition is
+        swEndConditions_e, depth_mm the drilled depth of a blind hole."""
         data = binding.wrap(feat.GetDefinition(), self._mod.IWizardHoleFeatureData2)
         mm = lambda v: round(m_to_mm(v), 4)
-        info = {"standard": "ISO", "kind": kind, "size": size}
-        if kind == "tapped":
+        fastener = str(data.FastenerType or "").lower()
+        if data.CounterBoreDiameter > 0:
+            kind = "counterbore"
+        elif data.CounterSinkDiameter > 0:
+            kind = "countersink"
+        elif data.TapDrillDiameter > 0 or data.ThruTapDrillDiameter > 0 or data.ThreadDiameter > 0:
+            kind = "pipe_tapped" if "pipe" in fastener or "taper" in fastener else "tapped"
+        else:
+            kind = "simple"
+        info = {"standard": data.Standard or None, "kind": kind, "size": data.FastenerSize or None}
+        if kind in ("tapped", "pipe_tapped"):
             info.update(tap_drill_diameter_mm=mm(data.TapDrillDiameter or data.ThruTapDrillDiameter),
                         thread_diameter_mm=mm(data.ThreadDiameter),
                         thread_depth_mm=mm(data.ThreadDepth), cosmetic_thread=data.CosmeticThreadType > 0)
         else:
-            info.update(fit=fit, diameter_mm=mm(data.ThruHoleDiameter or data.HoleDiameter))
+            info.update(fit=self._WIZARD_FITS.get(data.HoleFit),
+                        diameter_mm=mm(data.ThruHoleDiameter or data.HoleDiameter or data.Diameter))
         if kind == "counterbore":
             info.update(cbore_diameter_mm=mm(data.CounterBoreDiameter), cbore_depth_mm=mm(data.CounterBoreDepth))
         if kind == "countersink":
             info.update(csink_diameter_mm=mm(data.CounterSinkDiameter),
                         csink_angle_deg=round(math.degrees(data.CounterSinkAngle), 3))
+        info.update(end_condition=int(data.EndCondition),
+                    depth_mm=mm(data.TapDrillDepth or data.HoleDepth or data.ThruHoleDepth or data.Depth))
         return info
+
+    _WIZARD_FITS = {fit: name for name, fit in SCREW_FITS.items()}
 
     def add_hole_wizard(self, kind: str, size: str, face: str, x_mm: float, y_mm: float, z_mm: float,
                         depth_mm: float | None = None, fit: str = "normal", thread: str = "cosmetic",
@@ -2391,7 +2411,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
             )
         feat = binding.wrap(feat, self._mod.IFeature)
         dims, fully_defined = self._pin_wizard_position(feat, point)
-        info = self._wizard_hole_info(feat, kind, size, fit)
+        info = {**self._wizard_hole_info(feat), "kind": kind}  # in this tool's own words: 'clearance'
         result = self._finish_feature(feat, name or feat.Name, dimensions=dims,
                                       fully_defined=fully_defined, hole=info)
         if coarse:
@@ -4395,14 +4415,18 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
                     dims.append(entry)
         return {"ok": True, "count": len(dims), "dimensions": dims}
 
-    def _dimension_entries(self, feat) -> list:
+    def _dimension_entries(self, feat, tolerance: bool = False) -> list:
         """The feature's dimensions: name (as set_dimension takes it), value in
-        mm or degrees, and whether it is driving."""
+        mm or degrees, and whether it is driving; with tolerance=True also its
+        own tolerance (read_model), None when it has none."""
         entries = []
-        display = feat.GetFirstDisplayDimension()
+        # raw calls and bare wrappers: a part's hundreds of dimensions took
+        # seconds with a type-info and QueryInterface round trip each
+        display = binding.invoke(feat, self._mod.IFeature, "GetFirstDisplayDimension")
         while display is not None:
-            shown = binding.wrap(display, self._mod.IDisplayDimension)
-            dim = binding.wrap(shown.GetDimension2(0), self._mod.IDimension)
+            shown = binding.bare(display, self._mod.IDisplayDimension)
+            dim = binding.bare(binding.invoke(shown, self._mod.IDisplayDimension, "GetDimension2", 0),
+                               self._mod.IDimension)
             angular = shown.GetType() == SW_ANGULAR_DIMENSION
             value = dim.SystemValue
             entries.append({
@@ -4412,7 +4436,9 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools):
                 "unit": "deg" if angular else "mm",
                 "driving": dim.DrivenState == SW_DIMENSION_DRIVING,
             })
-            display = feat.GetNextDisplayDimension(display)
+            if tolerance:
+                entries[-1]["tolerance"] = self._dimension_tolerance(dim, angular)
+            display = binding.invoke(feat, self._mod.IFeature, "GetNextDisplayDimension", display)
         return entries
 
     # --- a person's sketches: read, extrude, cut ---------------------------------

@@ -14,6 +14,8 @@ All functions here must be called on the thread that owns the COM apartment
 (see com_worker.ComWorker).
 """
 
+import functools
+
 import pythoncom
 import win32com.client
 from win32com.client import gencache
@@ -72,6 +74,39 @@ def wrap(obj, cls):
         return None
     oleobj = getattr(obj, "_oleobj_", obj)
     return cls(oleobj)
+
+
+@functools.cache
+def _dispatch_spec(cls, name: str) -> tuple:
+    """(dispid, result type, argument types) of a generated method, read from
+    its code: makepy writes them as the first int and the first two tuples."""
+    consts = getattr(cls, name).__code__.co_consts
+    dispid = next(c for c in consts[1:] if isinstance(c, int) and not isinstance(c, bool))
+    result, arguments = [c for c in consts if isinstance(c, tuple)][:2]
+    return dispid, result, arguments
+
+
+def invoke(obj, cls, name: str, *args):
+    """Call cls.name on obj and return what COM returns, objects unwrapped.
+
+    The generated method wraps every object it returns in a CDispatch, which
+    asks SolidWorks for its type info: an object array of two faces costs 0.9
+    ms that way and 0.13 ms raw (SOLIDWORKS 2026, measured). For reads over
+    every face and edge of a part.
+    """
+    dispid, result, arguments = _dispatch_spec(cls, name)
+    return getattr(obj, "_oleobj_", obj).InvokeTypes(dispid, 0, 1, result, arguments, *args)
+
+
+def bare(obj, cls):
+    """wrap() without the QueryInterface, for an object with one interface
+    (ISurface, ICurve, IDimension): the first QueryInterface of a new object
+    goes to SolidWorks and costs some 2 ms, the calls after it 0.1 ms."""
+    if obj is None:
+        return None
+    wrapped = cls.__new__(cls)
+    wrapped.__dict__["_oleobj_"] = getattr(obj, "_oleobj_", obj)
+    return wrapped
 
 
 def connect():

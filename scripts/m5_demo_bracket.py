@@ -39,13 +39,10 @@ def check(label, result, expected):
     return got
 
 
-def main():
-    s = SolidWorksSession()
-    s.connect()
-    print("Building mounting bracket (each step verified vs hand calc)...")
+def build(s):
+    """Build the bracket in the current (new) part, checking each step; returns its volume.
 
-    s.new_part()
-
+    tests/test_read_model.py builds it too, for read_model's golden file."""
     # 1. base plate 100 x 80 x 8
     v = 100 * 80 * 8
     check("base plate 100x80x8", s.add_box(100, 80, 8), v)
@@ -82,6 +79,16 @@ def main():
     slot_area = 30 * 6 + math.pi * 3 ** 2
     v -= slot_area * 8
     check("cable slot 30x6 (through)", s.cut_slot(30, 6, 50, 72, 0, None), v)
+    return v
+
+
+def main():
+    s = SolidWorksSession()
+    s.connect()
+    print("Building mounting bracket (each step verified vs hand calc)...")
+
+    s.new_part()
+    v = build(s)
 
     # measurements
     bbox = s.get_bounding_box()["bounding_box_mm"]
