@@ -15,8 +15,9 @@ pytestmark = pytest.mark.solidworks
 TEE = [[0, 0], [10, 0], [10, 20], [30, 20], [30, 25], [-20, 25], [-20, 20], [0, 20]]
 
 
-def test_the_arms_of_a_tee_overhang_when_it_stands_on_its_stem(part):
+def test_a_tee_overhangs_by_how_it_stands_and_has_a_thin_crossbar(part):
     part.add_extruded_profile(TEE, 10)
+    # standing on its stem, the arms overhang
     found = part.check_printability(up="+y")
     overhang = found["overhang"]
     assert overhang["area_mm2"] == pytest.approx(2 * 20 * 10, abs=1e-3)
@@ -24,12 +25,17 @@ def test_the_arms_of_a_tee_overhang_when_it_stands_on_its_stem(part):
     assert sorted(f["center_mm"][0] for f in overhang["faces"]) == pytest.approx([-10, 20], abs=1e-3)
     assert found["bed_contact_mm2"] == pytest.approx(10 * 10, abs=1e-3) and found["height_mm"] == pytest.approx(25)
 
-
-def test_a_tee_lying_flat_has_no_overhang(part):
-    part.add_extruded_profile(TEE, 10)
+    # lying flat, nothing does
     found = part.check_printability(up="+z")
     assert found["overhang"]["faces"] == []
     assert found["bed_contact_mm2"] == pytest.approx(10 * 20 + 50 * 5, abs=1e-3)
+
+    # the crossbar is 5 thick: thin at a 6 mm minimum, fine at 4
+    strict = part.check_printability(up="+y", min_wall_mm=6)["thin_walls"]
+    assert strict["thinnest_mm"] == pytest.approx(5, abs=1e-3)
+    assert len(strict["faces"]) == 3 and all(f["thinnest_mm"] == pytest.approx(5, abs=1e-3) for f in strict["faces"])
+    loose = part.check_printability(up="+y", min_wall_mm=4)["thin_walls"]
+    assert loose["faces"] == [] and loose["thinnest_mm"] == pytest.approx(5, abs=1e-3)
 
 
 def test_the_underside_of_a_sideways_peg_overhangs(part):
@@ -40,16 +46,6 @@ def test_the_underside_of_a_sideways_peg_overhangs(part):
     [peg] = part.check_printability(up="+z")["overhang"]["faces"]
     assert peg["area_mm2"] == pytest.approx(3 * math.pi / 2 * 10, rel=0.2)
     assert peg["worst_deg"] > 80 and peg["center_mm"][0] == pytest.approx(45, abs=0.5)
-
-
-def test_thin_walls_are_found_where_they_are_thin(part):
-    # the crossbar is 5 thick: thin at a 6 mm minimum, fine at 4
-    part.add_extruded_profile(TEE, 10)
-    strict = part.check_printability(up="+y", min_wall_mm=6)["thin_walls"]
-    assert strict["thinnest_mm"] == pytest.approx(5, abs=1e-3)
-    assert len(strict["faces"]) == 3 and all(f["thinnest_mm"] == pytest.approx(5, abs=1e-3) for f in strict["faces"])
-    loose = part.check_printability(up="+y", min_wall_mm=4)["thin_walls"]
-    assert loose["faces"] == [] and loose["thinnest_mm"] == pytest.approx(5, abs=1e-3)
 
 
 def test_a_hollow_face_is_measured_through_its_wall(part):

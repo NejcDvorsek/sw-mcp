@@ -36,15 +36,24 @@ def read(part, **kwargs):
     return found
 
 
-def test_four_wizard_counterbores_are_one_group(part):
+def test_holes_are_read_by_kind(part):
+    """Four wizard counterbores are one group, from the Hole Wizard's table; a
+    blind cut hole is measured from the geometry; a tapped hole has its
+    thread, a countersink its head."""
     part.add_box(120, 60, 10)
     centres = [(20, 10), (105, 10), (20, 50), (105, 50)]
     for x, y in centres:
         made = part.add_hole_wizard("counterbore", "M8", "+z", x, y, 10)
-    [hole] = read(part, sections=["holes"])["holes"]
-    wizard = made["hole"]  # what the Hole Wizard took from its table
+    part.add_hole_on_face(6, "+z", 45, 30, 10, depth_mm=8)
+    part.add_hole_wizard("tapped", "M6", "+z", 65, 30, 10, depth_mm=8)
+    part.add_hole_wizard("countersink", "M5", "+z", 85, 30, 10)
+    holes = read(part, sections=["holes"])["holes"]
+    by_kind = {h["kind"]: h for h in holes}
+    assert sorted(by_kind) == ["counterbore", "countersink", "simple", "tapped"] and len(holes) == 4, holes
+
+    hole, wizard = by_kind["counterbore"], made["hole"]  # what the Hole Wizard took from its table
     assert hole["source"] == "wizard" and hole["confidence"] == "high"
-    assert (hole["kind"], hole["standard"], hole["size"], hole["fit"]) == ("counterbore", "ISO", "M8", "normal")
+    assert (hole["standard"], hole["size"], hole["fit"]) == ("ISO", "M8", "normal")
     assert hole["diameter_mm"] == wizard["diameter_mm"]
     assert hole["counterbore"] == {"diameter_mm": wizard["cbore_diameter_mm"], "depth_mm": wizard["cbore_depth_mm"]}
     assert hole["through"] and hole["depth_mm"] == pytest.approx(10)
@@ -52,14 +61,19 @@ def test_four_wizard_counterbores_are_one_group(part):
     assert hole["centres_mm"] == sorted([[x, y, 10.0] for x, y in centres])
     assert hole["axis"] == [0, 0, -1] and hole["entrance"] == "+z"
 
-
-def test_a_blind_cut_hole_is_measured_from_the_geometry(part):
-    part.add_box(120, 60, 10)
-    part.add_hole_on_face(6, "+z", 60, 30, 10, depth_mm=8)
-    [hole] = read(part, sections=["holes"])["holes"]
-    assert hole["source"] == "geometry" and hole["kind"] == "simple" and hole["confidence"] == "high"
+    hole = by_kind["simple"]
+    assert hole["source"] == "geometry" and hole["confidence"] == "high"
     assert (hole["diameter_mm"], hole["depth_mm"], hole["through"]) == (6.0, 8.0, False)
-    assert hole["centres_mm"] == [[60, 30, 10]] and hole["entrance"] == "+z"
+    assert hole["centres_mm"] == [[45, 30, 10]] and hole["entrance"] == "+z"
+
+    hole = by_kind["tapped"]
+    assert hole["size"] == "M6" and not hole["through"]
+    assert hole["thread"] == {"designation": "M6x1.0", "depth_mm": pytest.approx(8.0), "cosmetic": True}
+    assert hole["diameter_mm"] == pytest.approx(5.0), "the tap drill"
+
+    hole = by_kind["countersink"]
+    assert hole["countersink"]["angle_deg"] == pytest.approx(90)
+    assert hole["countersink"]["diameter_mm"] > hole["diameter_mm"] and hole["through"]
 
 
 def test_a_boss_is_not_a_hole(part):
@@ -70,7 +84,7 @@ def test_a_boss_is_not_a_hole(part):
     assert found["internal_radii_mm"] == [], "a boss's round side is convex"
 
 
-def test_a_pocket_has_four_sharp_vertical_corners_and_four_floor_edges(part):
+def test_a_pocket_has_sharp_corners_until_they_are_filleted(part):
     part.add_box(120, 60, 10)
     part.cut_profile(POCKET, 6, name="Pocket1")
     sharp = read(part, sections=["radii"])["sharp_internal_edges"]
@@ -79,10 +93,6 @@ def test_a_pocket_has_four_sharp_vertical_corners_and_four_floor_edges(part):
         {"feature": "Pocket1", "direction": "y", "length_mm": 20.0, "count": 2},
         {"feature": "Pocket1", "direction": "z", "length_mm": 6.0, "count": 4}]}
 
-
-def test_filleted_pocket_corners_are_internal_radii(part):
-    part.add_box(120, 60, 10)
-    part.cut_profile(POCKET, 6, name="Pocket1")
     part.add_fillet(3, edges="z", name="Fillet1")  # the block's corners too, but those are convex
     found = read(part, sections=["radii"])
     assert found["internal_radii_mm"] == [{"radius": 3.0, "feature": "Fillet1", "count": 4}]
@@ -126,24 +136,7 @@ def test_a_side_hole_is_an_undercut_for_a_vertical_pull(part):
     assert [f["face"] for f in draft["undercut_faces"]], "the hole's underside is shadowed by its top"
 
 
-def test_a_tapped_hole_has_its_thread(part):
-    part.add_box(120, 60, 10)
-    part.add_hole_wizard("tapped", "M6", "+z", 60, 30, 10, depth_mm=8)
-    [hole] = read(part, sections=["holes"])["holes"]
-    assert hole["kind"] == "tapped" and hole["size"] == "M6" and not hole["through"]
-    assert hole["thread"] == {"designation": "M6x1.0", "depth_mm": pytest.approx(8.0), "cosmetic": True}
-    assert hole["diameter_mm"] == pytest.approx(5.0), "the tap drill"
-
-
-def test_a_countersink_has_its_head(part):
-    part.add_box(120, 60, 10)
-    part.add_hole_wizard("countersink", "M5", "+z", 100, 30, 10)
-    [hole] = read(part, sections=["holes"])["holes"]
-    assert hole["kind"] == "countersink" and hole["countersink"]["angle_deg"] == pytest.approx(90)
-    assert hole["countersink"]["diameter_mm"] > hole["diameter_mm"] and hole["through"]
-
-
-def test_core_names_the_part_and_its_history(part):
+def test_core_names_the_part_its_history_tolerances_and_material(part):
     part.add_box(120, 60, 10)
     part.set_equation('"W" = 120')
     part.set_equation('"width@Sketch1" = "W"')
@@ -157,9 +150,6 @@ def test_core_names_the_part_and_its_history(part):
     assert found["under_defined_sketches"] == [] and found["material"] is None
     assert found["setup_directions"] == ["+z", "-z", "+y", "-y", "+x", "-x"]
 
-
-def test_a_dimension_tolerance_and_the_material_are_read(part):
-    part.add_box(120, 60, 10)
     part.set_material("6061 Alloy")
     dim = binding.wrap(part._model.Parameter("D1@BlockExtrude"), part._mod.IDimension)
     tolerance = binding.wrap(dim.Tolerance, part._mod.IDimensionTolerance)
@@ -171,7 +161,7 @@ def test_a_dimension_tolerance_and_the_material_are_read(part):
     assert found["material"]["name"] == "6061 Alloy" and found["material"]["density_kg_m3"] == pytest.approx(2700)
 
 
-def test_reading_changes_nothing(part, tmp_path):
+def test_reading_changes_nothing_and_reads_the_same_twice(part, tmp_path):
     part.add_box(120, 60, 10)
     part.cut_profile(POCKET, 6)
     part.add_hole_wizard("counterbore", "M8", "+z", 100, 30, 10)
@@ -184,17 +174,11 @@ def test_reading_changes_nothing(part, tmp_path):
                 bool(model.GetSaveFlag()), selection.GetSelectedObjectCount2(-1))
 
     before = state()
-    result = part.run_guarded(part.read_model, wall_mm=1.0, pull="+z")
-    assert result["document"]["saved"] and result["sections"][-2:] == ["walls", "draft"]
+    first = part.run_guarded(part.read_model, wall_mm=1.0, pull="+z")
+    assert first["document"]["saved"] and first["sections"][-2:] == ["walls", "draft"]
     assert state() == before and before[2] is False
-
-
-def test_a_part_reads_the_same_twice(part):
-    part.add_box(120, 60, 10)
-    part.add_hole_wizard("counterbore", "M8", "+z", 20, 10, 10)
-    part.cut_profile(POCKET, 6)
-    first, second = (_comparable(part.run_guarded(part.read_model, wall_mm=1.0, pull="+z")) for _ in range(2))
-    assert first == second
+    second = part.run_guarded(part.read_model, wall_mm=1.0, pull="+z")
+    assert _comparable(first) == _comparable(second)
 
 
 # --- golden file --------------------------------------------------------------------

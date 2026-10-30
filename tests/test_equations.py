@@ -4,6 +4,8 @@ Marked `solidworks` -- they need a running SolidWorks (auto-skipped otherwise).
 The block is 40 x 20 x 10, so its volume tells the depth: 800 mm^3 per mm.
 """
 
+import re
+
 import pytest
 
 from sw_mcp.errors import SolidWorksError
@@ -22,15 +24,30 @@ def by_name(part):
 def test_an_equation_with_the_same_name_is_replaced(part):
     """"L" = 85 drives the depth; setting "L" again changes it, in place."""
     block = part.add_box(40, 20, 10)
+    depth = block["dimensions"]["depth"]
     first = part.set_equation('"L" = 85')
-    part.set_equation(f'"{block["dimensions"]["depth"]}" = "L" / 5')
+    part.set_equation(f'"{depth}" = "L" / 5')
+    # SolidWorks ignores a write to a dimension an equation drives: set_dimension
+    # said ok, applied false, and an agent read on as if the part had changed
+    with pytest.raises(SolidWorksError, match=re.escape(by_name(part)[depth]["equation"])):
+        part.set_dimension(depth, 9)
     again = part.set_equation('"L" = 100')
     assert again["replaced"] and again["index"] == first["index"]
     assert vol(again) == pytest.approx(40 * 20 * 20), "the depth should follow L: 100 / 5"
     assert by_name(part)["L"]["value"] == 100 and len(by_name(part)) == 2
 
+    # a refused equation leaves the others as they were
+    with pytest.raises(SolidWorksError, match=r'refused "M" = 3 \+\* 4'):
+        part.set_equations(['"L" = 50', '"M" = 3 +* 4'])
+    with pytest.raises(SolidWorksError, match=r'refused "L" = 3 \+\* 4'):  # SolidWorks keeps the old one, silently
+        part.set_equations(['"L" = 3 +* 4'])
+    assert by_name(part)["L"]["equation"] == '"L" = 100' and "M" not in by_name(part)
+    part.rebuild()
+    assert vol(part.get_mass_properties()) == pytest.approx(40 * 20 * 20), "the part should be as it was"
+
 
 def test_a_list_of_equations_goes_in_at_once(part):
+    # the guide's recipe: one global variable drives several dimensions
     block = part.add_box(40, 20, 10)
     dims = block["dimensions"]
     done = part.set_equations(['"T" = 4', f'"{dims["depth"]}" = "T" * 3', f'"{dims["width"]}" = "T" * 10'])
@@ -40,18 +57,6 @@ def test_a_list_of_equations_goes_in_at_once(part):
     assert redone["equations"][0]["replaced"] and vol(redone) == pytest.approx(50 * 20 * 15)
 
 
-def test_an_equation_left_behind_by_a_deleted_feature_shows_and_goes(part):
-    part.add_box(40, 20, 10)
-    part.add_disc(10, 5, x_mm=20, y_mm=10, name="Puck")
-    part.set_equation('"W" = 7')
-    part.set_equation('"D1@Puck" = "W"')
-    part.delete_feature("Puck")
-    listed = by_name(part)
-    assert listed["D1@Puck"]["broken"] and not listed["W"]["broken"]
-    gone = part.delete_equation("D1@Puck")
-    assert "D1@Puck" not in by_name(part) and gone["deleted"] == '"D1@Puck" = "W"'
-
-
 def test_delete_feature_names_the_equations_it_breaks_or_takes_them_along(part):
     part.add_box(40, 20, 10)
     part.add_disc(10, 5, x_mm=20, y_mm=10, name="Puck")
@@ -59,10 +64,14 @@ def test_delete_feature_names_the_equations_it_breaks_or_takes_them_along(part):
     part.set_equations(['"W" = 7', '"D1@Puck" = "W"', '"D1@Old" = "W"'])
     left = part.delete_feature("Old")
     assert left["broken_equations"] == ['"D1@Old" = "W"'], "the result must name the equation it left broken"
+    listed = by_name(part)
+    assert listed["D1@Old"]["broken"] and not listed["W"]["broken"]
     gone = part.delete_feature("Puck", with_equations=True)
     assert gone["deleted_equations"] == ['"D1@Puck" = "W"'] and gone["broken_equations"] == []
-    # the variable stays, and so does the equation that was broken already
+    # the variable stays, and so does the equation that was broken already, until deleted
     assert sorted(by_name(part)) == ["D1@Old", "W"]
+    deleted = part.delete_equation("D1@Old")
+    assert sorted(by_name(part)) == ["W"] and deleted["deleted"] == '"D1@Old" = "W"'
 
 
 def test_a_variable_set_below_the_equations_that_use_it_leaves_no_warning(part):
@@ -76,18 +85,6 @@ def test_a_variable_set_below_the_equations_that_use_it_leaves_no_warning(part):
     folder = next(f for f in part._iter_features() if f.GetTypeName2() == "EqnFolder")
     assert folder.GetErrorCode2()[0] == 0, "the Equations folder warns: W is used above the line that sets it"
     assert vol(part.set_equation('"W" = 7')) == pytest.approx(40 * 20 * 14)
-
-
-def test_a_refused_equation_leaves_the_others_as_they_were(part):
-    block = part.add_box(40, 20, 10)
-    part.set_equations(['"L" = 85', f'"{block["dimensions"]["depth"]}" = "L" / 5'])
-    with pytest.raises(SolidWorksError, match=r'refused "M" = 3 \+\* 4'):
-        part.set_equations(['"L" = 50', '"M" = 3 +* 4'])
-    with pytest.raises(SolidWorksError, match=r'refused "L" = 3 \+\* 4'):  # SolidWorks keeps the old one, silently
-        part.set_equations(['"L" = 3 +* 4'])
-    assert by_name(part)["L"]["equation"] == '"L" = 85' and "M" not in by_name(part)
-    part.rebuild()
-    assert vol(part.get_mass_properties()) == pytest.approx(40 * 20 * 17), "the part should be as it was"
 
 
 def test_an_equation_that_breaks_a_feature_names_it(part):

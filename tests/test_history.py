@@ -57,11 +57,10 @@ def delete_keeping_dependents(session, name):
     session._model.ForceRebuild3(False)
 
 
-def test_list_features_gives_the_history_in_tree_order(part):
+def test_the_history_is_listed_suppressed_and_deleted(part):
     box_sketch, hole_sketch = block_with_hole_and_rounds(part)
 
     listed = part.list_features()
-
     history = [(f["name"], f["type"]) for f in listed["features"]]
     assert history == [(box_sketch, "ProfileFeature"), ("Base", "Extrusion"),
                        (hole_sketch, "ProfileFeature"), ("Hole", "ICE"), ("Round", "Fillet")], (
@@ -70,6 +69,41 @@ def test_list_features_gives_the_history_in_tree_order(part):
     )
     assert not any(f["suppressed"] or "error" in f for f in listed["features"]), listed["features"]
     assert listed["under_defined_sketches"] == []
+    with pytest.raises(SolidWorksError, match="Base"):  # an unknown name lists the real ones
+        part.suppress_feature("Hold")
+
+    # suppressing round-trips, with the dependents
+    no_hole = part.suppress_feature("Hole")
+    assert no_hole["changed"] == ["Hole"] and abs(vol(no_hole) - (BLOCK - ROUNDS)) < 0.01, no_hole
+    assert abs(vol(part.suppress_feature("Hole", suppress=False)) - (BLOCK - HOLE - ROUNDS)) < 0.01
+    nothing = part.suppress_feature("Base")
+    assert {"Base", "Hole", "Round"} <= set(nothing["changed"]) and abs(vol(nothing)) < 1e-9, nothing
+    restored = part.suppress_feature("Base", suppress=False)
+    assert abs(vol(restored) - (BLOCK - HOLE - ROUNDS)) < 0.01, (
+        "unsuppressing the block must bring back the hole and rounds it took along; "
+        f"still suppressed: {[f['name'] for f in part.list_features()['features'] if f['suppressed']]}"
+    )
+
+    # a delete refuses to break what depends on it
+    with pytest.raises(SolidWorksError, match="with_children") as refusal:
+        part.delete_feature("Base")
+    assert "Hole" in str(refusal.value) and "Round" in str(refusal.value), (
+        f"the refusal must name the features that would break: {refusal.value}"
+    )
+    assert abs(vol(part.get_mass_properties()) - (BLOCK - HOLE - ROUNDS)) < 0.01, "a refused delete changed the part"
+
+    # a delete takes its sketch along
+    result = part.delete_feature("Hole")
+    assert abs(vol(result) - (BLOCK - ROUNDS)) < 0.01, "deleting the hole must give the rounded block back"
+    assert result["deleted"] == [hole_sketch, "Hole"], f"the hole must go with its sketch: {result['deleted']}"
+    assert hole_sketch not in [f["name"] for f in part.list_features()["features"]], (
+        "the hole's sketch stayed behind: an orphan sketch the person has to clean up by hand"
+    )
+
+    everything = part.delete_feature("Base", with_children=True)
+    assert abs(vol(everything)) < 1e-9 and part.list_features()["features"] == [], (
+        f"with_children must delete the dependents too; left: {part.list_features()['features']}"
+    )
 
 
 def test_list_features_names_sketches_that_can_still_move(part):
@@ -95,35 +129,6 @@ def test_list_features_flags_what_fails_to_rebuild(part):
     )
     part.delete_feature("Hole")
     assert part.list_features()["features"] == [], "deleting the broken hole must clear the part"
-
-
-def test_delete_feature_takes_its_sketch_along(part):
-    _, hole_sketch = block_with_hole_and_rounds(part)
-
-    result = part.delete_feature("Hole")
-
-    assert abs(vol(result) - (BLOCK - ROUNDS)) < 0.01, "deleting the hole must give the rounded block back"
-    assert result["deleted"] == [hole_sketch, "Hole"], f"the hole must go with its sketch: {result['deleted']}"
-    assert hole_sketch not in [f["name"] for f in part.list_features()["features"]], (
-        "the hole's sketch stayed behind: an orphan sketch the person has to clean up by hand"
-    )
-
-
-def test_delete_feature_refuses_to_break_what_depends_on_it(part):
-    block_with_hole_and_rounds(part)
-
-    with pytest.raises(SolidWorksError, match="with_children") as refusal:
-        part.delete_feature("Base")
-
-    assert "Hole" in str(refusal.value) and "Round" in str(refusal.value), (
-        f"the refusal must name the features that would break: {refusal.value}"
-    )
-    assert abs(vol(part.get_mass_properties()) - (BLOCK - HOLE - ROUNDS)) < 0.01, "a refused delete changed the part"
-
-    everything = part.delete_feature("Base", with_children=True)
-    assert abs(vol(everything)) < 1e-9 and part.list_features()["features"] == [], (
-        f"with_children must delete the dependents too; left: {part.list_features()['features']}"
-    )
 
 
 def test_delete_feature_names_everything_that_goes_along(part):
@@ -155,7 +160,11 @@ def test_reorder_feature_moves_a_boss_before_the_cuts_it_filled(part):
     moved before them, they cut through it again. A 40x20x10 block, a Ø6
     through hole at (10, 10), then a 10 x 10 web over the hole, 10 high."""
     box = part.add_box(40, 20, 10, name="Base")
-    hole = part.add_hole(6, 10, 10, name="Hole")
+    hole = part.add_hole(6, 10, 10, name="Hole")  # sketched on the block's top face
+    with pytest.raises(SolidWorksError, match="built on Base"):
+        part.reorder_feature("Hole", before="Base")
+    assert abs(vol(part.get_mass_properties()) - (BLOCK - HOLE)) < 0.01
+
     web = part.add_extruded_profile([[5, 5], [15, 5], [15, 15], [5, 15]], 10, name="Web")
     assert abs(vol(web) - BLOCK) < 0.01, "the web should fill the hole while it comes last"
 
@@ -164,35 +173,3 @@ def test_reorder_feature_moves_a_boss_before_the_cuts_it_filled(part):
     assert abs(vol(moved) - (BLOCK - HOLE)) < 0.01, "the hole does not cut through the moved web"
     order = [sketch_of(box, "width"), "Base", sketch_of(web, "x1"), "Web", sketch_of(hole, "diameter"), "Hole"]
     assert moved["features"] == order, "the web and its sketch belong before the hole's sketch"
-
-
-def test_reorder_feature_refuses_to_move_a_feature_before_what_it_is_built_on(part):
-    part.add_box(40, 20, 10, name="Base")
-    part.add_hole(6, 10, 10, name="Hole")  # sketched on the block's top face
-
-    with pytest.raises(SolidWorksError, match="built on Base"):
-        part.reorder_feature("Hole", before="Base")
-    assert abs(vol(part.get_mass_properties()) - (BLOCK - HOLE)) < 0.01
-
-
-def test_suppress_feature_round_trips_with_its_dependents(part):
-    block_with_hole_and_rounds(part)
-
-    no_hole = part.suppress_feature("Hole")
-    assert no_hole["changed"] == ["Hole"] and abs(vol(no_hole) - (BLOCK - ROUNDS)) < 0.01, no_hole
-    assert abs(vol(part.suppress_feature("Hole", suppress=False)) - (BLOCK - HOLE - ROUNDS)) < 0.01
-
-    nothing = part.suppress_feature("Base")
-    assert {"Base", "Hole", "Round"} <= set(nothing["changed"]) and abs(vol(nothing)) < 1e-9, nothing
-    restored = part.suppress_feature("Base", suppress=False)
-    assert abs(vol(restored) - (BLOCK - HOLE - ROUNDS)) < 0.01, (
-        "unsuppressing the block must bring back the hole and rounds it took along; "
-        f"still suppressed: {[f['name'] for f in part.list_features()['features'] if f['suppressed']]}"
-    )
-
-
-def test_an_unknown_feature_name_lists_the_real_ones(part):
-    part.add_box(40, 20, 10, name="Base")
-
-    with pytest.raises(SolidWorksError, match="Base"):
-        part.suppress_feature("Hole")

@@ -1395,7 +1395,8 @@ async def render_drawing(path: str, zoom_mm: list | None = None) -> dict:
 async def close_document(title: str | None = None, save: bool = False) -> dict:
     """Close one open document by its title (list_documents): a part, assembly or drawing.
 
-    Without a title it closes the current part or assembly. save=True saves it
+    Two files of one name from different folders share a title: give the
+    path of the one you mean instead. Without a title it closes the current part or assembly. save=True saves it
     over its own file first; otherwise closing never asks and unsaved changes
     are lost (the result says discarded_changes). Parts that an open assembly
     loaded (visible false) close with that assembly and are refused here. With

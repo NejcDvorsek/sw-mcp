@@ -36,6 +36,12 @@ def rounded_block(session):
 
 def test_offset_pocket_leaves_a_rim_along_a_rounded_outline(part):
     rounded_block(part)
+    # run guarded, as every MCP call is: the refused pocket leaves no sketch behind
+    features = part.list_features()["features"]
+    with pytest.raises(SolidWorksError, match="rim wider than half the face"):
+        part.run_guarded(part.cut_offset_pocket, "+z", 30, 10, 10, 11, 3)
+    assert part.list_features()["features"] == features
+
     pocket = part.cut_offset_pocket("+z", 30, 10, 10, rim_mm=2, depth_mm=3)
     assert vol(pocket) == pytest.approx(BLOCK - inner_area(2) * 3, abs=1e-3)
     assert set(pocket["dimensions"]) == {"rim", "depth"} and pocket["fully_defined"] is True
@@ -61,19 +67,6 @@ def test_offset_pocket_keeps_the_holes_in_the_face(part):
     assert vol(pocket) == pytest.approx(BLOCK - hole_area * 10 - (inner_area(2) - hole_area) * 3, abs=1e-3)
 
 
-def test_offset_pocket_with_a_rim_too_wide_leaves_the_part_as_it_was(sw):
-    """Run guarded, as every MCP call is: the refused pocket leaves no sketch behind."""
-    sw.new_part()
-    try:
-        rounded_block(sw)
-        features = sw.list_features()["features"]
-        with pytest.raises(SolidWorksError, match="rim wider than half the face"):
-            sw.run_guarded(sw.cut_offset_pocket, "+z", 30, 10, 10, 11, 3)
-        assert sw.list_features()["features"] == features
-    finally:
-        sw.close_part()
-
-
 def test_keep_inside_turns_a_side_view_into_the_shape(part):
     # the front view is the 40 x 20 block; seen from the side only the triangle
     # y 0..20, z 0..6 is kept (a cut of the triangle would leave 5600 instead)
@@ -86,22 +79,21 @@ def test_keep_inside_turns_a_side_view_into_the_shape(part):
 # --- revolving about any axis; rounding one feature's edges ---------------------
 
 
-def test_a_revolve_about_a_slanted_axis_follows_pappus(part):
+def test_a_revolve_about_any_axis_follows_pappus_and_its_axis_is_a_dimension(part):
     """A right triangle with one leg on the axis y = x turns into a cone of
-    radius and height sqrt(200): pi r^2 h / 3."""
+    radius and height sqrt(200): pi r^2 h / 3. Apart from it, a ring about the
+    vertical line x = 70: the square x 80..90 turns at radius 15."""
     cone = part.add_revolved_profile([[0, 0], [10, 10], [20, 0]], axis_mm=[[0, 0], [10, 10]])
     side = math.sqrt(200)
-    assert vol(cone) == pytest.approx(math.pi * side ** 2 * side / 3, rel=1e-6)
+    cone_volume = math.pi * side ** 2 * side / 3
+    assert vol(cone) == pytest.approx(cone_volume, rel=1e-6)
     assert cone["fully_defined"] is True
 
-
-def test_the_axis_of_a_revolve_is_a_dimension(part):
-    # a ring about the vertical line x = 50: the square x 60..70 turns at radius 15
-    ring = part.add_revolved_profile([[60, 0], [70, 0], [70, 10], [60, 10]], axis_mm=[[50, 0], [50, 10]])
-    assert vol(ring) == pytest.approx(100 * 2 * math.pi * 15, rel=1e-6)
-    [axis_x] = [d["name"] for d in part.list_dimensions()["dimensions"] if d["value"] == pytest.approx(50)]
-    moved = part.set_dimension(axis_x, 45)  # the axis moves away: radius 20
-    assert vol(moved) == pytest.approx(100 * 2 * math.pi * 20, rel=1e-6)
+    ring = part.add_revolved_profile([[80, 0], [90, 0], [90, 10], [80, 10]], axis_mm=[[70, 0], [70, 10]])
+    assert vol(ring) - cone_volume == pytest.approx(100 * 2 * math.pi * 15, rel=1e-6)
+    [axis_x] = [d["name"] for d in part.list_dimensions()["dimensions"] if d["value"] == pytest.approx(70)]
+    moved = part.set_dimension(axis_x, 65)  # the axis moves away: radius 20
+    assert vol(moved) - cone_volume == pytest.approx(100 * 2 * math.pi * 20, rel=1e-6)
 
 
 def test_fillet_rounds_every_edge_of_one_feature(part):

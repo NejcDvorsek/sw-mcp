@@ -43,24 +43,22 @@ def test_a_script_result_comes_back_as_json():
 
 @pytest.mark.solidworks
 def test_a_revolved_part_is_patterned_about_its_own_axis(part):
-    """Revolves turn about y; a pattern about a hole's cylinder could not."""
+    """Revolves turn about y; a pattern about a hole's cylinder could not. Six
+    holes all round at radius 15, then three over a quarter turn at radius 7."""
+    disc = math.pi * 20 ** 2 * 10
+    hole = math.pi * 2 ** 2 * 10
     part.add_cylinder(40, 10)
     part.add_hole_on_face(4, "+y", 15, 10, 0)
     pattern = part.add_circular_pattern(6, axis="y")
     assert pattern["axis"] == "AxisY"
-    assert volume(pattern) == pytest.approx(math.pi * 20 ** 2 * 10 - 6 * math.pi * 2 ** 2 * 10, rel=1e-6)
-
-
-@pytest.mark.solidworks
-def test_a_pattern_can_spread_over_part_of_a_turn(part):
-    part.add_cylinder(40, 10)
-    part.add_hole_on_face(4, "+y", 15, 10, 0)
+    assert volume(pattern) == pytest.approx(disc - 6 * hole, rel=1e-6)
+    part.add_hole_on_face(4, "+y", 7, 10, 0)
     pattern = part.add_circular_pattern(3, axis="y", angle_deg=90)
-    assert volume(pattern) == pytest.approx(math.pi * 20 ** 2 * 10 - 3 * math.pi * 2 ** 2 * 10, rel=1e-6)
+    assert volume(pattern) == pytest.approx(disc - 9 * hole, rel=1e-6)
 
 
 @pytest.mark.solidworks
-def test_axes_by_point_and_direction_or_by_two_planes(part):
+def test_axes_and_planes_by_points_and_directions(part):
     part.add_box(40, 20, 10)
     slanted = part.add_axis(through=[[0, 5, 0], [1, 1, 0]], name="Slanted")
     assert slanted["axis"] == "Slanted"
@@ -70,10 +68,7 @@ def test_axes_by_point_and_direction_or_by_two_planes(part):
     with pytest.raises(SolidWorksError, match="No axis 'Nope'"):
         part.add_circular_pattern(3, axis="Nope")
 
-
-@pytest.mark.solidworks
-def test_a_plane_goes_through_a_point_square_to_a_direction(part):
-    part.add_box(40, 20, 10)
+    # a plane goes through a point square to a direction, and takes a fixed sketch
     plane = part.add_plane(normal=[1, 0, 1], through=[0, 5, 0], name="Tilted")
     assert plane["plane"] == "Tilted"
     assert plane["origin_mm"] == pytest.approx([0, 5, 0])
@@ -85,6 +80,10 @@ def test_a_plane_goes_through_a_point_square_to_a_direction(part):
 @pytest.mark.solidworks
 def test_a_loft_and_a_loft_cut_between_named_sketches(part):
     part.add_sketch("front", [-10, -10], square(10), name="Base")
+    with pytest.raises(SolidWorksError, match="No sketch Nope"):
+        part.add_loft(["Nope", "Base"])
+    with pytest.raises(SolidWorksError, match="two or more"):
+        part.add_loft(["Base"])
     part.add_plane("front", offset_mm=20, name="P20")
     part.add_sketch("P20", [-5, -5], square(5), name="Top")
     loft = part.add_loft(["Base", "Top"], name="Frustum")
@@ -99,30 +98,16 @@ def test_a_loft_and_a_loft_cut_between_named_sketches(part):
 
 
 @pytest.mark.solidworks
-def test_a_loft_needs_sketches(part):
-    part.add_box(10, 10, 10)
-    with pytest.raises(SolidWorksError, match="No sketch Nope"):
-        part.add_loft(["Nope", "Sketch1"])
-    with pytest.raises(SolidWorksError, match="two or more"):
-        part.add_loft(["Sketch1"])
-
-
-@pytest.mark.solidworks
-def test_a_script_runs_and_reports(part):
-    part.add_box(10, 10, 10)
-    done = part.run_script("print('hi')\nresult = {'title': model.GetTitle(), 'v': session.get_mass_properties()"
-                           "['mass_properties']['volume_mm3']}")
-    assert done["output"] == "hi\n" and done["result"]["v"] == pytest.approx(1000)
-    assert done["mass_properties"]["volume_mm3"] == pytest.approx(1000)
-
-
-@pytest.mark.solidworks
-def test_a_failing_script_is_rolled_back(part):
+def test_a_script_runs_and_reports_or_is_rolled_back(part):
     part.add_box(10, 10, 10)
     before = part.list_features()["features"]
     with pytest.raises(SolidWorksError, match="ValueError: boom"):
         part.run_guarded(part.run_script, "session.add_box(5, 5, 5)\nraise ValueError('boom')")
     assert part.list_features()["features"] == before
+    done = part.run_script("print('hi')\nresult = {'title': model.GetTitle(), 'v': session.get_mass_properties()"
+                           "['mass_properties']['volume_mm3']}")
+    assert done["output"] == "hi\n" and done["result"]["v"] == pytest.approx(1000)
+    assert done["mass_properties"]["volume_mm3"] == pytest.approx(1000)
 
 
 def test_scripts_are_on_unless_the_server_turns_them_off(monkeypatch):

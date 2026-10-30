@@ -116,12 +116,23 @@ def test_helpers_next_to_a_script_load_fresh_every_run(tmp_path):
 
 @pytest.mark.solidworks
 def test_a_script_file_builds_a_part_and_reports_it(part, tmp_path):
+    from sw_mcp.constants import SW_VIEW_ANIMATION_SPEED
+
     (tmp_path / "parthelper_box.py").write_text("SIZE = 10\n")
     script = tmp_path / "block.py"
     script.write_text("from parthelper_box import SIZE\n"
                       "session.add_box(SIZE, SIZE, SIZE, name='Block')\n"
                       "result = SIZE\n")
-    done = part.run_script(path=str(script))
+    # the pictures leave SolidWorks' view animation as it was
+    app = part._ensure()
+    before = app.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED)
+    app.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, 0.75)
+    try:
+        done = part.run_script(path=str(script))
+        part.screenshot(str(tmp_path / "box.png"))
+        assert app.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED) == pytest.approx(0.75)
+    finally:
+        app.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, before)
     assert done["result"] == 10 and done["mass_properties"]["volume_mm3"] == pytest.approx(1000)
     assert done["features_added"] == ["Block (Extrusion)"], "only what the script added, not its sketch"
     [body] = done["bodies"]
@@ -136,20 +147,11 @@ def test_a_script_file_builds_a_part_and_reports_it(part, tmp_path):
 
 
 @pytest.mark.solidworks
-def test_overlapping_bodies_are_reported_as_a_clash(part):
+def test_overlapping_bodies_are_reported_as_a_clash(part, tmp_path):
     part.add_box(20, 10, 10, name="Left")
     part.add_extruded_profile([[10, 0], [30, 0], [30, 10], [10, 10]], 10, name="Right", merge=False)
     part.add_extruded_profile([[50, 0], [60, 0], [60, 10], [50, 10]], 10, name="Apart", merge=False)
-    done = part.run_script(code="result = len(session.list_bodies()['bodies'])")
-    assert done["result"] == 3 and len(done["bodies"]) == 3
-    [clash] = done["clashes"]
-    assert clash["volume_mm3"] == pytest.approx(1000)
-    assert "image" not in done, "inline code draws no picture unless asked"
-
-
-@pytest.mark.solidworks
-def test_a_failing_script_file_leaves_the_part_as_it_was(part, tmp_path):
-    part.add_box(10, 10, 10)
+    # a failing script file leaves the part as it was
     before = part.list_features()["features"]
     script = tmp_path / "broken.py"
     script.write_text("session.add_box(5, 5, 5)\n\nraise ValueError('boom')\n")
@@ -157,6 +159,12 @@ def test_a_failing_script_file_leaves_the_part_as_it_was(part, tmp_path):
         part.run_guarded(part.run_script, None, str(script))
     assert part.list_features()["features"] == before
     assert not (tmp_path / "broken.png").exists()
+
+    done = part.run_script(code="result = len(session.list_bodies()['bodies'])")
+    assert done["result"] == 3 and len(done["bodies"]) == 3
+    [clash] = done["clashes"]
+    assert clash["volume_mm3"] == pytest.approx(1000)
+    assert "image" not in done, "inline code draws no picture unless asked"
 
 
 @pytest.mark.solidworks
@@ -168,23 +176,6 @@ def test_a_script_that_starts_its_own_part_reports_all_of_it(sw):
         assert done["mass_properties"]["volume_mm3"] == pytest.approx(20 * 10 * 5 + 5 * 10 * 10)
     finally:
         sw.close_part()
-
-
-@pytest.mark.solidworks
-def test_pictures_leave_the_view_animation_as_it_was(part, tmp_path):
-    from sw_mcp.constants import SW_VIEW_ANIMATION_SPEED
-
-    app = part._ensure()
-    before = app.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED)
-    app.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, 0.75)
-    try:
-        part.add_box(10, 10, 10)
-        part.screenshot(str(tmp_path / "box.png"))
-        part.run_script(code="result = 1", image=str(tmp_path / "views.png"))
-        assert app.GetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED) == pytest.approx(0.75)
-        assert (tmp_path / "views.png").exists()
-    finally:
-        app.SetUserPreferenceDoubleValue(SW_VIEW_ANIMATION_SPEED, before)
 
 
 def test_a_script_comes_as_code_or_as_a_file():

@@ -41,14 +41,8 @@ def test_a_mirrored_hole_lands_on_the_other_side_of_the_plane(part):
     assert abs(com_x(mirrored) - 5 * HOLE / (DISC - 2 * HOLE)) < 1e-4, (
         f"the copy is not at x = -10 (centre of mass x = {com_x(mirrored):.5f}): the plane offset or its side is wrong"
     )
-
-
-def test_the_mirror_plane_position_is_a_dimension(part):
-    disc_with_hole(part, 5)
-    mirror = part.add_mirror("right", offset_mm=-2.5, features=["Hole"])
-
-    moved = part.set_dimension(mirror["dimensions"]["plane_offset"], 5)  # plane at x = -5, copy at x = -15
-
+    # the plane's position is a dimension: at x = -5 the copy lands at x = -15
+    moved = part.set_dimension(mirrored["dimensions"]["plane_offset"], 5)
     assert abs(com_x(moved) - 10 * HOLE / (DISC - 2 * HOLE)) < 1e-4, "the copy did not follow its plane"
 
 
@@ -79,6 +73,10 @@ def test_a_mirror_plane_tied_to_the_width_keeps_the_part_symmetric(part):
 
 def test_mirroring_the_body_makes_the_whole_from_a_half(part):
     part.add_box(20, 20, 10)
+    history = part.list_features()["features"]
+    with pytest.raises(SolidWorksError, match="touch"):
+        part.run_guarded(part.add_mirror, "right", offset_mm=-5)  # as every MCP call runs
+    assert part.list_features()["features"] == history, "the helper plane of the failed mirror stayed in the tree"
 
     whole = part.add_mirror("right", offset_mm=20)
 
@@ -102,13 +100,3 @@ def test_a_copy_outside_the_part_fails_and_leaves_it_as_it_was(part):
         part.run_guarded(part.add_mirror, "right", features=["Hole"])  # as every MCP call runs
 
     assert part.list_features()["features"] == history, "the useless mirror stayed in the tree"
-
-
-def test_a_body_copy_that_does_not_touch_fails_and_leaves_no_plane_behind(part):
-    part.add_box(20, 20, 10)
-    history = part.list_features()["features"]
-
-    with pytest.raises(SolidWorksError, match="touch"):
-        part.run_guarded(part.add_mirror, "right", offset_mm=-5)  # as every MCP call runs
-
-    assert part.list_features()["features"] == history, "the helper plane of the failed mirror stayed in the tree"

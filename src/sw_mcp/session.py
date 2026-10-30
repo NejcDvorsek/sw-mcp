@@ -311,8 +311,9 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, 
             raise SolidWorksError("Save first (save_document), or use close_document(save=True).")
         if self._model is None:
             return self._close_active_document()
-        title = self._require_model().GetTitle()
-        self._sw.CloseDoc(title)
+        model = self._require_model()
+        title = model.GetTitle()
+        self._sw.CloseDoc(model.GetPathName() or title)  # by path: a namesake from another folder may be open too
         self._model = None
         return {"ok": True, "closed": title}
 

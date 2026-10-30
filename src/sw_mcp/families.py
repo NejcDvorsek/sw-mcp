@@ -187,12 +187,21 @@ class ToolFamilies:
         return self.save_part(path)
 
     def _find_document(self, title: str):
-        """The one open document with this title, with or without its extension."""
+        """The one open document with this title, with or without its extension,
+        or with this full path: files of one name from two folders share a title."""
         documents = self._open_documents()
-        key = _SW_EXTENSION.sub("", str(title).strip()).lower()
-        matches = [d for d in documents if d.GetTitle() == title] or \
+        title = str(title).strip()
+        key = _SW_EXTENSION.sub("", title).lower()
+        path = os.path.normcase(os.path.abspath(title)) if os.path.isabs(title) else None
+        matches = [d for d in documents if path and d.GetPathName()
+                   and os.path.normcase(os.path.abspath(d.GetPathName())) == path] or \
+            [d for d in documents if d.GetTitle() == title] or \
             [d for d in documents if _SW_EXTENSION.sub("", d.GetTitle()).lower() == key]
-        if len(matches) != 1:
+        if len(matches) > 1:
+            paths = ", ".join(d.GetPathName() or d.GetTitle() for d in matches)
+            raise SolidWorksError(f"{len(matches)} open documents are titled '{title}': give the full path "
+                                  f"of the one you mean ({paths}).")
+        if not matches:
             listed = ", ".join(d.GetTitle() for d in documents) or "none"
             raise SolidWorksError(f"No open document '{title}' (open: {listed}).")
         return matches[0]
@@ -206,9 +215,8 @@ class ToolFamilies:
                 if save:
                     raise SolidWorksError("There is no current document to save: give title=...")
                 return self.close_part()
-            title = self._require_model().GetTitle()
-        document = self._find_document(title)
-        title = document.GetTitle()
+        document = self._require_model() if title is None else self._find_document(title)
+        title, name = document.GetTitle(), document.GetPathName() or document.GetTitle()
         if not document.Visible:
             raise SolidWorksError(f"'{title}' was loaded by an open assembly and closes with it.")
         doc_type = int(document.GetType())
@@ -219,10 +227,11 @@ class ToolFamilies:
                 raise SolidWorksError(f"'{title}' was never saved: save it to a path first "
                                       "(save_document or drawing_file action='save').")
             self._write_via_saveas3(path, document)
-        # compare titles before closing: a closed document's object answers nothing
+        # compare before closing: a closed document's object answers nothing. By
+        # path where saved: a namesake from another folder may be open too
         current = self._drawing if doc_type == SW_DOC_DRAWING else self._model
-        was_current = current is not None and current.GetTitle() == title
-        self._sw.CloseDoc(title)
+        was_current = current is not None and (current.GetPathName() or current.GetTitle()) == name
+        self._sw.CloseDoc(name)
         if doc_type == SW_DOC_DRAWING:
             self._frames.pop(title, None)
             if was_current:

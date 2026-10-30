@@ -6,6 +6,9 @@ Two layers of tests live under tests/:
   which connects to a running SolidWorks and SKIPS the whole suite if it can't.
 
 Run only the fast layer with:  pytest -m "not solidworks"
+
+Before adding a SolidWorks test, read "Writing SolidWorks tests" in
+docs/DEVELOPMENT.md: every new part makes the slow layer slower.
 """
 
 import pytest
@@ -26,19 +29,45 @@ def sw():
     except SolidWorksError as exc:
         pytest.skip(f"SolidWorks not reachable: {exc}")
     before = session._command_in_progress(True)  # as within every tool call the server makes
+    already_open = _open_documents(session)
     yield session
+    _close_new_documents(session, already_open)  # e.g. a session fixture's leftovers
     session._command_in_progress(before)
+
+
+def _open_documents(sw):
+    """What is open in SolidWorks, by path (title until saved): two saved files
+    of one name from different folders share a title."""
+    return {d.GetPathName() or d.GetTitle() for d in sw._open_documents()}
+
+
+def _close_new_documents(sw, already_open):
+    """Close every document opened since `already_open`; returns their names."""
+    left = sorted(_open_documents(sw) - already_open)
+    for name in left:
+        sw._sw.CloseDoc(name)
+    if left:  # forget them here too; a closed document's object answers nothing
+        sw._model = sw._drawing = None
+    return left
 
 
 @pytest.fixture(autouse=True)
 def _quiet_solidworks(request):
     """Each SolidWorks test runs with SolidWorks' window kept still, as every
-    tool call of the server does (SP4.0 crashed while sketching otherwise)."""
+    tool call of the server does (SP4.0 crashed while sketching otherwise).
+
+    It also closes what the test left open and fails it for that: a run must
+    not leave its parts and drawings behind in the person's SolidWorks.
+    """
     if "sw" not in request.fixturenames:
         yield
         return
-    with request.getfixturevalue("sw")._quiet_ui():
+    sw = request.getfixturevalue("sw")
+    already_open = _open_documents(sw)
+    with sw._quiet_ui():
         yield
+    left = _close_new_documents(sw, already_open)
+    assert not left, f"the test left documents open in SolidWorks: {left}"
 
 
 @pytest.fixture

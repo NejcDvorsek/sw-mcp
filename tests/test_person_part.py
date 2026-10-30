@@ -79,6 +79,8 @@ def test_read_sketch_gives_a_face_sketch_in_model_coordinates(part):
     """A sketch on the +x face has axes of its own; read back, it must sit
     where it is in the part (y and z differ, so swapped axes would show)."""
     part.add_box(40, 20, 10)
+    with pytest.raises(SolidWorksError, match="there are: Sketch1"):
+        part.read_sketch("Sketch9")
     boss = part.add_boss_on_face(6, "+x", 40, 12, 4, 5)
     read = part.read_sketch(boss["dimensions"]["diameter"].split("@")[1])
 
@@ -99,11 +101,13 @@ def test_read_sketch_gives_rounded_corners_as_arcs(part):
     assert centres == [(4, 4, 0), (4, 16, 0), (26, 4, 0), (26, 16, 0)]
 
 
-def test_read_sketch_reports_a_persons_sketch_as_drawn(drawn):
+# --- extrude_sketch / cut_sketch ------------------------------------------------
+
+
+def test_extrude_sketch_builds_on_a_persons_sketch_as_read(drawn):
     drawn.add_box(40, 20, 10)
     name = person_rectangle(drawn, (30, 0), (50, 20))
     read = drawn.read_sketch(name)
-
     assert read["fully_defined"] is False and read["status"] == "under defined"
     assert read["dimensions"] == []
     edges = sorted(tuple(sorted([tuple(s["start_mm"]), tuple(s["end_mm"])]))
@@ -111,20 +115,7 @@ def test_read_sketch_reports_a_persons_sketch_as_drawn(drawn):
     assert edges == [((30, 0, 0), (30, 20, 0)), ((30, 0, 0), (50, 0, 0)),
                      ((30, 20, 0), (50, 20, 0)), ((50, 0, 0), (50, 20, 0))]
 
-
-def test_read_sketch_names_the_sketches_there_are(part):
-    part.add_box(40, 20, 10)
-    with pytest.raises(SolidWorksError, match="there are: Sketch1"):
-        part.read_sketch("Sketch9")
-
-
-# --- extrude_sketch / cut_sketch ------------------------------------------------
-
-
-def test_extrude_sketch_builds_on_a_persons_sketch(drawn):
     # the rectangle x 30..50 overlaps the 40-long box by 10: 10 x 20 x 5 is new
-    drawn.add_box(40, 20, 10)
-    name = person_rectangle(drawn, (30, 0), (50, 20))
     result = drawn.extrude_sketch(name, 5)
     assert vol(result) == pytest.approx(BOX + 10 * 20 * 5)
     assert box(result)["max_mm"] == pytest.approx([50, 20, 10])
@@ -143,23 +134,21 @@ def test_extrude_sketch_reverse_goes_against_the_normal(drawn):
     assert box(result)["min_mm"] == pytest.approx([0, 0, -5])
 
 
-def test_cut_sketch_goes_into_the_part_from_a_face(drawn):
-    drawn.add_box(40, 20, 10)
-    name = person_circle(drawn, "+z", [20, 10, 10], 4)
-    result = drawn.cut_sketch(name, 3)
-    assert vol(result) == pytest.approx(BOX - math.pi * 4 ** 2 * 3, abs=1e-3)
-    assert box(result)["max_mm"] == pytest.approx([40, 20, 10]), "the cut went out of the part"
-
-
-def test_cut_sketch_from_a_plane_tells_when_it_needs_reverse(drawn):
+def test_cut_sketch_goes_into_the_part_from_a_face_or_a_plane(drawn):
     """From the Front plane the cut's own direction points away from the box:
     the refusal must say how to fix it, and reverse=True then cuts."""
     drawn.add_box(40, 20, 10)
+    name = person_circle(drawn, "+z", [20, 10, 10], 4)
+    result = drawn.cut_sketch(name, 3)
+    circle = math.pi * 4 ** 2 * 3
+    assert vol(result) == pytest.approx(BOX - circle, abs=1e-3)
+    assert box(result)["max_mm"] == pytest.approx([40, 20, 10]), "the cut went out of the part"
+
     name = person_rectangle(drawn, (5, 5), (15, 15))
     with pytest.raises(SolidWorksError, match="reverse=True"):
         drawn.cut_sketch(name)
     result = drawn.cut_sketch(name, reverse=True)
-    assert vol(result) == pytest.approx(BOX - 10 * 10 * 10)
+    assert vol(result) == pytest.approx(BOX - circle - 10 * 10 * 10, abs=1e-3)
 
 
 # --- planes by name -------------------------------------------------------------
@@ -179,14 +168,10 @@ def test_cut_through_a_persons_plane(part):
     # the person's plane at z = 5: the square cuts through the box both ways
     part.add_box(40, 20, 10)
     plane, _ = part._plane_at("front", 5)
-    result = part.cut_profile_through_plane([[10, 5, 5], [20, 5, 5], [20, 15, 5], [10, 15, 5]], plane.Name)
-    assert vol(result) == pytest.approx(BOX - 10 * 10 * 10)
-
-
-def test_an_unknown_plane_names_the_planes_of_the_part(part):
-    part.add_box(40, 20, 10)
-    plane, _ = part._plane_at("front", 5)
+    # an unknown plane names the planes of the part
     with pytest.raises(SolidWorksError, match=f"No plane 'side'.*{plane.Name}"):
         part.add_mirror("side")
     with pytest.raises(SolidWorksError, match=f"No plane 'side'.*{plane.Name}"):
         part.cut_profile_through_plane([[0, 0, 0], [0, 1, 0], [0, 0, 1]], "side")
+    result = part.cut_profile_through_plane([[10, 5, 5], [20, 5, 5], [20, 15, 5], [10, 15, 5]], plane.Name)
+    assert vol(result) == pytest.approx(BOX - 10 * 10 * 10)

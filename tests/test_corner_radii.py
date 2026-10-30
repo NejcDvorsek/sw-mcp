@@ -37,18 +37,13 @@ def test_one_radius_rounds_every_corner_with_one_dimension(part):
     assert abs(vol(result) - bracket_area([5] * 6) * 10) < 0.01
     assert result["fully_defined"] and "radius" in result["dimensions"], result["dimensions"]
 
-    smaller = part.set_dimension(result["dimensions"]["radius"], 3)
-    assert abs(vol(smaller) - bracket_area([3] * 6) * 10) < 0.01, "the corners do not share their radius"
-
-
-def test_corners_keep_their_dimensions_as_virtual_sharps(part):
-    # moving the corner at x = 60 to x = 70 widens the base by 10 x 20 mm^2,
-    # whatever the corners are rounded with
-    result = part.add_extruded_profile(L_BRACKET, 10, corner_radii_mm=5)
-
+    # the corners keep their dimensions as virtual sharps: moving the corner at
+    # x = 60 to x = 70 widens the base by 10 x 20 mm^2, whatever the radius
     wider = part.set_dimension(result["dimensions"]["x1"], 70)
-
     assert abs(vol(wider) - (bracket_area([5] * 6) + 10 * 20) * 10) < 0.01
+
+    smaller = part.set_dimension(result["dimensions"]["radius"], 3)
+    assert abs(vol(smaller) - (bracket_area([3] * 6) + 10 * 20) * 10) < 0.01, "the corners do not share their radius"
 
 
 def test_each_radius_gets_its_own_dimension(part):
@@ -73,9 +68,15 @@ def test_a_rounded_pocket(part):
 
 def test_a_rounded_pad_on_a_face(part):
     part.add_box(40, 20, 10)
+    history = part.list_features()["features"]
+    # a radius too big fails before anything is sketched
+    with pytest.raises(SolidWorksError, match="Edge 1-2 is 10 mm long"):
+        part.add_extruded_profile_on_face([[5, 5, 10], [35, 5, 10], [35, 15, 10], [5, 15, 10]], "+z", 2,
+                                          corner_radii_mm=5)
+    assert part.list_features()["features"] == history, "the refused profile left a sketch behind"
+
     pad = part.add_extruded_profile_on_face([[5, 5, 10], [35, 5, 10], [35, 15, 10], [5, 15, 10]], "+z", 2,
                                             corner_radii_mm=3)
-
     assert abs(vol(pad) - (8000 + (30 * 10 - 4 * corner(3)) * 2)) < 0.01
     assert pad["fully_defined"] and "radius" in pad["dimensions"]
 
@@ -96,6 +97,8 @@ SPANDREL_CENTROID = (10 - 3 * math.pi) / (3 * (4 - math.pi))  # x r from the cor
 
 
 def test_a_turned_ring_with_rounded_outer_edges(part):
+    with pytest.raises(SolidWorksError, match="on the axis"):  # a corner on the axis cannot be rounded
+        part.add_revolved_profile([[0, 0], [10, 0], [10, 20], [0, 20]], corner_radii_mm=2)
     # Pappus: a ring r 5..15, z 0..10 spun 360 deg, minus the two rounded outer
     # corners, each r^2 (1 - pi/4) with its centroid 0.2234 r inside r = 15
     ring = 2 * math.pi * (10 * 10) * 10
@@ -106,25 +109,9 @@ def test_a_turned_ring_with_rounded_outer_edges(part):
     assert turned["fully_defined"] and "radius" in turned["dimensions"]
 
 
-def test_a_corner_on_the_revolve_axis_cannot_be_rounded(part):
-    with pytest.raises(SolidWorksError, match="on the axis"):
-        part.add_revolved_profile([[0, 0], [10, 0], [10, 20], [0, 20]], corner_radii_mm=2)
-
-
 def test_a_rounded_profile_swept_along_a_path(part):
     square = [[-5, -5], [5, -5], [5, 5], [-5, 5]]
     swept = part.add_swept_profile(square, [[0, 0], [50, 0]], corner_radii_mm=2)
 
     assert abs(vol(swept) - (100 - 4 * corner(2)) * 50) < 0.01
     assert swept["fully_defined"] and "radius" in swept["dimensions"]
-
-
-def test_a_radius_too_big_fails_before_anything_is_sketched(part):
-    part.add_box(40, 20, 10)
-    history = part.list_features()["features"]
-
-    with pytest.raises(SolidWorksError, match="Edge 1-2 is 10 mm long"):
-        part.add_extruded_profile_on_face([[5, 5, 10], [35, 5, 10], [35, 15, 10], [5, 15, 10]], "+z", 2,
-                                          corner_radii_mm=5)
-
-    assert part.list_features()["features"] == history, "the refused profile left a sketch behind"
