@@ -34,6 +34,7 @@ from .drawing import DrawingTools
 from .families import ToolFamilies
 from .model_read import ModelReader
 from .sheet_metal import SheetMetalTools
+from .welds import WeldTools
 from .constants import (
     SOLIDWORKS_DRIVEN_SKETCH_OWNERS,
     FEATURE_ERRORS,
@@ -153,7 +154,7 @@ from .sketch_constraints import MAX_DIMENSIONED_VERTICES, SketchDefiner
 from .units import deg_to_rad, m_to_mm, mm_to_m
 
 
-class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, SheetMetalTools):
+class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, SheetMetalTools, WeldTools):
     """Holds the SolidWorks connection and the current part document."""
 
     def __init__(self) -> None:
@@ -4618,7 +4619,8 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, 
         """The part's features after the origin, in tree order: what was modelled.
 
         Every part starts with SolidWorks' folders, the three default planes and
-        the origin; whatever follows the origin was built by someone.
+        the origin; whatever follows the origin was built by someone. Weld
+        beads live in the Weld Folder above the origin: they come last.
         """
         self._require_part()
         history, after_origin = [], False
@@ -4627,7 +4629,7 @@ class SolidWorksSession(ToolFamilies, DrawingTools, AdvancedTools, ModelReader, 
                 history.append(feat)
             elif feat.GetTypeName2() == "OriginProfileFeature":
                 after_origin = True
-        return history
+        return history + self._weld_beads()
 
     def _history_feature(self, name: str):
         history = self._history()

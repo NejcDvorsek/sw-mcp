@@ -283,7 +283,8 @@ SW_ANNOTATION_CENTER_MARK = 13
 SW_ANNOTATION_CENTERLINE = 15
 SW_ANNOTATION_OWNER_TEMPLATE = 2                # swAnnotationOwner_e: the sheet format's own notes
 ANNOTATION_TYPES = {SW_ANNOTATION_CENTER_MARK: "center_mark", SW_ANNOTATION_CENTERLINE: "centerline",
-                    1: "cosmetic_thread", 2: "datum", 5: "gtol", 7: "surface_finish", 14: "table"}
+                    1: "cosmetic_thread", 2: "datum", 5: "gtol", 7: "surface_finish", 8: "weld_symbol",
+                    14: "table", 17: "weld_bead"}
 # swDimensionTextParts_e. A hole callout shows its first line in CALLOUT_ABOVE
 # and keeps it with the model's variables in CALLOUT_ABOVE_DEFINITION
 SW_DIMENSION_TEXT_PREFIX = 1
@@ -366,5 +367,34 @@ SW_DXF_FLAT_GEOMETRY = 1
 SW_DXF_BEND_LINES = 4
 # Features whose sketches SolidWorks drives itself: an edge flange's profile
 # follows its length, the flat pattern's bend lines and bounding box the part.
+# A gusset's profile follows its legs.
 # They stay under defined in SolidWorks' own models too.
-SOLIDWORKS_DRIVEN_SKETCH_OWNERS = {"EdgeFlange", "FlatPattern"}
+SOLIDWORKS_DRIVEN_SKETCH_OWNERS = {"EdgeFlange", "FlatPattern", "Gusset"}
+# swClosedCornerTypes_e
+CLOSED_CORNER_TYPES = {"butt": 1, "overlap": 2, "underlap": 3}
+
+# --- welds ---------------------------------------------------------------------
+# swCosmeticWeldBeadSide_e: the bead along the first face only, on both sides of
+# it, or all round it
+WELD_BEAD_SIDES = {"one": 1, "both": 2, "all_around": 3}
+# A structural member group's CornerTreatmentType (no named enum in swconst):
+# 1 mitres the members where they meet; 2 / 3 butt them, either one running on
+SW_CORNER_TREATMENTS = {"miter": 1, "butt1": 2, "butt2": 3}
+# swConnectedSegmentsOption_e
+SW_CONNECTED_SEGMENTS_SIMPLE_CUT = 1
+# swGussetThicknessType_e, swGussetProfileLocationType_e
+GUSSET_THICKNESS_SIDES = {"inner": 0, "both": 1, "outer": 2}
+GUSSET_POSITIONS = {"start": 0, "center": 1, "end": 2}
+# swUserPreferenceStringValue_e: the folder of the weldment profile library
+SW_PREF_WELDMENT_PROFILES = 29
+# swInsertAnnotation_e: weld symbols, and the beads of weld bead features
+SW_INSERT_WELDS = 256 | 8388608
+# ISO 2553 weld symbols as SolidWorks names them (gtol.sym, #WELD)
+WELD_SYMBOLS = {
+    "fillet": "<WELD-FILL>", "square": "<WELD-BUSQ>", "v": "<WELD-BUSV>", "bevel": "<WELD-BUSB>",
+    "v_root": "<WELD-BUSVBR>", "bevel_root": "<WELD-BUSBR>", "u": "<WELD-BUSU>", "j": "<WELD-BUSJ>",
+    "backing": "<WELD-BACK>", "plug": "<WELD-PLUG>", "spot": "<WELD-SPOT>", "seam": "<WELD-SEAM>",
+}
+# swWeldSymbolContourTypes_e, swWeldSymbolField_e
+WELD_CONTOURS = {"none": 1, "flat": 2, "convex": 3, "concave": 4}
+SW_FIELD_WELD = 2

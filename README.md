@@ -38,13 +38,18 @@ by Henk Jan Baard and the SolidWorks connector of
 - **Sheet metal:** base flanges (flat tabs or bent L, U and Z sections) and
   edge flanges with your thickness, bend radius and K-factor; the flat blank's
   size, and the flat pattern with bend lines exported to DXF for laser
-  cutting.
+  cutting. Closed corners, ready to weld.
+- **Welds and weldments:** weld beads between bodies, full or intermittent;
+  frames of library tube, pipe, angle and channel profiles with mitred or
+  butted corners, end caps and gussets; the cut list with each member's length
+  and the total weld length.
 - **Assemblies:** insert and place components, mate them, swap parts, check
   interference and step joints through their range of motion.
 - **Drawings:** ISO sheets with a title block, views, sections and details,
   dimensions, hole callouts, surface finish and GD&T symbols, tables, and
   export to PDF, DXF or DWG. Sheet metal parts get their flat pattern with
-  bend lines, bend notes and the blank's size.
+  bend lines, bend notes and the blank's size; welded parts their weld symbols
+  and cut list.
 - **Your own parts:** open existing parts and STEP files, change dimensions
   and equations, set materials, and build on sketches you drew.
 - **3D printing and export:** STEP, STL and 3MF export, screenshots,
@@ -89,6 +94,11 @@ by Henk Jan Baard and the SolidWorks connector of
    > Make a 2 mm steel tray, 80 × 50 mm, with 20 mm flanges on the long sides
    > and an inner bend radius of 3 mm. Give me the flat pattern as a DXF and a
    > drawing as a PDF.
+
+   Or a welded frame:
+
+   > Weld a 600 × 400 mm frame of 30 × 30 × 2.6 square tube with mitred
+   > corners, cap the open ends, and give me the cut list and a drawing.
 
 ## Requirements
 

@@ -21,6 +21,12 @@ API facts this depends on (SOLIDWORKS 2026 SP4.1):
   the profile stays under defined, and relations tying it to the edge make
   the flange fail. A flipped flange takes the flip in the flange's options
   (swInsertEdgeFlangeFlipDir) only: a flipped sketch as well fails.
+- IModelDoc2.InsertSheetMetalClosedCorner closes the corner at the selected
+  end face of a flange and returns nothing; the CornerFeat appears in the
+  history, an overlap with a 0.2 mm gap, which IClosedCornerFeatureData
+  changes. SolidWorks' Welded Corner has no API: a weld bead across the
+  corner fails too (one body), so a closed corner's weld is drawn as a weld
+  symbol.
 - IPartDoc.ExportToDWG2 and IDrawingDoc.CreateFlatPatternViewFromModelView3
   fail (False / None) for a path spelt other than the document's own
   (forward slashes): they get IModelDoc2.GetPathName.
@@ -35,6 +41,7 @@ import win32com.client
 from . import binding
 from . import drawing_layout as lay
 from .constants import (
+    CLOSED_CORNER_TYPES,
     FLANGE_POSITIONS,
     SW_BEND_ALLOWANCE_K_FACTOR,
     SW_DXF_BEND_LINES,
@@ -187,6 +194,46 @@ class SheetMetalTools:
         if flange.GetErrorCode2()[0]:
             raise SolidWorksError("The flange does not rebuild: does it run into the part, or is it too short "
                                   "for its bend?")
+        return result
+
+    def add_closed_corner(self, at_mm: list, kind: str = "overlap", gap_mm: float = 0.1,
+                          name: str = "Closed Corner") -> dict:
+        """Close the open corner between two flanges, ready to weld: the end
+        face of one flange through at_mm grows to meet the flange beside it.
+        kind 'overlap' (it runs over the other flange's end), 'underlap' (it
+        stops behind it) or 'butt'; gap_mm is left between them. The flat
+        pattern keeps the corner's extra material."""
+        corner = CLOSED_CORNER_TYPES.get(str(kind).lower())
+        if corner is None:
+            raise SolidWorksError(f"Unknown kind '{kind}'. Use {', '.join(CLOSED_CORNER_TYPES)}.")
+        if gap_mm is None or gap_mm <= 0:
+            raise SolidWorksError(f"gap must be > 0 (got {gap_mm}): SolidWorks keeps the flanges apart.")
+        self._require_sheet_metal()
+        if at_mm is None or len(at_mm) != 3:
+            raise SolidWorksError(f"at_mm is a model point [x, y, z] on a flange's end face (got {at_mm}).")
+        face = self._part_face_at([float(c) for c in at_mm])
+        model = self._model
+        before = {f.Name for f in self._history()}
+        model.ClearSelection2(True)
+        if not binding.wrap(face, self._mod.IEntity).Select4(True, None):
+            raise SolidWorksError("Could not select the flange's end face.")
+        model.InsertSheetMetalClosedCorner()  # returns nothing: the feature is found in the history
+        model.ClearSelection2(True)
+        made = [f for f in self._history() if f.Name not in before and f.GetTypeName2() == "CornerFeat"]
+        if not made:
+            raise SolidWorksError("SolidWorks closed no corner there: give a point on the end face of a flange "
+                                  "next to another flange.")
+        feature = made[0]
+        data = binding.wrap(feature.GetDefinition(), self._mod.IClosedCornerFeatureData)
+        data.AccessSelections(model, None)
+        data.CornerType = corner
+        data.GapDistance = mm_to_m(gap_mm)
+        if not feature.ModifyDefinition(data, model, None):
+            data.ReleaseSelectionAccess()
+            raise SolidWorksError("SolidWorks would not set the corner's kind and gap.")
+        result = self._finish_feature(feature, name, kind=str(kind).lower(), gap_mm=gap_mm)
+        if feature.GetErrorCode2()[0]:
+            raise SolidWorksError("The closed corner does not rebuild: is the gap smaller than the sheet?")
         return result
 
     def _draw_flange_profile(self, profile, edge, length_mm: float) -> None:

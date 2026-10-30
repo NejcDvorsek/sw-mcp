@@ -119,7 +119,7 @@ def test_tables_plain_or_gear(s):
     s.table(gear={"kind": "spur", "teeth": 20, "module": 2})
     assert called(s) == ["add_table", "add_gear_data_table"]
     assert s.calls[-1][2] == {"kind": "spur", "teeth": 20, "module": 2, "at": None}
-    with pytest.raises(SolidWorksError, match="rows=\\[\\[...\\], ...\\] for a table, or gear"):
+    with pytest.raises(SolidWorksError, match="rows=\\[\\[...\\], ...\\] for a table, gear"):
         s.table()
     with pytest.raises(SolidWorksError, match="Unknown gear keys"):
         s.table(gear={"teeth": 20, "colour": "red"})

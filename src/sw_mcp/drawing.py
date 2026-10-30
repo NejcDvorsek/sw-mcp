@@ -83,6 +83,10 @@ from .constants import (
     SW_DWG_TEMPLATE_CUSTOM,
     SW_IMPORT_ENTIRE_MODEL,
     SW_INSERT_DIMENSIONS,
+    SW_INSERT_WELDS,
+    SW_FIELD_WELD,
+    WELD_CONTOURS,
+    WELD_SYMBOLS,
     SW_OPEN_DOC_SILENT,
     SW_PREF_DEFAULT_TEMPLATE_DRAWING,
     SW_FILE_LOCATIONS_SHEET_FORMAT,
@@ -267,6 +271,8 @@ class DrawingTools:
         The model's dimensions come in once each; each set of identical Hole
         Wizard holes gets one counted callout ('4X ...') and their centres
         dimensioned; the title block shows the part's material and mass.
+        Weld beads come in with their weld symbols, and a weldment gets its
+        cut list as a table.
         Saved to `path` (PDF, .slddrw, DXF, DWG); keep_open=True keeps it as the
         current drawing to refine with the other drawing tools.
         """
@@ -291,6 +297,15 @@ class DrawingTools:
                         self._delete_annotation(annotation)
                 result["flat_dimensions"] = len(self._dimension_flat_blank(flat))
                 result["sheet_metal"] = self._sheet_metal_parameters()
+            if self._weld_beads():
+                result["weld_beads"] = self._import_welds()
+            members = self._cut_list_items()
+            if members:
+                try:
+                    self.add_cut_list_table()
+                    result["cut_list"] = len(members)
+                except SolidWorksError as exc:
+                    result.setdefault("warnings", []).append(f"No cut list table: {exc}")
             result["dimensions"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "dimension")
             result["hole_callouts"] = sum(1 for a in self._all_annotation_entries() if a["type"] == "hole_callout")
             result["hole_locations"] = len(imported.get("hole_locations", ()))
@@ -503,7 +518,10 @@ class DrawingTools:
             return self.add_gtol(entry["view"], entry["ref"], entry["symbol"], entry["tolerance"],
                                  entry.get("datums"), entry.get("diameter", False),
                                  entry.get("material_condition"), entry.get("at"))
-        raise SolidWorksError(f"A symbol's type is 'datum', 'surface_finish' or 'gtol' (got {entry.get('type')!r}).")
+        if kind == "weld":
+            return self.add_symbol("weld", entry["view"], entry["ref"], entry.get("at"), weld=entry.get("weld"))
+        raise SolidWorksError(f"A symbol's type is 'datum', 'surface_finish', 'gtol' or 'weld' "
+                              f"(got {entry.get('type')!r}).")
 
     def _build_dimension(self, entry: dict) -> list:
         view = entry["view"]
@@ -1884,6 +1902,70 @@ class DrawingTools:
             frame.SetFrameValues2(1, str(tolerance), "", *(datums + ["", "", ""])[:3])
         return self._finish_symbol(frame, v, mapping, at)
 
+    def add_weld_symbol(self, view: str, ref, weld: str = "fillet", size: str = "", length: str = "",
+                        side: str = "arrow", contour: str = "none", all_around: bool = False, field: bool = False,
+                        at: list | None = None) -> dict:
+        """Weld symbol (ISO 2553) with its arrow on an edge of a view: weld
+        'fillet', 'square', 'v', 'bevel', 'u', 'j', ... ; size left of the
+        symbol ('a4' throat, 'z5' leg), length right of it ('100', '3x50 (100)'
+        for an intermittent weld); side 'arrow', 'other' or 'both' sides of
+        the joint; contour 'flat', 'convex', 'concave'; all_around adds the
+        circle, field the flag. at=[x, y] places it, by default off the view."""
+        symbol = WELD_SYMBOLS.get(str(weld).lower())
+        if symbol is None:
+            raise SolidWorksError(f"Unknown weld '{weld}'. Use {', '.join(WELD_SYMBOLS)}.")
+        shape = WELD_CONTOURS.get(str(contour).lower())
+        if shape is None:
+            raise SolidWorksError(f"Unknown contour '{contour}'. Use {', '.join(WELD_CONTOURS)}.")
+        sides = {"arrow": (False,), "other": (True,), "both": (False, True)}.get(str(side).lower())
+        if sides is None:
+            raise SolidWorksError(f"Unknown side '{side}'. Use arrow, other or both.")
+        model, _ = self._require_drawing()
+        v, mapping, point, geometry = self._attach_to(view, ref)
+        at = at or self._off_the_view(geometry, point, 15.0)
+        mark = binding.wrap(model.InsertWeldSymbol3(), self._mod.IWeldSymbol)
+        if mark is not None:
+            for top in sides:  # SetText's Top: the other side, above the reference line
+                if not mark.SetText(top, str(size), symbol, str(length), "", shape):
+                    raise SolidWorksError("SolidWorks would not write the weld symbol.")
+            if all_around:
+                mark.SetPeripheral(True)
+            if field:
+                mark.SetFieldWeld(SW_FIELD_WELD)
+        return self._finish_symbol(mark, v, mapping, at)
+
+    def _import_welds(self, view=None) -> int:
+        """Bring the part's weld beads into the views, with their weld
+        symbols; returns how many came."""
+        model, drawing = self._require_drawing()
+        if view is not None:
+            self._select_view(view)
+        made = drawing.InsertModelAnnotations3(SW_IMPORT_ENTIRE_MODEL, SW_INSERT_WELDS, view is None, True, False,
+                                               False)
+        model.ClearSelection2(True)
+        return len(made or ())
+
+    def add_cut_list_table(self, at: list | None = None, text_height_mm: float = 2.5) -> dict:
+        """The weldment's cut list as a table on the sheet: item, quantity,
+        description, length and end angles of each kind of member, and the
+        weld beads' total length."""
+        self._require_drawing()
+        part = self._drawing_part_document()
+        if part is None:
+            raise SolidWorksError("The drawing shows no part.")
+        items = self._cut_list_items(part)
+        if not items:
+            raise SolidWorksError("The drawing's part is not a weldment: it has no cut list.")
+        rows = [["CUT LIST", "", "", "", ""], ["ITEM", "QTY", "DESCRIPTION", "LENGTH", "ANGLES"]]
+        for k, item in enumerate(items, 1):
+            angles = "/".join(f"{item[a]:g}°" for a in ("angle1_deg", "angle2_deg") if a in item)
+            length = f"{item['length_mm']:g}" if "length_mm" in item else ""
+            rows.append([str(k), str(item["quantity"]), item["description"], length, angles])
+        beads = [self._bead_report(b, part) for b in self._weld_beads(part)]
+        if beads:
+            rows.append(["", "", f"WELDS: {len(beads)}", f"{sum(b['weld_length_mm'] for b in beads):g}", ""])
+        return self.add_table(rows, at, True, text_height_mm)
+
     # --- tables ------------------------------------------------------------------------
 
     def add_table(self, rows: list, at: list | None = None, title: bool = True, text_height_mm: float = 2.5,
@@ -2429,14 +2511,15 @@ class DrawingTools:
     def add_symbol(self, type: str, view: str, ref, at: list | None = None, count: bool = True,  # noqa: A002
                    roughness: str | None = None, process: str = "machined", label: str | None = None,
                    symbol: str | None = None, tolerance: str | None = None, datums: list | None = None,
-                   diameter: bool = False, material_condition: str | None = None) -> dict:
+                   diameter: bool = False, material_condition: str | None = None, weld: dict | None = None) -> dict:
         """type 'hole_callout' (ref 'hole:<feature>', count), 'surface_finish'
-        (roughness, process), 'datum' (label) or 'gtol' (symbol, tolerance,
-        datums, diameter, material_condition), attached to an edge of a view."""
+        (roughness, process), 'datum' (label), 'gtol' (symbol, tolerance,
+        datums, diameter, material_condition) or 'weld' (weld={weld, size,
+        length, side, contour, all_around, field}), attached to an edge of a view."""
         key = str(type).lower()
         given = {"roughness": roughness, "process": None if process == "machined" else process, "label": label,
                  "symbol": symbol, "tolerance": tolerance, "datums": datums, "diameter": diameter,
-                 "material_condition": material_condition, "count": None if count else "False"}
+                 "material_condition": material_condition, "count": None if count else "False", "weld": weld}
         if key == "hole_callout":
             self._only("a hole callout", given, {"count"})
             hole = str(ref)
@@ -2452,14 +2535,28 @@ class DrawingTools:
             if not symbol or tolerance is None:
                 raise SolidWorksError("A tolerance frame needs symbol='flatness' (or ...) and tolerance='0.05'.")
             return self.add_gtol(view, ref, symbol, tolerance, datums, diameter, material_condition, at)
-        raise SolidWorksError(f"Unknown type '{type}'. Use hole_callout, surface_finish, datum or gtol.")
+        if key == "weld":
+            self._only("a weld symbol", given, {"weld"})
+            weld = weld or {}
+            if not isinstance(weld, dict):
+                raise SolidWorksError("weld is a dict: {'weld': 'fillet', 'size': 'a4', 'length': '100', ...}.")
+            known = {"weld", "size", "length", "side", "contour", "all_around", "field"}
+            unknown = sorted(set(weld) - known)
+            if unknown:
+                raise SolidWorksError(f"Unknown weld keys {unknown}; use {sorted(known)}.")
+            return self.add_weld_symbol(view, ref, **weld, at=at)
+        raise SolidWorksError(f"Unknown type '{type}'. Use hole_callout, surface_finish, datum, gtol or weld.")
 
     def table(self, rows: list | None = None, gear: dict | None = None, at: list | None = None, title: bool = True,
-              text_height_mm: float = 2.5, column_widths_mm: list | None = None) -> dict:
-        """rows [[cell, ...], ...] for any table, or gear={kind, teeth, module,
-        mating_teeth, ...} for a computed gear data table."""
-        if (rows is None) == (gear is None):
-            raise SolidWorksError("Give rows=[[...], ...] for a table, or gear={...} for a gear data table.")
+              text_height_mm: float = 2.5, column_widths_mm: list | None = None, cut_list: bool = False) -> dict:
+        """rows [[cell, ...], ...] for any table, gear={kind, teeth, module,
+        mating_teeth, ...} for a computed gear data table, or cut_list=True
+        for a weldment's cut list."""
+        if sum((rows is not None, gear is not None, bool(cut_list))) != 1:
+            raise SolidWorksError("Give rows=[[...], ...] for a table, gear={...} for a gear data table, or "
+                                  "cut_list=True for a weldment's cut list.")
+        if cut_list:
+            return self.add_cut_list_table(at, text_height_mm)
         if gear is not None:
             if not isinstance(gear, dict):
                 raise SolidWorksError("gear is a dict: {'kind': 'spur', 'teeth': 20, 'module': 2, ...}.")

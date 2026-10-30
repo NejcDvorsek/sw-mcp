@@ -284,6 +284,39 @@ stray drag in SolidWorks can change the part.
   laser cutting (save the part first). `make_drawing` shows a sheet metal
   part's flat pattern in place of the iso view, with bend lines, bend notes
   and the blank's size; `add_view(kind="flat_pattern")` adds one to any drawing.
+  `add_closed_corner(at_mm)` closes the open corner between two flanges: at_mm
+  on the end face of the flange that should grow (list_faces: after two edge
+  flanges on neighbouring edges one stops r + t short of the corner); with
+  `kind="overlap"` it runs to the outer corner, the other flange stopping
+  t + gap short; `"underlap"` the other way round.
+- **Welds**: `add_weld_bead(from_mm, to_mm, size_mm)` lays a fillet weld where
+  two faces meet, a point on each; the faces belong to two bodies (a plate
+  added with `merge=False`, structural members): one body cannot be welded to
+  itself, and a sheet metal part is one body. `side="both"` welds both sides
+  of the from face, `"all_around"` all round it; `length_mm` + `pitch_mm`
+  make it intermittent. Hand check: `weld_length_mm` is the length of the
+  line where the faces meet (a 5 x 40 plate standing on a base: 40 one side,
+  80 both, 90 all round). A bead adds no mass.
+- **Weldments**: `add_structural_member(profile, size, path_mm)` runs members
+  of a library profile along a chain of lines on the Front plane (or `plane`,
+  or a `sketch`); ISO profiles: square tube 20 x 20 x 2, 30 x 30 x 2.6,
+  40 x 40 x 4, 80 x 80 x 5; rectangular tube 50 x 30 x 2.6, 60 x 40 x 3.2, ...;
+  pipe 21.3 x 2.3, 26.9 x 3.2, 33.7 x 4.0; angle iron, c channel, sb beam (a
+  wrong name lists what the library holds). The profile is centred on the
+  lines, so a frame drawn on its centre lines; with `corner="miter"` a member
+  is as long along its centre line as its line, and the cut list's length is
+  the outside one (+ the tube's width for two mitres). Members of one call
+  are one group; a member standing on another goes in its own call, its line
+  starting on the other's face. `add_end_cap(at_mm, thickness_mm)` closes an
+  open end (a point on the tube wall's end; set in half the wall unless
+  `inset_mm`), `add_gusset(first_mm, second_mm, leg1_mm, leg2_mm,
+  thickness_mm)` fills the corner of two faces at right angles, leg1 along
+  the first; `cut_list` gives the members and the weld beads.
+- **Weld symbols**: `add_symbol("weld", view, ref, weld={"weld": "fillet",
+  "size": "a4", "length": "100", "side": "both", "all_around": True})` (ISO
+  2553: a = throat, z = leg; '3x50 (100)' for an intermittent weld).
+  `make_drawing` brings in the weld beads' own symbols and a weldment's cut
+  list table.
 - **Drawings**: save the part, then `make_drawing("part.pdf", sheet="A3")`
   lays out front, top and side views (first angle) and an iso view on an ISO
   sheet with a title block, at the largest standard scale with room for

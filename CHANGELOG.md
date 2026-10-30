@@ -38,6 +38,29 @@ All notable changes to this project are documented here. This project follows
   `add_view(kind="flat_pattern")` and `{"flat_pattern": true}` in
   `build_drawing` add one to any drawing. `check_drawing` no longer counts a
   bend note on its bend line as text on the geometry.
+- `add_closed_corner` closes the open corner between two sheet metal flanges
+  (overlap, underlap or butt, with a gap) ready to weld.
+- Welds: `add_weld_bead` lays a fillet weld bead where faces of two bodies
+  meet, on one side, both sides or all round, full length or intermittent
+  (staggered), and returns the weld's length; `list_features`,
+  `delete_feature` and `suppress_feature` reach weld beads too.
+- Weldments: `add_structural_member` runs members of a SolidWorks library
+  profile (ISO square and rectangular tube, pipe, angle, channel, beam and
+  the other standards installed) along a path, mitred or butted where they
+  meet; `add_end_cap` closes a tube's end, `add_gusset` fills a corner with a
+  triangular or polygon plate; `cut_list` gives each kind of member's length,
+  end angles and quantity, and the weld beads with the total weld length.
+- Drawings of welds: `add_symbol(type="weld")` puts an ISO 2553 weld symbol
+  (fillet, butt welds, plug, spot, seam; size, length, arrow / other / both
+  sides, contour, all round, field weld) on an edge; `make_drawing` brings in
+  weld beads with their symbols and adds a weldment's cut list table, which
+  `add_table(cut_list=True)` adds to any drawing.
+
+### Known limits
+- SolidWorks' API makes no weld bead between faces of one body, none along
+  bare edges, no fillet bead (`InsertFilletBeadFeature`) and no sheet metal
+  Welded Corner on SOLIDWORKS 2026: weld one body to another, and mark a
+  closed corner's weld with a weld symbol.
 
 ### Changed
 - `list_dimensions` and the dimensions every tool reads run several times

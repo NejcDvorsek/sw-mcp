@@ -30,6 +30,7 @@ Conventions
 - Flowing outlines (an S-bend, a hub running into a beam): add_sketch with lines, tangent arcs and splines, then extrude_sketch / cut_sketch.
 - A joint: concentric mate (cylinders by list_faces index, '#5') + coincident + angle mate; the angle mate's dimension turns it (set_dimension, check_motion).
 - Sheet metal: add_base_flange (a tab, or a bent section from an open profile), add_edge_flange on its edges, holes and cuts as usual; flat_pattern for the flat size and the DXF; make_drawing adds the flat pattern.
+- Welds: add_weld_bead between faces of two bodies; weldment frames with add_structural_member (library profiles), add_end_cap, add_gusset, cut_list; add_closed_corner on sheet metal; add_symbol(type='weld') on drawings.
 
 Work in small verified steps
 - Every modelling call returns volume, mass and bounding box: check them against your own hand calculation after each step, and fix the first mismatch before adding more.
@@ -702,6 +703,91 @@ async def flat_pattern(action: str = "info", path: str | None = None) -> dict:
 
 
 @mcp.tool()
+async def add_closed_corner(at_mm: list, kind: str = "overlap", gap_mm: float = 0.1, name: str = "Closed Corner") -> dict:
+    """Close the open corner between two flanges of a sheet metal part, ready to weld.
+
+    at_mm: a model point [x, y, z] on the end face of one flange at the corner
+    (list_faces); that flange grows to meet the one beside it. kind 'overlap'
+    (it runs over the other flange's end), 'underlap' (it stops behind it) or
+    'butt'; gap_mm stays between them. The flat pattern keeps the extra
+    material. Mark the corner's weld on the drawing with add_symbol(type='weld').
+    """
+    return await _call(_session.add_closed_corner, at_mm, kind, gap_mm, name)
+
+
+@mcp.tool()
+async def add_weld_bead(from_mm: list, to_mm: list, size_mm: float, side: str = "one",
+                        length_mm: float | None = None, pitch_mm: float | None = None, staggered: bool = False,
+                        name: str = "Weld Bead") -> dict:
+    """A fillet weld bead where two bodies meet: a plate on a base (merge=False), a member on a plate.
+
+    from_mm / to_mm: model points [x, y, z] on the two faces, of two bodies
+    (one body cannot be welded to itself). size_mm: the leg. side 'one' (along
+    the from face where the faces meet), 'both' (both sides of it) or
+    'all_around'. length_mm + pitch_mm make it intermittent (staggered with
+    side='both'). Shows in the model and drawings, adds no mass. Returns the
+    weld's length (its beads' sum) for a hand check.
+    """
+    return await _call(_session.add_weld_bead, from_mm, to_mm, size_mm, side, length_mm, pitch_mm, staggered, name)
+
+
+@mcp.tool()
+async def add_structural_member(profile: str, size: str, path_mm: list | None = None, sketch: str | None = None,
+                                plane: str = "front", standard: str = "iso", corner: str | None = "miter",
+                                rotate_deg: float = 0.0, name: str | None = None) -> dict:
+    """Weldment frame members of a library profile along the lines of a path.
+
+    profile / size as SolidWorks' weldment profile library names them, e.g.
+    standard 'iso': 'square tube' '20 x 20 x 2' / '30 x 30 x 2.6' / '40 x 40 x 4',
+    'rectangular tube' '50 x 30 x 2.6', 'pipe' '26.9 x 3.2', 'angle iron'
+    '25 x 25 x 4', 'c channel' '80 x 8', 'sb beam' '100 x 8' (a wrong name
+    lists what there is). path_mm: [[x, y], ...] on plane, lines in a chain
+    (closed when the last point is the first); or sketch by name. The profile
+    is centred on the lines; corner 'miter', 'butt1', 'butt2' or None where
+    they meet; rotate_deg turns it about the line. Several calls build a frame
+    of several groups. Returns the cut list (cut_list).
+    """
+    return await _call(_session.add_structural_member, profile, size, path_mm, sketch, plane, standard, corner,
+                       rotate_deg, name)
+
+
+@mcp.tool()
+async def add_end_cap(at_mm: list, thickness_mm: float, inset_mm: float | None = None, inward: bool = False,
+                      chamfer_mm: float | None = None, name: str = "End cap") -> dict:
+    """Close the open end of a tube or pipe member with a plate.
+
+    at_mm: a model point on the end face (the tube wall's end). thickness_mm
+    outward past the end (inward=True: into the tube); its edge inset_mm in
+    from the tube's outside (default half the wall); chamfer_mm on its corners.
+    """
+    return await _call(_session.add_end_cap, at_mm, thickness_mm, inset_mm, inward, chamfer_mm, name)
+
+
+@mcp.tool()
+async def add_gusset(first_mm: list, second_mm: list, leg1_mm: float, leg2_mm: float, thickness_mm: float,
+                     shape: str = "triangle", end_mm: float | None = None, position: str = "center",
+                     thickness_side: str = "both", name: str = "Gusset") -> dict:
+    """A gusset plate in the corner of two weldment members.
+
+    first_mm / second_mm: model points on the two faces, at right angles.
+    leg1_mm runs along the first, leg2_mm along the second. shape 'triangle'
+    (area leg1 leg2 / 2), or 'polygon' with both tips cut square end_mm long.
+    position 'center' / 'start' / 'end' along the corner; thickness_side
+    'both' (centred), 'inner' or 'outer'.
+    """
+    return await _call(_session.add_gusset, first_mm, second_mm, leg1_mm, leg2_mm, thickness_mm, shape, end_mm,
+                       position, thickness_side, name)
+
+
+@mcp.tool()
+async def cut_list() -> dict:
+    """A weldment's cut list: each kind of member with its description, length
+    (outside, mitres included), end angles and quantity; and the weld beads
+    with their size and length, and the total weld length."""
+    return await _call(_session.cut_list)
+
+
+@mcp.tool()
 async def set_dimension(dimension_name: str, value_mm: float) -> dict:
     """Set a named driving dimension (e.g. 'D1@BlockExtrude') in mm, rebuild, and remeasure.
 
@@ -1085,7 +1171,8 @@ async def make_drawing(path: str, sheet: str = "A4", scale: str | None = None, k
     identical Hole Wizard holes ('4X ...'), their centres dimensioned, and the
     title block shows material and mass. A sheet metal part gets its flat
     pattern in place of the iso view, with bend lines, bend notes and the
-    blank's overall size. Returns `problems` (check_drawing).
+    blank's overall size. Weld beads come in with their weld symbols; a
+    weldment gets its cut list table. Returns `problems` (check_drawing).
     keep_open=True keeps it as the current drawing to refine with the other
     drawing tools. Save the part first (save_document): the drawing refers to its file.
     """
@@ -1222,7 +1309,8 @@ async def add_dimension(view: str, ref: str | list, to: str | list | None = None
 async def add_symbol(type: str, view: str, ref: str | list, at: list | None = None, count: bool = True,
                      roughness: str | None = None, process: str = "machined", label: str | None = None,
                      symbol: str | None = None, tolerance: str | None = None, datums: list | None = None,
-                     diameter: bool = False, material_condition: str | None = None) -> dict:
+                     diameter: bool = False, material_condition: str | None = None,
+                     weld: dict | None = None) -> dict:
     """A symbol on an edge of a view, its leader attached mid-edge. type:
     - 'hole_callout': ref 'hole:<feature>'; diameter, depth, counterbore/countersink, thread, linked to
       the model; count=True counts identical holes in the view into it ('4X ...');
@@ -1231,11 +1319,14 @@ async def add_symbol(type: str, view: str, ref: str | list, at: list | None = No
     - 'gtol': ISO 1101 frame, symbol straightness, flatness, circularity, cylindricity, line_profile,
       surface_profile, parallelism, perpendicularity, angularity, position, concentricity, symmetry,
       runout or total_runout; tolerance '0.05'; datums ['A', 'B']; diameter=True for a round zone;
-      material_condition 'MMC' / 'LMC'.
+      material_condition 'MMC' / 'LMC';
+    - 'weld': ISO 2553, weld={'weld': 'fillet' (square, v, bevel, v_root, bevel_root, u, j, backing,
+      plug, spot, seam), 'size': 'a4', 'length': '100' or '3x50 (100)', 'side': 'arrow' / 'other' /
+      'both', 'contour': 'flat' / 'convex' / 'concave', 'all_around': true, 'field': true}.
     ref as in add_dimension. at=[x, y] places it (sheet mm), by default off the view, clear of text.
     """
     return await _call(_session.add_symbol, type, view, ref, at, count, roughness, process, label, symbol,
-                       tolerance, datums, diameter, material_condition)
+                       tolerance, datums, diameter, material_condition, weld)
 
 
 @mcp.tool()
@@ -1246,15 +1337,16 @@ async def add_note(text: str, at: list | None = None, height_mm: float = 3.5) ->
 
 @mcp.tool()
 async def add_table(rows: list | None = None, gear: dict | None = None, at: list | None = None, title: bool = True,
-                    text_height_mm: float = 2.5, column_widths_mm: list | None = None) -> dict:
+                    text_height_mm: float = 2.5, column_widths_mm: list | None = None, cut_list: bool = False) -> dict:
     """A table on the sheet: rows [[cell, ...], ...] (title=True merges the first row), or gear={...} for a
     computed gear data table: kind 'spur' (diameters, span over k teeth, centre distance) or 'bevel'
     (straight: cone angles, cone distance, chordal thickness and height, crown to apex), teeth, module,
     mating_teeth, pressure_angle_deg, face_width_mm, profile_shift, shaft_angle_deg, accuracy,
     extra_rows [[label, value], ...]; teeth, module and mating_teeth default to the part's custom
-    properties Teeth, Module, MatingTeeth. at=[x, y] its top-left corner, by default free room.
+    properties Teeth, Module, MatingTeeth. cut_list=True: the weldment's cut list (item, quantity,
+    description, length, angles) and total weld length. at=[x, y] its top-left corner, by default free room.
     """
-    return await _call(_session.table, rows, gear, at, title, text_height_mm, column_widths_mm)
+    return await _call(_session.table, rows, gear, at, title, text_height_mm, column_widths_mm, cut_list)
 
 
 @mcp.tool()

@@ -142,3 +142,49 @@ def test_make_drawing_shows_the_flat_pattern_dimensioned(part, tmp_path):
     finally:
         part.close_drawing()
     assert os.path.getsize(result["path"]) > 0
+
+
+def tray_of_four_flanges(part):
+    """An 80 x 50 tray with 20 mm flanges on all four edges: its corners open."""
+    part.add_base_flange(T, R, profile_mm=[[0, 0], [80, 0], [80, 50], [0, 50], [0, 0]])
+    for at in ([40, 0, T], [40, 50, T], [0, 25, T], [80, 25, T]):
+        part.add_edge_flange(at, 20)
+
+
+def starts(part, point):
+    """Where the outside face through point begins: (x, y) of its box, mm."""
+    box = part._part_face_at(point).GetBox()
+    return box[0] * 1000, box[1] * 1000
+
+
+GAP = 0.5
+
+
+def test_an_overlapped_corner_runs_the_chosen_flange_to_the_corner(part):
+    tray_of_four_flanges(part)
+    # the flange on x = 0 stops short of the corner, past the bend of the one on y = 0
+    assert starts(part, [0, 20, 12])[1] == pytest.approx(R + T, abs=0.01)
+    result = part.add_closed_corner([1, R + T, 12], "overlap", GAP)
+    assert result["kind"] == "overlap"
+    assert starts(part, [0, 20, 12])[1] == pytest.approx(0, abs=0.01)
+    assert starts(part, [40, 0, 12])[0] == pytest.approx(T + GAP, abs=0.01)  # the other stops behind it
+    info = part.flat_pattern("info")
+    assert info["bends"] == 4
+    flat = 50 - 2 * (R + T) + 2 * (20 - (R + T)) + 2 * bend()
+    assert info["flat_size_mm"] == pytest.approx([80 - 2 * (R + T) + 2 * (20 - (R + T)) + 2 * bend(), flat],
+                                                 abs=1e-3)
+
+
+def test_an_underlapped_corner_stops_behind_the_other_flange(part):
+    tray_of_four_flanges(part)
+    part.add_closed_corner([1, R + T, 12], "underlap", GAP)
+    assert starts(part, [0, 20, 12])[1] == pytest.approx(T + GAP, abs=0.01)
+    assert starts(part, [40, 0, 12])[0] == pytest.approx(0, abs=0.01)
+
+
+def test_a_closed_corner_needs_a_flange_end(part):
+    tray_of_four_flanges(part)
+    with pytest.raises(SolidWorksError, match="Unknown kind"):
+        part.add_closed_corner([1, R + T, 12], "mitre")
+    with pytest.raises(SolidWorksError, match="gap must be > 0"):
+        part.add_closed_corner([1, R + T, 12], gap_mm=0)
