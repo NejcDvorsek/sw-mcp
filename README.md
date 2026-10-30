@@ -12,19 +12,6 @@ sw-mcp is a fork of [SolidWorks-MCP](https://github.com/hjbaard/SolidWorks-MCP)
 by Henk Jan Baard and the SolidWorks connector of
 [Jig](https://github.com/NejcDvorsek/jig). It works with any MCP client.
 
-<!-- mcp-name: io.github.NejcDvorsek/sw-mcp -->
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/bracket.png" width="32%" alt="3D-print mounting bracket with counterbored holes, bolt circle and cable slot">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/thread.png" width="32%" alt="M10 bolt with a real, printable ISO metric thread">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/vase.png" width="32%" alt="Revolved and shelled vase">
-</p>
-<p align="center">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/pipe.png" width="32%" alt="Swept pipe with rounded bends">
-  <img src="https://raw.githubusercontent.com/NejcDvorsek/sw-mcp/main/docs/images/loft.png" width="32%" alt="Lofted and shelled horn">
-</p>
-<p align="center"><sub>All built by an agent through sw-mcp: a mounting bracket, an M10 bolt with a real thread, a vase, a swept pipe and a lofted horn.</sub></p>
-
 ## What it can do
 
 - **Parts:** sketches, extrudes, revolves, sweeps and lofts; holes, threads,
