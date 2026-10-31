@@ -79,9 +79,28 @@ def wrap(obj, cls):
 @functools.cache
 def _dispatch_spec(cls, name: str) -> tuple:
     """(dispid, result type, argument types) of a generated method, read from
-    its code: makepy writes them as the first int and the first two tuples."""
-    consts = getattr(cls, name).__code__.co_consts
-    dispid = next(c for c in consts[1:] if isinstance(c, int) and not isinstance(c, bool))
+    its code: makepy writes the dispid first and then the result and argument
+    type tuples.
+
+    `dispid` is None when the wrapper carries none, which SOLIDWORKS 2025 does
+    for e.g. IFeature.GetFirstDisplayDimension: its co_consts are
+    ('Get first display dimension', None, 'GetFirstDisplayDimension', (9, 0),
+    ()). invoke() then lets the generated method build the call itself.
+
+    The dispid is the first int anywhere in co_consts, not the first after a
+    leading docstring: on Python 3.14 a wrapper without a docstring keeps it at
+    index 0 (cpython 3.14 no longer puts small-int call arguments such as the
+    LCID in a generated InvokeTypes(dispid, LCID, 1, ...) into co_consts, so
+    the dispid can be first), and skipping index 0 made such a method raise
+    StopIteration.
+    """
+    consts = getattr(getattr(cls, name, None), "__code__", None)
+    if consts is None:  # no such method here, or not a generated one: no early path
+        return None, None, None
+    consts = consts.co_consts
+    dispid = next((c for c in consts if isinstance(c, int) and not isinstance(c, bool)), None)
+    if dispid is None:
+        return None, None, None
     result, arguments = [c for c in consts if isinstance(c, tuple)][:2]
     return dispid, result, arguments
 
@@ -93,8 +112,22 @@ def invoke(obj, cls, name: str, *args):
     asks SolidWorks for its type info: an object array of two faces costs 0.9
     ms that way and 0.13 ms raw (SOLIDWORKS 2026, measured). For reads over
     every face and edge of a part.
+
+    A wrapper that carries no dispid to rebuild that raw call from is called
+    through instead: same COM call, one wrapper more. Reading the dispid with
+    `next(...)` and no default made every such method raise StopIteration,
+    which took the dimension and sketch read paths down on SOLIDWORKS 2025
+    (read_model, list_dimensions, read_sketch) while --selftest still passed.
     """
     dispid, result, arguments = _dispatch_spec(cls, name)
+    if dispid is None:
+        try:
+            method = getattr(obj, name)
+        except AttributeError as exc:
+            raise SolidWorksError(
+                f"{cls.__name__}.{name} is not on the object SolidWorks returned: {exc}"
+            ) from exc
+        return method(*args)
     return getattr(obj, "_oleobj_", obj).InvokeTypes(dispid, 0, 1, result, arguments, *args)
 
 
